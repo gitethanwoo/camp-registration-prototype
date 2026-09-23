@@ -10,6 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarInset,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarRail, SidebarTrigger,
@@ -125,9 +126,9 @@ function choose(id: number) {
             <BreadcrumbItem><BreadcrumbPage class="truncate">{{ pageTitle }}</BreadcrumbPage></BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <RouterLink to="/admin/registrations?all=1" class="ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm text-muted-foreground hover:bg-muted" title="Search every ministry by name, email, or phone">
-          <Search class="size-4" /><span class="hidden sm:inline">Search families</span>
-        </RouterLink>
+        <Button variant="outline" size="sm" as-child class="ml-auto text-muted-foreground" title="Search every ministry by name, email, or phone">
+          <RouterLink to="/admin/registrations?all=1"><Search /><span class="hidden sm:inline">Search families</span></RouterLink>
+        </Button>
       </header>
       <div class="min-w-0 flex-1 p-4 md:p-6">
         <RouterView :key="current?.session.id" />

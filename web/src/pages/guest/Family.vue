@@ -69,7 +69,7 @@ function act(item: ChecklistItem) {
         <CardHeader><CardTitle>Registrations</CardTitle></CardHeader>
         <CardContent>
           <p v-if="!data.registrations.length" class="text-sm text-muted-foreground">
-            None yet. <RouterLink to="/programs" class="underline">Find a program</RouterLink>.
+            None yet. <Button variant="link" as-child class="h-auto p-0"><RouterLink to="/programs">Find a program</RouterLink></Button>.
           </p>
           <ul class="divide-y">
             <li v-for="r in data.registrations" :key="r.id" class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
@@ -79,7 +79,7 @@ function act(item: ChecklistItem) {
               </div>
               <span v-if="r.balanceCents > 0" class="text-sm text-muted-foreground tabular-nums">{{ money(r.balanceCents) }} balance</span>
               <StatusBadge :status="r.status" />
-              <RouterLink :to="`/confirmation/${r.confirmationCode}`" class="text-sm underline">{{ r.confirmationCode }}</RouterLink>
+              <Button variant="link" as-child class="h-auto p-0 font-mono"><RouterLink :to="`/confirmation/${r.confirmationCode}`">{{ r.confirmationCode }}</RouterLink></Button>
             </li>
           </ul>
         </CardContent>

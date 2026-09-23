@@ -103,9 +103,9 @@ async function cancel() {
 
 <template>
   <div class="space-y-6">
-    <RouterLink to="/admin/registrations" class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-      <ArrowLeft class="size-4" />Registrations
-    </RouterLink>
+    <Button variant="ghost" size="sm" as-child class="-ml-2.5 text-muted-foreground">
+      <RouterLink to="/admin/registrations"><ArrowLeft />Registrations</RouterLink>
+    </Button>
     <Skeleton v-if="!r" class="h-96 rounded-xl" />
     <template v-else>
       <div class="flex flex-wrap items-start gap-4">

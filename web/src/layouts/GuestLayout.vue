@@ -4,6 +4,7 @@ import { RouterLink, RouterView } from 'vue-router'
 import Logo from '@/components/Logo.vue'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
 
 const nav = [
   { to: '/programs', label: 'Programs' },
@@ -20,13 +21,9 @@ const nav = [
           <Logo />
         </RouterLink>
         <nav class="hidden items-center gap-1 md:flex" aria-label="Main">
-          <RouterLink
-            v-for="item in nav" :key="item.to" :to="item.to"
-            class="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            active-class="!text-foreground font-medium"
-          >
-            {{ item.label }}
-          </RouterLink>
+          <Button v-for="item in nav" :key="item.to" variant="ghost" size="sm" as-child class="text-muted-foreground">
+            <RouterLink :to="item.to" active-class="!text-foreground font-medium">{{ item.label }}</RouterLink>
+          </Button>
         </nav>
         <div class="ml-auto flex items-center gap-3">
           <DropdownMenu>

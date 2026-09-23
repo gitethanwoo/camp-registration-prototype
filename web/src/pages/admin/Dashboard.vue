@@ -6,6 +6,7 @@ import PoolAvailabilityList from '@/components/PoolAvailability.vue'
 import { useAdminScope } from '@/composables/useAdminScope'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { dateRange, money } from '@/lib/format'
 import type { PoolAvailability } from '@/lib/types'
@@ -61,7 +62,7 @@ onMounted(async () => {
           <CardHeader class="pb-2"><CardDescription class="flex items-center gap-2"><ListOrdered class="size-4" />Waitlisted</CardDescription></CardHeader>
           <CardContent>
             <p class="text-3xl font-semibold tabular-nums">{{ o.waitlisted }}</p>
-            <RouterLink to="/admin/waitlist" class="text-sm text-muted-foreground underline-offset-4 hover:underline">Manage waitlists</RouterLink>
+            <Button variant="link" as-child class="h-auto p-0 text-muted-foreground"><RouterLink to="/admin/waitlist">Manage waitlists</RouterLink></Button>
           </CardContent>
         </Card>
         <Card>
