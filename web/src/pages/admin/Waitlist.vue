@@ -88,24 +88,24 @@ async function confirm() {
               <TableRow>
                 <TableHead class="w-12">#</TableHead>
                 <TableHead>Camper</TableHead>
+                <TableHead>Grade</TableHead>
+                <TableHead class="hidden lg:table-cell">Guardian</TableHead>
                 <TableHead class="hidden xl:table-cell">Joined</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Offer expires</TableHead>
                 <TableHead class="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-if="!p.entries.length"><TableCell colspan="5" class="text-center text-muted-foreground">Nobody waiting.</TableCell></TableRow>
+              <TableRow v-if="!p.entries.length"><TableCell colspan="8" class="text-center text-muted-foreground">Nobody waiting.</TableCell></TableRow>
               <TableRow v-for="e in p.entries" :key="e.id">
                 <TableCell class="tabular-nums">{{ e.position }}</TableCell>
-                <TableCell>
-                  <div class="font-medium">{{ e.participant }}</div>
-                  <div class="text-xs text-muted-foreground">Grade {{ e.grade }} · {{ e.guardian }}</div>
-                </TableCell>
+                <TableCell class="font-medium">{{ e.participant }}</TableCell>
+                <TableCell class="tabular-nums">{{ e.grade }}</TableCell>
+                <TableCell class="hidden text-muted-foreground lg:table-cell">{{ e.guardian }}</TableCell>
                 <TableCell class="hidden text-muted-foreground xl:table-cell">{{ dateTime(e.createdAt) }}</TableCell>
-                <TableCell>
-                  <StatusBadge :status="e.status" />
-                  <div v-if="e.offerExpiresAt && e.status === 'Offered'" class="mt-1 text-xs text-muted-foreground">until {{ dateTime(e.offerExpiresAt) }}</div>
-                </TableCell>
+                <TableCell><StatusBadge :status="e.status" /></TableCell>
+                <TableCell class="whitespace-nowrap text-muted-foreground">{{ e.status === 'Offered' && e.offerExpiresAt ? dateTime(e.offerExpiresAt) : '—' }}</TableCell>
                 <TableCell class="space-x-2 text-right whitespace-nowrap">
                   <Button v-if="e.status === 'Waiting'" size="sm" :disabled="p.remaining <= 0" :title="p.remaining <= 0 ? 'No open spots in this pool' : undefined" @click="openOffer(e, p)">Offer spot</Button>
                   <Button v-if="e.status === 'Waiting' || e.status === 'Offered'" size="sm" variant="ghost" @click="openRemove(e, p)">Remove</Button>

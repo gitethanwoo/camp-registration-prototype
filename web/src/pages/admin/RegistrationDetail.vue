@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { api, ApiError } from '@/lib/api'
@@ -191,19 +192,57 @@ async function cancel() {
             </Card>
             <Card>
               <CardHeader><CardTitle>Transactions</CardTitle><CardDescription>Order-level; shared by everyone on this order.</CardDescription></CardHeader>
-              <CardContent class="divide-y text-sm">
-                <div v-for="op in r.money.operations" :key="op.id" class="flex items-center justify-between gap-4 py-2">
-                  <div>
-                    <p>{{ op.kind }} <span v-if="op.cardLast4" class="text-muted-foreground">· card ···{{ op.cardLast4 }}</span></p>
-                    <p class="text-xs text-muted-foreground">{{ dateTime(op.createdAt) }} · {{ op.processorRef }}<template v-if="op.reason"> · {{ op.reason }}</template></p>
-                  </div>
-                  <span :class="['tabular-nums', !op.succeeded && 'text-destructive line-through']">{{ op.kind === 'Refund' ? '−' : '' }}{{ money(op.amountCents) }}</span>
+              <CardContent>
+                <p v-if="!r.money.operations?.length" class="text-sm text-muted-foreground">No transactions.</p>
+                <div v-else class="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Card</TableHead>
+                        <TableHead class="hidden lg:table-cell">Reference</TableHead>
+                        <TableHead class="hidden md:table-cell">Note</TableHead>
+                        <TableHead class="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow v-for="op in r.money.operations" :key="op.id">
+                        <TableCell class="whitespace-nowrap">{{ dateTime(op.createdAt) }}</TableCell>
+                        <TableCell>{{ op.succeeded ? op.kind : `${op.kind} (failed)` }}</TableCell>
+                        <TableCell class="tabular-nums text-muted-foreground">{{ op.cardLast4 ? `···${op.cardLast4}` : '—' }}</TableCell>
+                        <TableCell class="hidden font-mono text-xs text-muted-foreground lg:table-cell">{{ op.processorRef }}</TableCell>
+                        <TableCell class="hidden max-w-48 truncate text-muted-foreground md:table-cell" :title="op.reason ?? undefined">{{ op.reason ?? '—' }}</TableCell>
+                        <TableCell :class="['text-right tabular-nums', !op.succeeded && 'text-destructive line-through']">{{ op.kind === 'Refund' ? '−' : '' }}{{ money(op.amountCents) }}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
                 </div>
-                <div v-for="i in r.money.installments ?? []" :key="`i${i.sequence}`" class="flex items-center justify-between py-2">
-                  <span>Installment {{ i.sequence }} · {{ date(i.dueDate) }}</span>
-                  <span class="flex items-center gap-2"><StatusBadge :status="i.status" /><span class="tabular-nums">{{ money(i.amountCents) }}</span></span>
+              </CardContent>
+            </Card>
+            <Card v-if="r.money.installments?.length">
+              <CardHeader><CardTitle>Scheduled payments</CardTitle></CardHeader>
+              <CardContent>
+                <div class="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Installment</TableHead>
+                        <TableHead>Due</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead class="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow v-for="i in r.money.installments" :key="i.sequence">
+                        <TableCell>{{ i.sequence }} of {{ r.money.installments.length }}</TableCell>
+                        <TableCell>{{ date(i.dueDate) }}</TableCell>
+                        <TableCell><StatusBadge :status="i.status" /></TableCell>
+                        <TableCell class="text-right tabular-nums">{{ money(i.amountCents) }}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
                 </div>
-                <p v-if="!r.money.operations?.length && !r.money.installments?.length" class="text-muted-foreground">No transactions.</p>
               </CardContent>
             </Card>
           </TabsContent>

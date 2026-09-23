@@ -78,15 +78,18 @@ const pages = computed(() => data.value ? Math.max(1, Math.ceil(data.value.total
 const filtered = computed(() => !!(q.value || status.value !== 'any' || attention.value !== 'any' || pool.value !== 'any'))
 function reset() { q.value = ''; status.value = 'any'; attention.value = 'any'; pool.value = 'any' }
 
-const cols = [
+// One datum per column. Contact details live on the registration page.
+const cols = computed(() => [
   { key: 'participant', label: 'Participant' },
+  { key: null, label: 'Guardian' },
+  ...(allSessions.value ? [{ key: null, label: 'Session' }] : []),
   { key: 'grade', label: 'Grade' },
   { key: null, label: 'Group' },
   { key: 'status', label: 'Status' },
   { key: null, label: 'Health' },
   { key: null, label: 'Waivers' },
   { key: 'balance', label: 'Balance', right: true },
-] as const
+] as { key: string | null, label: string, right?: boolean }[])
 </script>
 
 <template>
@@ -132,7 +135,7 @@ const cols = [
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead v-for="c in cols" :key="c.label" :aria-sort="c.key ? ariaSort(c.key) : undefined" :class="'right' in c && c.right ? 'text-right' : ''">
+            <TableHead v-for="c in cols" :key="c.label" :aria-sort="c.key ? ariaSort(c.key) : undefined" :class="c.right ? 'text-right' : ''">
               <button v-if="c.key" class="inline-flex items-center gap-1 hover:text-foreground" @click="sortBy(c.key)">
                 {{ c.label }}
                 <ArrowUp v-if="sort === c.key && dir === 'asc'" class="size-3.5" />
@@ -144,10 +147,10 @@ const cols = [
         </TableHeader>
         <TableBody :class="loading && 'opacity-60'">
           <template v-if="!data">
-            <TableRow v-for="i in 8" :key="i"><TableCell :colspan="7"><Skeleton class="h-5" /></TableCell></TableRow>
+            <TableRow v-for="i in 8" :key="i"><TableCell :colspan="cols.length"><Skeleton class="h-5" /></TableCell></TableRow>
           </template>
           <TableRow v-else-if="!data.rows.length">
-            <TableCell :colspan="7" class="h-24 text-center text-muted-foreground">No registrations match these filters.</TableCell>
+            <TableCell :colspan="cols.length" class="h-24 text-center text-muted-foreground">No registrations match these filters.</TableCell>
           </TableRow>
           <TableRow
             v-for="r in data?.rows" :key="r.id"
@@ -156,11 +159,9 @@ const cols = [
             @click="router.push(`/admin/registrations/${r.id}`)"
             @keydown.enter="router.push(`/admin/registrations/${r.id}`)"
           >
-            <TableCell>
-              <div class="font-medium">{{ r.participant }}</div>
-              <div class="text-xs text-muted-foreground">{{ r.guardian }} · {{ r.email }}</div>
-              <div v-if="allSessions" class="text-xs text-muted-foreground">{{ r.program }} · {{ r.session }}</div>
-            </TableCell>
+            <TableCell class="font-medium">{{ r.participant }}</TableCell>
+            <TableCell class="text-muted-foreground">{{ r.guardian }}</TableCell>
+            <TableCell v-if="allSessions" class="whitespace-nowrap">{{ r.program }} · {{ r.session }}</TableCell>
             <TableCell class="tabular-nums">{{ r.grade }}</TableCell>
             <TableCell>{{ r.pool }}</TableCell>
             <TableCell><StatusBadge :status="r.status" /></TableCell>

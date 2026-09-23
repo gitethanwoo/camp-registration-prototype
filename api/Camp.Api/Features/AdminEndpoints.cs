@@ -252,7 +252,7 @@ public static class AdminEndpoints
             var pools = await db.CapacityPools.Where(p => p.SessionId == id).OrderBy(p => p.SortOrder).AsNoTracking().ToListAsync();
             var entries = await db.WaitlistEntries.Where(w => w.Pool.SessionId == id && w.Status != WaitlistStatus.Removed)
                 .Include(w => w.Person).OrderBy(w => w.PoolId).ThenBy(w => w.Position).AsNoTracking().ToListAsync();
-            var households = await db.Households.Where(h => entries.Select(e => e.HouseholdId).Contains(h.Id)).AsNoTracking().ToDictionaryAsync(h => h.Id);
+            var households = await db.Households.Where(h => entries.Select(e => e.HouseholdId).Contains(h.Id)).Include(h => h.Members).AsNoTracking().ToDictionaryAsync(h => h.Id);
             var session = await db.Sessions.AsNoTracking().SingleAsync(s => s.Id == id);
             return new
             {
@@ -262,7 +262,7 @@ public static class AdminEndpoints
                     Entries = entries.Where(e => e.PoolId == p.Id).Select(e => new
                     {
                         e.Id, e.Position, Participant = e.Person.FullName, Grade = Eligibility.GradeFor(e.Person.DateOfBirth, session.StartDate),
-                        Guardian = households[e.HouseholdId].Email, Status = e.Status.ToString(), e.OfferExpiresAt, e.CreatedAt,
+                        Guardian = households[e.HouseholdId].Members.Where(m => m.IsAdult).OrderBy(m => m.Id).Select(m => m.FullName).FirstOrDefault(), Status = e.Status.ToString(), e.OfferExpiresAt, e.CreatedAt,
                     }),
                 }).Where(p => p.Entries.Any() || p.Remaining == 0),
             };
