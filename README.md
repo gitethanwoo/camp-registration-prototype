@@ -2,7 +2,7 @@
 
 A working prototype of the core camp registration flow for WinShape: program discovery, the "happy path" family registration (including a full group that routes to the waitlist), and the staff console. The stack is **.NET 10**, **Vue 3**, and **SQL Server**.
 
-> Unofficial prototype built for an RFP response. Not affiliated with or endorsed by WinShape. All people and data are fictional seed data.
+> All people and data are fictional seed data.
 
 ![stack](https://img.shields.io/badge/.NET-10-512BD4) ![vue](https://img.shields.io/badge/Vue-3-42b883) ![sql](https://img.shields.io/badge/SQL%20Server-2022-CC2927)
 
