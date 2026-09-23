@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search, X } from '@lucide/vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import type { ColumnDef, SortingState } from '@tanstack/vue-table'
+import { ChevronLeft, ChevronRight, Search, X } from '@lucide/vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAdminScope } from '@/composables/useAdminScope'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { DataTable, DataTableColumnHeader } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api'
 import { money } from '@/lib/format'
 
@@ -69,27 +71,39 @@ watch([qDebounced, status, attention, pool, allSessions], () => { page.value = 1
 watch(() => route.query.all, (v) => { if (v === '1') allSessions.value = true })
 watch(params, load)
 
-function sortBy(col: string) {
-  if (sort.value === col) dir.value = dir.value === 'asc' ? 'desc' : 'asc'
-  else { sort.value = col; dir.value = col === 'balance' ? 'desc' : 'asc' }
-}
-const ariaSort = (col: string) => sort.value === col ? (dir.value === 'asc' ? 'ascending' : 'descending') : 'none'
+// Sorting happens server-side; the table just reads and writes sort/dir.
+const sorting = computed<SortingState>({
+  get: () => [{ id: sort.value, desc: dir.value === 'desc' }],
+  set: ([s]) => { if (s) { sort.value = s.id; dir.value = s.desc ? 'desc' : 'asc' } },
+})
 const pages = computed(() => data.value ? Math.max(1, Math.ceil(data.value.total / data.value.pageSize)) : 1)
 const filtered = computed(() => !!(q.value || status.value !== 'any' || attention.value !== 'any' || pool.value !== 'any'))
 function reset() { q.value = ''; status.value = 'any'; attention.value = 'any'; pool.value = 'any' }
 
+const sortable = (title: string): ColumnDef<Row>['header'] => ({ column }) => h(DataTableColumnHeader<Row>, { column, title })
+
 // One datum per column. Contact details live on the registration page.
-const cols = computed(() => [
-  { key: 'participant', label: 'Participant' },
-  { key: null, label: 'Guardian' },
-  ...(allSessions.value ? [{ key: null, label: 'Session' }] : []),
-  { key: 'grade', label: 'Grade' },
-  { key: null, label: 'Group' },
-  { key: 'status', label: 'Status' },
-  { key: null, label: 'Health' },
-  { key: null, label: 'Waivers' },
-  { key: 'balance', label: 'Balance', right: true },
-] as { key: string | null, label: string, right?: boolean }[])
+const columns = computed<ColumnDef<Row>[]>(() => [
+  { accessorKey: 'participant', header: sortable('Participant'), enableSorting: true, meta: { cellClass: 'font-medium' } },
+  { accessorKey: 'guardian', header: 'Guardian', meta: { cellClass: 'text-muted-foreground' } },
+  ...(allSessions.value
+    ? [{ id: 'session', header: 'Session', cell: ({ row }) => `${row.original.program} · ${row.original.session}`, meta: { cellClass: 'whitespace-nowrap' } } satisfies ColumnDef<Row>]
+    : []),
+  { accessorKey: 'grade', header: sortable('Grade'), enableSorting: true, meta: { cellClass: 'tabular-nums' } },
+  { accessorKey: 'pool', header: 'Group' },
+  { accessorKey: 'status', header: sortable('Status'), enableSorting: true },
+  { accessorKey: 'health', header: 'Health' },
+  {
+    id: 'waivers', header: 'Waivers',
+    cell: ({ row }) => `${row.original.waiversSigned}/${row.original.waiversRequired}`,
+    meta: { cellClass: r => ['tabular-nums', r.waiversSigned < r.waiversRequired ? 'font-medium text-destructive' : 'text-muted-foreground'] },
+  },
+  {
+    accessorKey: 'balance', header: sortable('Balance'), enableSorting: true, sortDescFirst: true,
+    cell: ({ row }) => row.original.balance > 0 ? money(row.original.balance) : '—',
+    meta: { class: 'text-right', cellClass: r => ['tabular-nums', r.balance > 0 ? 'font-medium' : 'text-muted-foreground'] },
+  },
+])
 </script>
 
 <template>
@@ -125,53 +139,28 @@ const cols = computed(() => [
         </SelectContent>
       </Select>
       <Button v-if="filtered" variant="ghost" size="sm" @click="reset"><X class="size-4" />Reset</Button>
-      <label class="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-        <input v-model="allSessions" type="checkbox" class="size-4 accent-primary">
-        Search all ministries
-      </label>
+      <div class="ml-auto flex items-center gap-2">
+        <Checkbox id="all-sessions" v-model="allSessions" />
+        <Label for="all-sessions" class="font-normal text-muted-foreground">Search all ministries</Label>
+      </div>
     </div>
 
-    <div class="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead v-for="c in cols" :key="c.label" :aria-sort="c.key ? ariaSort(c.key) : undefined" :class="c.right ? 'text-right' : ''">
-              <button v-if="c.key" class="inline-flex items-center gap-1 hover:text-foreground" @click="sortBy(c.key)">
-                {{ c.label }}
-                <ArrowUp v-if="sort === c.key && dir === 'asc'" class="size-3.5" />
-                <ArrowDown v-else-if="sort === c.key" class="size-3.5" />
-              </button>
-              <template v-else>{{ c.label }}</template>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody :class="loading && 'opacity-60'">
-          <template v-if="!data">
-            <TableRow v-for="i in 8" :key="i"><TableCell :colspan="cols.length"><Skeleton class="h-5" /></TableCell></TableRow>
-          </template>
-          <TableRow v-else-if="!data.rows.length">
-            <TableCell :colspan="cols.length" class="h-24 text-center text-muted-foreground">No registrations match these filters.</TableCell>
-          </TableRow>
-          <TableRow
-            v-for="r in data?.rows" :key="r.id"
-            class="cursor-pointer"
-            tabindex="0"
-            @click="router.push(`/admin/registrations/${r.id}`)"
-            @keydown.enter="router.push(`/admin/registrations/${r.id}`)"
-          >
-            <TableCell class="font-medium">{{ r.participant }}</TableCell>
-            <TableCell class="text-muted-foreground">{{ r.guardian }}</TableCell>
-            <TableCell v-if="allSessions" class="whitespace-nowrap">{{ r.program }} · {{ r.session }}</TableCell>
-            <TableCell class="tabular-nums">{{ r.grade }}</TableCell>
-            <TableCell>{{ r.pool }}</TableCell>
-            <TableCell><StatusBadge :status="r.status" /></TableCell>
-            <TableCell><StatusBadge :status="r.health" :label="r.healthMechanism === 'CampDoc' && r.health === 'Incomplete' ? 'CampDoc incomplete' : undefined" /></TableCell>
-            <TableCell :class="r.waiversSigned < r.waiversRequired ? 'font-medium text-destructive' : 'text-muted-foreground'" class="tabular-nums">{{ r.waiversSigned }}/{{ r.waiversRequired }}</TableCell>
-            <TableCell class="text-right tabular-nums" :class="r.balance > 0 ? 'font-medium' : 'text-muted-foreground'">{{ r.balance > 0 ? money(r.balance) : '—' }}</TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
-    </div>
+    <DataTable
+      v-model:sorting="sorting"
+      :columns="columns"
+      :data="data?.rows"
+      :loading="loading"
+      manual-sorting
+      :skeleton-rows="8"
+      :get-row-id="r => String(r.id)"
+      empty-text="No registrations match these filters."
+      @row-click="r => router.push(`/admin/registrations/${r.id}`)"
+    >
+      <template #cell-status="{ row }"><StatusBadge :status="row.status" /></template>
+      <template #cell-health="{ row }">
+        <StatusBadge :status="row.health" :label="row.healthMechanism === 'CampDoc' && row.health === 'Incomplete' ? 'CampDoc incomplete' : undefined" />
+      </template>
+    </DataTable>
 
     <div v-if="data" class="flex items-center justify-between text-sm text-muted-foreground">
       <span>{{ data.total }} {{ data.total === 1 ? 'registration' : 'registrations' }}</span>

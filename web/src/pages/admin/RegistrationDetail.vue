@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Lock, Mail, Phone } from '@lucide/vue'
+import type { ColumnDef } from '@tanstack/vue-table'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -9,10 +10,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { api, ApiError } from '@/lib/api'
@@ -43,6 +44,28 @@ interface Detail {
   audit: { actor: string, action: string, detail: string, createdAt: string }[]
   messages: { type: string, target: string, createdAt: string, processedAt: string | null }[]
 }
+
+type Operation = NonNullable<Detail['money']['operations']>[number]
+type Installment = NonNullable<Detail['money']['installments']>[number]
+
+const operationColumns: ColumnDef<Operation>[] = [
+  { accessorKey: 'createdAt', header: 'Date', cell: ({ row }) => dateTime(row.original.createdAt), meta: { cellClass: 'whitespace-nowrap' } },
+  { accessorKey: 'kind', header: 'Type', cell: ({ row }) => row.original.succeeded ? row.original.kind : `${row.original.kind} (failed)` },
+  { accessorKey: 'cardLast4', header: 'Card', cell: ({ row }) => row.original.cardLast4 ? `···${row.original.cardLast4}` : '—', meta: { cellClass: 'tabular-nums text-muted-foreground' } },
+  { accessorKey: 'processorRef', header: 'Reference', meta: { class: 'hidden lg:table-cell', cellClass: 'font-mono text-xs text-muted-foreground' } },
+  { accessorKey: 'reason', header: 'Note', cell: ({ row }) => row.original.reason ?? '—', meta: { class: 'hidden md:table-cell', cellClass: 'max-w-48 truncate text-muted-foreground' } },
+  {
+    accessorKey: 'amountCents', header: 'Amount',
+    cell: ({ row }) => `${row.original.kind === 'Refund' ? '−' : ''}${money(row.original.amountCents)}`,
+    meta: { class: 'text-right', cellClass: op => ['tabular-nums', !op.succeeded && 'text-destructive line-through'] },
+  },
+]
+const installmentColumns: ColumnDef<Installment>[] = [
+  { accessorKey: 'sequence', header: 'Installment', cell: ({ row, table }) => `${row.original.sequence} of ${table.getCoreRowModel().rows.length}` },
+  { accessorKey: 'dueDate', header: 'Due', cell: ({ row }) => date(row.original.dueDate) },
+  { accessorKey: 'status', header: 'Status' },
+  { accessorKey: 'amountCents', header: 'Amount', cell: ({ row }) => money(row.original.amountCents), meta: { class: 'text-right', cellClass: 'tabular-nums' } },
+]
 
 const props = defineProps<{ id: number }>()
 const r = ref<Detail | null>(null)
@@ -194,55 +217,15 @@ async function cancel() {
               <CardHeader><CardTitle>Transactions</CardTitle><CardDescription>Order-level; shared by everyone on this order.</CardDescription></CardHeader>
               <CardContent>
                 <p v-if="!r.money.operations?.length" class="text-sm text-muted-foreground">No transactions.</p>
-                <div v-else class="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Card</TableHead>
-                        <TableHead class="hidden lg:table-cell">Reference</TableHead>
-                        <TableHead class="hidden md:table-cell">Note</TableHead>
-                        <TableHead class="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <TableRow v-for="op in r.money.operations" :key="op.id">
-                        <TableCell class="whitespace-nowrap">{{ dateTime(op.createdAt) }}</TableCell>
-                        <TableCell>{{ op.succeeded ? op.kind : `${op.kind} (failed)` }}</TableCell>
-                        <TableCell class="tabular-nums text-muted-foreground">{{ op.cardLast4 ? `···${op.cardLast4}` : '—' }}</TableCell>
-                        <TableCell class="hidden font-mono text-xs text-muted-foreground lg:table-cell">{{ op.processorRef }}</TableCell>
-                        <TableCell class="hidden max-w-48 truncate text-muted-foreground md:table-cell" :title="op.reason ?? undefined">{{ op.reason ?? '—' }}</TableCell>
-                        <TableCell :class="['text-right tabular-nums', !op.succeeded && 'text-destructive line-through']">{{ op.kind === 'Refund' ? '−' : '' }}{{ money(op.amountCents) }}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
+                <DataTable v-else :columns="operationColumns" :data="r.money.operations" :get-row-id="op => String(op.id)" />
               </CardContent>
             </Card>
             <Card v-if="r.money.installments?.length">
               <CardHeader><CardTitle>Scheduled payments</CardTitle></CardHeader>
               <CardContent>
-                <div class="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Installment</TableHead>
-                        <TableHead>Due</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead class="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <TableRow v-for="i in r.money.installments" :key="i.sequence">
-                        <TableCell>{{ i.sequence }} of {{ r.money.installments.length }}</TableCell>
-                        <TableCell>{{ date(i.dueDate) }}</TableCell>
-                        <TableCell><StatusBadge :status="i.status" /></TableCell>
-                        <TableCell class="text-right tabular-nums">{{ money(i.amountCents) }}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
+                <DataTable :columns="installmentColumns" :data="r.money.installments" :get-row-id="i => String(i.sequence)">
+                  <template #cell-status="{ row: i }"><StatusBadge :status="i.status" /></template>
+                </DataTable>
               </CardContent>
             </Card>
           </TabsContent>
@@ -281,8 +264,10 @@ async function cancel() {
                 <p class="font-medium">{{ a.firstName }} {{ a.lastName }}</p>
                 <p class="text-muted-foreground">{{ a.role }}</p>
               </div>
-              <a :href="`mailto:${r.household.email}`" class="flex items-center gap-2 underline-offset-4 hover:underline"><Mail class="size-4" />{{ r.household.email }}</a>
-              <a :href="`tel:${r.household.phone}`" class="flex items-center gap-2 underline-offset-4 hover:underline"><Phone class="size-4" />{{ r.household.phone }}</a>
+              <div class="flex flex-col items-start">
+                <Button variant="link" as-child class="h-auto px-0 py-1 text-foreground"><a :href="`mailto:${r.household.email}`"><Mail />{{ r.household.email }}</a></Button>
+                <Button variant="link" as-child class="h-auto px-0 py-1 text-foreground"><a :href="`tel:${r.household.phone}`"><Phone />{{ r.household.phone }}</a></Button>
+              </div>
               <p v-if="r.household.salesforceId" class="text-xs text-muted-foreground">Salesforce {{ r.household.salesforceId }}</p>
             </CardContent>
           </Card>

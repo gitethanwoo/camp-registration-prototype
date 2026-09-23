@@ -1,12 +1,13 @@
 <script setup lang="ts">
+import type { ColumnDef } from '@tanstack/vue-table'
 import { onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { useAdminScope } from '@/composables/useAdminScope'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
 
@@ -40,7 +41,14 @@ async function save(p: Pool) {
   catch (e) { errors.value[p.id] = e instanceof ApiError ? e.message : 'Save failed.' }
   finally { saving.value = null }
 }
-const audience = (p: Pool) => `${p.gender ? (p.gender === 'Male' ? 'Boys' : 'Girls') + ', ' : ''}${p.gradeMin >= 99 ? 'adults' : p.gradeMin === p.gradeMax ? `grade ${p.gradeMin}` : `grades ${p.gradeMin}–${p.gradeMax}`}`
+const columns: ColumnDef<Pool>[] = [
+  { accessorKey: 'name', header: 'Pool', meta: { cellClass: 'font-medium' } },
+  { id: 'who', header: 'Who', cell: ({ row }) => audience(row.original), meta: { cellClass: 'text-muted-foreground' } },
+  { accessorKey: 'reserved', header: 'Taken', meta: { class: 'text-right', cellClass: 'tabular-nums' } },
+  { accessorKey: 'waitlisted', header: 'Waitlist', cell: ({ row }) => row.original.waitlisted || '—', meta: { class: 'text-right', cellClass: 'tabular-nums' } },
+  { accessorKey: 'capacity', header: 'Capacity', meta: { class: 'w-48' } },
+]
+function audience(p: Pool) { return `${p.gender ? (p.gender === 'Male' ? 'Boys' : 'Girls') + ', ' : ''}${p.gradeMin >= 99 ? 'adults' : p.gradeMin === p.gradeMax ? `grade ${p.gradeMin}` : `grades ${p.gradeMin}–${p.gradeMax}`}` }
 </script>
 
 <template>
@@ -71,34 +79,15 @@ const audience = (p: Pool) => `${p.gender ? (p.gender === 'Male' ? 'Boys' : 'Gir
           <CardDescription>Each camper is placed in exactly one pool by gender and grade. Capacity can't drop below seats already taken.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Pool</TableHead>
-                  <TableHead>Who</TableHead>
-                  <TableHead class="text-right">Taken</TableHead>
-                  <TableHead class="text-right">Waitlist</TableHead>
-                  <TableHead class="w-48">Capacity</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow v-for="p in s.pools" :key="p.id">
-                  <TableCell class="font-medium">{{ p.name }}</TableCell>
-                  <TableCell class="text-muted-foreground">{{ audience(p) }}</TableCell>
-                  <TableCell class="text-right tabular-nums">{{ p.reserved }}</TableCell>
-                  <TableCell class="text-right tabular-nums">{{ p.waitlisted || '—' }}</TableCell>
-                  <TableCell>
-                    <form class="flex items-center gap-2" @submit.prevent="save(p)">
-                      <Input v-model="edits[p.id]" type="number" :min="p.reserved" class="h-8 w-20" :aria-label="`${p.name} capacity`" :aria-invalid="!!errors[p.id] || undefined" />
-                      <Button size="sm" variant="outline" type="submit" :disabled="saving === p.id || Number(edits[p.id]) === p.capacity">Save</Button>
-                    </form>
-                    <p v-if="errors[p.id]" class="mt-1 text-xs text-destructive" role="alert">{{ errors[p.id] }}</p>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
+          <DataTable :columns="columns" :data="s.pools" :get-row-id="p => String(p.id)">
+            <template #cell-capacity="{ row: p }">
+              <form class="flex items-center gap-2" @submit.prevent="save(p)">
+                <Input v-model="edits[p.id]" type="number" :min="p.reserved" class="h-8 w-20" :aria-label="`${p.name} capacity`" :aria-invalid="!!errors[p.id] || undefined" />
+                <Button size="sm" variant="outline" type="submit" :disabled="saving === p.id || Number(edits[p.id]) === p.capacity">Save</Button>
+              </form>
+              <p v-if="errors[p.id]" class="mt-1 text-xs text-destructive" role="alert">{{ errors[p.id] }}</p>
+            </template>
+          </DataTable>
         </CardContent>
       </Card>
     </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ColumnDef } from '@tanstack/vue-table'
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -6,16 +7,31 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { useAdminScope } from '@/composables/useAdminScope'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { DataTable } from '@/components/ui/data-table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api, ApiError } from '@/lib/api'
 import { dateTime } from '@/lib/format'
 
 interface Entry { id: number, position: number, participant: string, grade: number, guardian: string, status: string, offerExpiresAt: string | null, createdAt: string }
 interface PoolWaitlist { id: number, name: string, capacity: number, reserved: number, remaining: number, entries: Entry[] }
+
+const columns: ColumnDef<Entry>[] = [
+  { accessorKey: 'position', header: '#', meta: { class: 'w-12', cellClass: 'tabular-nums' } },
+  { accessorKey: 'participant', header: 'Camper', meta: { cellClass: 'font-medium' } },
+  { accessorKey: 'grade', header: 'Grade', meta: { cellClass: 'tabular-nums' } },
+  { accessorKey: 'guardian', header: 'Guardian', meta: { class: 'hidden lg:table-cell', cellClass: 'text-muted-foreground' } },
+  { accessorKey: 'createdAt', header: 'Joined', cell: ({ row }) => dateTime(row.original.createdAt), meta: { class: 'hidden xl:table-cell', cellClass: 'text-muted-foreground' } },
+  { accessorKey: 'status', header: 'Status' },
+  {
+    accessorKey: 'offerExpiresAt', header: 'Offer expires',
+    cell: ({ row }) => row.original.status === 'Offered' && row.original.offerExpiresAt ? dateTime(row.original.offerExpiresAt) : '—',
+    meta: { cellClass: 'whitespace-nowrap text-muted-foreground' },
+  },
+  { id: 'actions', header: 'Actions', meta: { class: 'text-right', cellClass: 'space-x-2 whitespace-nowrap' } },
+]
 
 const { sessionId, ready } = useAdminScope()
 const pools = ref<PoolWaitlist[] | null>(null)
@@ -78,42 +94,17 @@ async function confirm() {
         <CardDescription>
           {{ p.reserved }} / {{ p.capacity }} taken ·
           <span :class="p.remaining > 0 ? 'font-medium text-emerald-700' : ''">{{ p.remaining > 0 ? `${p.remaining} open to offer` : 'Full' }}</span>
-          <template v-if="p.remaining === 0"> · <RouterLink to="/admin/session" class="underline">raise capacity</RouterLink> or wait for a cancellation</template>
+          <template v-if="p.remaining === 0"> · <Button variant="link" as-child class="h-auto p-0 text-sm"><RouterLink to="/admin/session">raise capacity</RouterLink></Button> or wait for a cancellation</template>
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div class="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead class="w-12">#</TableHead>
-                <TableHead>Camper</TableHead>
-                <TableHead>Grade</TableHead>
-                <TableHead class="hidden lg:table-cell">Guardian</TableHead>
-                <TableHead class="hidden xl:table-cell">Joined</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Offer expires</TableHead>
-                <TableHead class="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-if="!p.entries.length"><TableCell colspan="8" class="text-center text-muted-foreground">Nobody waiting.</TableCell></TableRow>
-              <TableRow v-for="e in p.entries" :key="e.id">
-                <TableCell class="tabular-nums">{{ e.position }}</TableCell>
-                <TableCell class="font-medium">{{ e.participant }}</TableCell>
-                <TableCell class="tabular-nums">{{ e.grade }}</TableCell>
-                <TableCell class="hidden text-muted-foreground lg:table-cell">{{ e.guardian }}</TableCell>
-                <TableCell class="hidden text-muted-foreground xl:table-cell">{{ dateTime(e.createdAt) }}</TableCell>
-                <TableCell><StatusBadge :status="e.status" /></TableCell>
-                <TableCell class="whitespace-nowrap text-muted-foreground">{{ e.status === 'Offered' && e.offerExpiresAt ? dateTime(e.offerExpiresAt) : '—' }}</TableCell>
-                <TableCell class="space-x-2 text-right whitespace-nowrap">
-                  <Button v-if="e.status === 'Waiting'" size="sm" :disabled="p.remaining <= 0" :title="p.remaining <= 0 ? 'No open spots in this pool' : undefined" @click="openOffer(e, p)">Offer spot</Button>
-                  <Button v-if="e.status === 'Waiting' || e.status === 'Offered'" size="sm" variant="ghost" @click="openRemove(e, p)">Remove</Button>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable :columns="columns" :data="p.entries" :get-row-id="e => String(e.id)" empty-text="Nobody waiting.">
+          <template #cell-status="{ row: e }"><StatusBadge :status="e.status" /></template>
+          <template #cell-actions="{ row: e }">
+            <Button v-if="e.status === 'Waiting'" size="sm" :disabled="p.remaining <= 0" :title="p.remaining <= 0 ? 'No open spots in this pool' : undefined" @click="openOffer(e, p)">Offer spot</Button>
+            <Button v-if="e.status === 'Waiting' || e.status === 'Offered'" size="sm" variant="ghost" @click="openRemove(e, p)">Remove</Button>
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
 

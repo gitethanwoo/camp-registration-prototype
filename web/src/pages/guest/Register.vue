@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Check, ChevronUp, HeartPulse, Info, Loader2, Lock, ShieldCheck, TriangleAlert } from '@lucide/vue'
+import type { ColumnDef } from '@tanstack/vue-table'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -8,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -32,6 +34,12 @@ const ctx = ref<RegisterContext | null>(null)
 const loadError = ref<string | null>(null)
 const quote = ref<Quote | null>(null)
 const attempted = ref(false)
+
+const scheduleColumns: ColumnDef<Quote['schedule'][number]>[] = [
+  { accessorKey: 'label', header: 'Payment' },
+  { accessorKey: 'dueDate', header: 'Due', cell: ({ row }) => row.original.dueDate ? date(row.original.dueDate) : 'Today', meta: { cellClass: 'text-muted-foreground' } },
+  { accessorKey: 'amountCents', header: 'Amount', cell: ({ row }) => money(row.original.amountCents), meta: { class: 'text-right', cellClass: 'tabular-nums' } },
+]
 
 const steps = [
   { key: 'participants', label: 'Participants' },
@@ -249,9 +257,9 @@ const paymentOptions = computed(() => {
     </div>
 
     <template v-else>
-      <button class="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground" @click="back">
-        <ArrowLeft class="size-4" />{{ draft.step === 0 ? ctx.program.name : 'Back' }}
-      </button>
+      <Button variant="ghost" size="sm" class="-ml-2.5 mb-4 text-muted-foreground" @click="back">
+        <ArrowLeft />{{ draft.step === 0 ? ctx.program.name : 'Back' }}
+      </Button>
       <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">Register for {{ ctx.program.name }}</h1>
       <p class="mt-1 text-muted-foreground">{{ ctx.session.name }} · {{ dateRange(ctx.session.startDate, ctx.session.endDate) }}</p>
 
@@ -263,10 +271,11 @@ const paymentOptions = computed(() => {
         </ol>
         <ol class="hidden items-center gap-2 md:flex">
           <li v-for="(s, i) in steps" :key="s.key" class="flex flex-1 items-center gap-2 last:flex-none">
-            <button
+            <Button
+              variant="ghost"
               :disabled="i >= draft.step"
               :aria-current="i === draft.step ? 'step' : undefined"
-              class="flex items-center gap-2 rounded-md text-sm disabled:cursor-default"
+              class="h-auto p-0 font-normal hover:bg-transparent disabled:opacity-100"
               @click="goTo(i)"
             >
               <span :class="cn('flex size-7 items-center justify-center rounded-full border text-xs font-medium',
@@ -275,7 +284,7 @@ const paymentOptions = computed(() => {
                 <Check v-if="i < draft.step" class="size-4" /><template v-else>{{ i + 1 }}</template>
               </span>
               <span :class="i === draft.step ? 'font-medium' : 'text-muted-foreground'">{{ s.label }}</span>
-            </button>
+            </Button>
             <Separator v-if="i < steps.length - 1" :class="cn('flex-1', i < draft.step && 'bg-primary')" />
           </li>
         </ol>
@@ -501,18 +510,9 @@ const paymentOptions = computed(() => {
                   </Label>
                 </RadioGroup>
 
-                <div v-if="quote && draft.paymentOption === 'Plan'" class="mt-4 rounded-lg border">
-                  <table class="w-full text-sm">
-                    <caption class="sr-only">Payment schedule</caption>
-                    <tbody class="divide-y">
-                      <tr v-for="(s, i) in quote.schedule" :key="i">
-                        <td class="px-4 py-2">{{ s.label }}</td>
-                        <td class="px-4 py-2 text-muted-foreground">{{ s.dueDate ? date(s.dueDate) : 'Today' }}</td>
-                        <td class="px-4 py-2 text-right tabular-nums">{{ money(s.amountCents) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p class="border-t px-4 py-2 text-xs text-muted-foreground">Charged automatically to the card you use today. Final payment is due before camp starts.</p>
+                <div v-if="quote && draft.paymentOption === 'Plan'" class="mt-4 space-y-2">
+                  <DataTable :columns="scheduleColumns" :data="quote.schedule" />
+                  <p class="text-xs text-muted-foreground">Charged automatically to the card you use today. Final payment is due before camp starts.</p>
                 </div>
 
                 <Separator class="my-6" />
@@ -527,7 +527,7 @@ const paymentOptions = computed(() => {
                   <span v-if="quote?.discountError" class="text-destructive">{{ quote.discountError }}</span>
                   <span v-else-if="quote?.appliedDiscountCode" class="text-emerald-700">
                     {{ quote.appliedDiscountCode }} applied: −{{ money(quote.discountCents) }}
-                    <button type="button" class="ml-2 text-muted-foreground underline" @click="removeCode">Remove</button>
+                    <Button type="button" variant="link" size="sm" class="ml-1 h-auto p-0 text-muted-foreground" @click="removeCode">Remove</Button>
                   </span>
                 </p>
               </CardContent>
@@ -572,8 +572,8 @@ const paymentOptions = computed(() => {
                   </div>
                 </fieldset>
                 <p class="mt-3 text-xs text-muted-foreground">
-                  Test cards: <button class="font-mono underline" @click="card = { number: '4242 4242 4242 4242', expiry: '12 / 29', cvc: '123', zip: '30303' }">4242 4242 4242 4242</button> approves,
-                  <button class="font-mono underline" @click="card = { number: '4000 0000 0000 0002', expiry: '12 / 29', cvc: '123', zip: '30303' }">4000 0000 0000 0002</button> declines.
+                  Test cards: <Button variant="link" class="h-auto p-0 font-mono text-xs text-muted-foreground" @click="card = { number: '4242 4242 4242 4242', expiry: '12 / 29', cvc: '123', zip: '30303' }">4242 4242 4242 4242</Button> approves,
+                  <Button variant="link" class="h-auto p-0 font-mono text-xs text-muted-foreground" @click="card = { number: '4000 0000 0000 0002', expiry: '12 / 29', cvc: '123', zip: '30303' }">4000 0000 0000 0002</Button> declines.
                 </p>
               </CardContent>
             </Card>
