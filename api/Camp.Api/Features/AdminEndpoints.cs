@@ -142,7 +142,8 @@ public static class AdminEndpoints
                 .AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             if (r is null) return Results.NotFound();
             var h = await db.Households.Include(x => x.Members).AsNoTracking().SingleAsync(x => x.Id == r.HouseholdId);
-            var siblings = await db.Registrations.Where(x => x.HouseholdId == h.Id && x.Id != id).Include(x => x.Person).Include(x => x.Session).ThenInclude(s => s.Program).AsNoTracking()
+            // Registrations compensated after a declined card never existed as far as staff are concerned.
+            var siblings = await db.Registrations.Where(x => x.HouseholdId == h.Id && x.Id != id && x.Order!.Status != OrderStatus.Declined).Include(x => x.Person).Include(x => x.Session).ThenInclude(s => s.Program).AsNoTracking()
                 .Select(x => new { x.Id, Participant = x.Person.FirstName, Program = x.Session.Program.Name, Session = x.Session.Name, Status = x.Status.ToString() }).ToListAsync();
             var code = r.Order?.ConfirmationCode ?? "";
             var audit = await db.AuditEvents.Where(a => (a.EntityType == "Registration" && a.EntityId == id.ToString()) || (a.EntityType == "PaymentOrder" && a.EntityId == r.OrderId.ToString()))

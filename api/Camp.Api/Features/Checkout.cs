@@ -79,7 +79,14 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             var ok = w.PerParticipant ? personIds.All(id => signedFor.Any(s => s.PersonId == id)) : signedFor.Count > 0;
             if (!ok) errors[$"waivers.{w.Id}"] = [$"{w.Title} must be accepted."];
         }
-        if (errors.Count > 0) throw new CheckoutValidationException(errors);
+        if (errors.Count > 0)
+        {
+            // A concurrent duplicate submit may have committed between the key check above and the
+            // "already registered" check; that's the same checkout, not a conflict.
+            var raced = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.IdempotencyKey == req.IdempotencyKey, ct);
+            if (raced is not null) return new(raced.ConfirmationCode, raced.Status, raced.DeclineReason);
+            throw new CheckoutValidationException(errors);
+        }
 
         var discount = string.IsNullOrWhiteSpace(req.DiscountCode) ? null
             : await db.DiscountCodes.FirstOrDefaultAsync(d => d.Code == req.DiscountCode.Trim().ToUpper(), ct);
