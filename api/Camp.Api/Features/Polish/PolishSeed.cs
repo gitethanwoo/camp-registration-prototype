@@ -11,10 +11,15 @@ namespace Camp.Api.Features.Polish;
 /// existing registrations gets a signature (families would have signed it at checkout). Runs after the slice
 /// seeds that add programs (finance 200, admittance and groups at 100+) and before setup's backfill (900),
 /// which gives the new waivers their version history. Safe to run on every start.
+/// It only touches the two programs that were seeded without one: a program that loses its waivers later must not
+/// get signatures made up for it on the next restart.
 /// </summary>
 public sealed class PolishSeed : ISeedModule
 {
     public const string FamilyCampWaiverTitle = "Family Camp Release and Waiver of Liability";
+
+    /// <summary>The programs seeded published with no waiver (finance's Family Camp, the admittance retreat).</summary>
+    internal static readonly string[] SeededWithoutWaiver = ["family-camp", "fall-marriage-retreat"];
 
     /// <inheritdoc />
     public int Order => 850;
@@ -22,7 +27,7 @@ public sealed class PolishSeed : ISeedModule
     /// <inheritdoc />
     public async Task RunAsync(CampDbContext db, CancellationToken ct)
     {
-        var programs = await db.Programs.Where(p => p.IsPublished && !p.Waivers.Any()).ToListAsync(ct);
+        var programs = await db.Programs.Where(p => SeededWithoutWaiver.Contains(p.Slug) && p.IsPublished && !p.Waivers.Any()).ToListAsync(ct);
         foreach (var program in programs)
         {
             var waiver = new WaiverTemplate { Title = StandardTitle(program.Name), Version = 1, EffectiveDate = new(2027, 11, 1), PerParticipant = true, Body = ReleaseText(program.Name) };
