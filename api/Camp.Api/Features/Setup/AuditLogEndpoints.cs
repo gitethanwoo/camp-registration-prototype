@@ -106,10 +106,10 @@ public sealed class AuditLogEndpoints : IEndpointModule
         _ => c.Length == 0 ? c : char.ToUpperInvariant(c[0]) + c[1..].Replace('_', ' '),
     };
 
+    /// <summary>"waiver.published" reads "Waiver published"; "discount.rule_created" reads "Discount rule created".</summary>
     static string ActionLabel(string action)
     {
-        var verb = action.Contains('.') ? action[(action.IndexOf('.') + 1)..] : action;
-        var text = verb.Replace('_', ' ');
+        var text = action.Replace('.', ' ').Replace('_', ' ').Trim();
         return text.Length == 0 ? action : char.ToUpperInvariant(text[0]) + text[1..];
     }
 

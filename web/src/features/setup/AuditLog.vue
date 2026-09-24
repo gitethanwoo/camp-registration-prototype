@@ -204,10 +204,12 @@ watch(openId, async (id) => {
               <ul class="divide-y rounded-lg border">
                 <li v-for="c in entry.changes" :key="c.field" class="space-y-1 p-3">
                   <p class="font-medium">{{ c.field }}</p>
-                  <p class="flex flex-wrap items-center gap-2">
-                    <span class="text-muted-foreground line-through">{{ c.before ?? 'empty' }}</span>
+                  <p v-if="c.before == null">Set to {{ c.after ?? 'nothing' }}</p>
+                  <p v-else-if="c.after == null" class="text-muted-foreground line-through">{{ c.before }}</p>
+                  <p v-else class="flex flex-wrap items-center gap-2">
+                    <span class="text-muted-foreground line-through">{{ c.before }}</span>
                     <ChevronRight class="size-3.5 text-muted-foreground" aria-label="changed to" />
-                    <span>{{ c.after ?? 'empty' }}</span>
+                    <span>{{ c.after }}</span>
                   </p>
                 </li>
               </ul>

@@ -35,6 +35,10 @@ const errors = ref<Record<string, string[]>>({})
 const message = ref<string | null>(null)
 const busy = ref(false)
 const readOnly = computed(() => !!props.rule && !props.rule.editable)
+// Preview on a real registered camper, plus the combination guard, from the server.
+const preview = ref<DiscountPreview | null>(null)
+const camper = ref<string>('')
+let timer: ReturnType<typeof setTimeout> | undefined
 
 watch(
   () => [props.open, props.rule?.id] as const,
@@ -79,10 +83,7 @@ const body = computed(() => ({
   stackable: form.stackable === 'yes',
 }))
 
-// Preview on a real registered camper, plus the combination guard, from the server.
-const preview = ref<DiscountPreview | null>(null)
-const camper = ref<string>('')
-let timer: ReturnType<typeof setTimeout> | undefined
+// Runs once both dates are set.
 watch(
   [body, camper, () => props.open],
   () => {
@@ -113,9 +114,9 @@ async function save() {
       toast.success(`${body.value.code} saved. Orders already placed keep their discount.`)
       emit('saved', props.rule.id)
     } else {
-      const res = await api.post<{ id: number }>('/admin/setup/discount-rules', body.value)
+      await api.post('/admin/setup/discount-rules', body.value)
       toast.success(`${body.value.code} is live at checkout from its start date.`)
-      emit('saved', res.id)
+      emit('saved')
     }
   } catch (e) {
     const err = saveError(e)
@@ -277,7 +278,9 @@ function amountText(r: DiscountRuleRow | null) {
 
         <Alert v-if="err('value') || preview?.guard" variant="destructive" role="alert">
           <TriangleAlert />
-          <AlertTitle>Combined discounts can't go over 100%</AlertTitle>
+          <AlertTitle>{{
+            preview?.guard ? "Combined discounts can't go over 100%" : 'Check the discount amount'
+          }}</AlertTitle>
           <AlertDescription>{{ err('value') ?? preview?.guard }}</AlertDescription>
         </Alert>
 
@@ -303,6 +306,9 @@ function amountText(r: DiscountRuleRow | null) {
               </SelectContent>
             </Select>
           </template>
+          <p v-else-if="!form.validFrom || !form.validTo" class="mt-1 text-sm text-muted-foreground">
+            Pick the valid dates to preview this rule on a registered camper.
+          </p>
           <p v-else class="mt-1 text-sm text-muted-foreground">
             No registered campers in this scope to preview on yet.
           </p>
