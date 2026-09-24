@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import StatusBadge from '@/components/StatusBadge.vue'
+import HealthRecordButton from '@/features/access/HealthRecordButton.vue'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -304,6 +305,7 @@ async function cancel() {
                         >Status synced from CampDoc.</template
                       >
                     </p>
+                    <HealthRecordButton v-if="r.healthOnFile" class="mt-2" :registration-id="id" />
                   </div>
                   <StatusBadge :status="r.healthStatus" />
                 </div>
