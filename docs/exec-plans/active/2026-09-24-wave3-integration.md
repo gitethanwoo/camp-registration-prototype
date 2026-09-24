@@ -17,7 +17,8 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 
 - [x] (2026-09-24) Worktree HEADs match their branches: forms 867913f, access 37873e1, polish 5c3b717. Nothing to bring over.
 - [x] (2026-09-24) Branch `wave3` from `main` (ab49826); merged `slice/polish` (no conflicts), then `slice/forms` (using-directive conflicts in `Checkout.cs` and `GuestEndpoints.cs`, both sides kept).
-- [ ] Merge `slice/access`; delete slice migrations; generate `Wave3`; fresh DB migrates and seeds.
+- [x] (2026-09-24) Merged `slice/access`: using-directive conflict in `ProgramSetupEndpoints.cs` (both kept); `web/src/pages/admin/RegistrationDetail.vue` Answers card takes forms' `FormAnswers` and drops the Allergies and Dietary rows, as access's review fix did.
+- [x] (2026-09-24) Deleted the `Forms` and `Access` migrations (polish had none), restored main's snapshot, generated `Wave3` (FormVersions, FormQuestions, FormAnswers, ProgramHealthSettings, StaffMembers, StaffSyncRuns). Neither slice migration had `migrationBuilder.Sql`. A fresh stack applies Initial, Wave1, Wave2, Wave3 and seeds with no exceptions; `/api/clock` reads 2028-03-02T15:00Z.
 - [ ] Clock sweep over forms and access code; a lint check that bans raw "now" reads outside the clock files.
 - [ ] Cross-slice fixes (health gating on staff answers, form four-eyes, Rome name and family spec, admittance spec locator, admittance waiver, staff No access shell).
 - [ ] Gates, test:api, two full e2e runs on a fresh stack.

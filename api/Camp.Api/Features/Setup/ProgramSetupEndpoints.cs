@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Access;
 using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,9 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
         setup.MapPost("/programs", async (ProgramInput req, CampDbContext db, IAuditLog audit, CancellationToken ct) =>
         {
             var errors = await Validate(db, req, ct);
+            // K9's rule, kept in one place: CampDoc outside Overnight Camp needs Health settings' explicit confirmation.
+            if (req.HealthMechanism == HealthMechanism.CampDoc && !HealthAccessRules.IsOvernight("", $"{req.Name}"))
+                errors["healthMechanism"] = ["CampDoc is used by Overnight Camp only. Create the program with another method, then change it under Setup › Health settings if you mean it."];
             if (errors.Count > 0) return SetupResults.Invalid(errors);
             var ministry = await db.Ministries.SingleAsync(m => m.Id == req.MinistryId, ct);
             var program = new CampProgram
@@ -80,6 +84,10 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
                 return SetupResults.Conflict($"{program.Name} is {StateLabel(state.State).ToLowerInvariant()}, so it can't be edited. Return it to draft first.");
             var errors = await Validate(db, req, ct);
             if (errors.Count > 0) return SetupResults.Invalid(errors);
+            // Health collection changes go through Setup › Health settings (K9), which guards CampDoc and audits
+            // health.settings_changed; this sheet shows the method read-only.
+            if (req.HealthMechanism != program.HealthMechanism)
+                return SetupResults.Invalid("healthMechanism", $"Change how {program.Name} collects health information under Setup › Health settings.");
             if (req.Type != program.Type && await db.Registrations.AnyAsync(r => r.Session.ProgramId == id, ct))
                 return SetupResults.Invalid("type", $"{program.Name} already has registrations, so its type can't change.");
 

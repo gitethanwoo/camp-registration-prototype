@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Access;
 using Camp.Api.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -39,7 +40,8 @@ public sealed class AuthEndpoints : IEndpointModule
             return Results.Redirect(workos.AuthorizationUrl(state).ToString());
         });
 
-        auth.MapGet("/callback", async (HttpContext http, WorkOsClient workos, CampDbContext db, IOptions<WorkOsOptions> options, string code, string state, CancellationToken ct) =>
+        auth.MapGet("/callback", async (HttpContext http, WorkOsClient workos, CampDbContext db, IOptions<WorkOsOptions> options, TimeProvider time, IAuditLog audit,
+            string code, string state, CancellationToken ct) =>
         {
             var saved = http.Request.Cookies[StateCookie]?.Split('|', 2);
             http.Response.Cookies.Delete(StateCookie);
@@ -49,7 +51,7 @@ public sealed class AuthEndpoints : IEndpointModule
 
             var id = await workos.AuthenticateAsync(code, ct);
             var staffRole = id.OrganizationId == options.Value.StaffOrganizationId ? id.Role : null;
-            await SignInAsync(http, db, id, staffRole, ct);
+            await SignInAsync(http, db, time, audit, id, staffRole, ct);
             // Host coordinators have their own portal; other staff land in the console.
             var landing = staffRole == "host" ? "/host" : "/admin";
             return Results.Redirect(returnTo == "/" && staffRole is not null ? landing : returnTo);
@@ -72,22 +74,25 @@ public sealed class AuthEndpoints : IEndpointModule
                 Email = user.FindFirstValue(ClaimTypes.Email),
                 Kind = role is null ? "family" : "staff",
                 Role = role,
+                // Staff only: display hints. Health reads check the database, not these claims.
+                MinistryId = user.FindFirstValue(AccessClaims.MinistryId),
+                HealthAccess = role is null ? (bool?)null : user.FindFirstValue(AccessClaims.HealthAccess) == "true",
             });
         });
 
         // Tests sign in without a browser. Never mapped outside the Testing environment.
         if (app.ServiceProvider.GetRequiredService<IHostEnvironment>().IsEnvironment("Testing"))
         {
-            auth.MapPost("/dev-login", async (HttpContext http, CampDbContext db, DevLoginRequest req, CancellationToken ct) =>
+            auth.MapPost("/dev-login", async (HttpContext http, CampDbContext db, TimeProvider time, IAuditLog audit, DevLoginRequest req, CancellationToken ct) =>
             {
                 var id = new WorkOsIdentity($"user_test_{req.Email}", req.Email, req.FirstName, req.LastName, null, req.StaffRole);
-                await SignInAsync(http, db, id, req.StaffRole, ct);
+                await SignInAsync(http, db, time, audit, id, req.StaffRole, ct);
                 return Results.NoContent();
             });
         }
     }
 
-    static async Task SignInAsync(HttpContext http, CampDbContext db, WorkOsIdentity id, string? staffRole, CancellationToken ct)
+    static async Task SignInAsync(HttpContext http, CampDbContext db, TimeProvider time, IAuditLog audit, WorkOsIdentity id, string? staffRole, CancellationToken ct)
     {
         var name = $"{id.FirstName} {id.LastName}".Trim();
         List<Claim> claims =
@@ -97,7 +102,13 @@ public sealed class AuthEndpoints : IEndpointModule
             new(ClaimTypes.Email, id.Email),
         ];
         if (staffRole is not null)
+        {
             claims.Add(new Claim(CampClaims.StaffRole, staffRole));
+            // Last sign-in, and the platform's own access attributes (K11), on the staff roster.
+            var member = await StaffSync.RecordSignInAsync(db, audit, id.UserId, id.Email, id.FirstName, id.LastName, staffRole, time.GetUtcNow().UtcDateTime, ct);
+            if (member.MinistryId is { } ministry) claims.Add(new Claim(AccessClaims.MinistryId, ministry.ToString(CultureInfo.InvariantCulture)));
+            claims.Add(new Claim(AccessClaims.HealthAccess, member.HealthAccess ? "true" : "false"));
+        }
         else
             claims.Add(new Claim(CampClaims.HouseholdId, (await HouseholdFor(db, id, ct)).ToString(CultureInfo.InvariantCulture)));
 

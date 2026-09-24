@@ -24,6 +24,8 @@ public static class AuthSetup
                 // An API: answer with status codes, never redirect to a login page.
                 o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
                 o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+                // A staff member revoked by a WorkOS sync loses the session on the next request, not when the cookie expires.
+                o.Events.OnValidatePrincipal = Features.Access.StaffSessionCheck.ValidateAsync;
             });
         services.AddAuthorization(Policies.Configure);
 

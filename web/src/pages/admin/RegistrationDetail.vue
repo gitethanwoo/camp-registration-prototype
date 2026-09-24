@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import StatusBadge from '@/components/StatusBadge.vue'
+import HealthRecordButton from '@/features/access/HealthRecordButton.vue'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -20,7 +21,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -40,9 +40,6 @@ interface Detail {
     lastName: string
     dateOfBirth: string
     gender: string
-    dietary: string | null
-    allergies: string | null
-    adaNeeds: string | null
   }
   household: {
     id: number
@@ -297,6 +294,7 @@ async function cancel() {
                         >Status synced from CampDoc.</template
                       >
                     </p>
+                    <HealthRecordButton v-if="r.healthOnFile" class="mt-2" :registration-id="id" />
                   </div>
                   <StatusBadge :status="r.healthStatus" />
                 </div>
@@ -320,20 +318,10 @@ async function cancel() {
             </Card>
             <Card>
               <CardHeader><CardTitle>Answers</CardTitle></CardHeader>
-              <CardContent class="space-y-4">
-                <!-- K6: the questions this registration answered, labelled with the form version (forms slice). -->
+              <CardContent>
+                <!-- K6: the questions this registration answered, labelled with the form version (forms slice).
+                     Health answers are shown only to staff with health access (access slice rules). -->
                 <FormAnswers :registration-id="id" />
-                <Separator />
-                <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt class="text-muted-foreground">Allergies</dt>
-                    <dd>{{ r.participant.allergies || 'None' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted-foreground">Dietary</dt>
-                    <dd>{{ r.participant.dietary || 'None' }}</dd>
-                  </div>
-                </dl>
               </CardContent>
             </Card>
           </TabsContent>
