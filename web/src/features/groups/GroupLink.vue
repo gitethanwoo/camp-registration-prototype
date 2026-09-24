@@ -134,8 +134,7 @@ async function requestWithdrawal() {
       </p>
       <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
         <span class="flex items-center gap-1.5"
-          ><CalendarDays class="size-4" />{{ view.session.name }} ·
-          {{ dateRange(view.session.startDate, view.session.endDate) }}</span
+          ><CalendarDays class="size-4" />{{ dateRange(view.session.startDate, view.session.endDate) }}</span
         >
         <span class="flex items-center gap-1.5"><MapPin class="size-4" />{{ view.program.location }}</span>
       </div>

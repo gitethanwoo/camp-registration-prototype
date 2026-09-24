@@ -217,7 +217,7 @@ const columns: ColumnDef<Attendee>[] = [
     cell: ({ row }) => (row.original.linkSentAt ? dateTime(row.original.linkSentAt) : '—'),
     meta: { class: 'hidden xl:table-cell', cellClass: 'whitespace-nowrap text-muted-foreground' },
   },
-  { id: 'actions', header: '', meta: { class: 'w-12 text-right' } },
+  { id: 'actions', header: '', meta: { class: 'w-44 text-right' } },
 ]
 </script>
 
@@ -257,7 +257,7 @@ const columns: ColumnDef<Attendee>[] = [
           :disabled="sending || !selected.size"
           @click="resend([...selected])"
         >
-          <Loader2 v-if="sending" class="size-4 animate-spin" /><Send v-else class="size-4" /> Resend link{{
+          <Loader2 v-if="sending" class="size-4 animate-spin" /><Send v-else class="size-4" /> Resend to selected{{
             selected.size ? ` (${selected.size})` : ''
           }}
         </Button>
@@ -371,19 +371,29 @@ const columns: ColumnDef<Attendee>[] = [
         </template>
         <template #cell-formStatus="{ row }"><StatusBadge :status="row.formStatus" /></template>
         <template #cell-actions="{ row }">
-          <DropdownMenu v-if="group.status === 'Confirmed'">
-            <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon" :aria-label="`Actions for ${row.name}`"><MoreHorizontal /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem :disabled="!row.email || sending" @select="resend([row.id])"
-                >Resend link</DropdownMenuItem
-              >
-              <DropdownMenuItem @select="openEmail(row)">{{
-                row.email ? 'Update email' : 'Add email'
-              }}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div v-if="group.status === 'Confirmed'" class="flex items-center justify-end gap-1">
+            <Button
+              v-if="row.email && row.formStatus !== 'Complete'"
+              variant="outline"
+              size="sm"
+              :disabled="sending"
+              @click="resend([row.id])"
+              >Resend link</Button
+            >
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon" :aria-label="`Actions for ${row.name}`"><MoreHorizontal /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem :disabled="!row.email || sending" @select="resend([row.id])"
+                  >Resend link</DropdownMenuItem
+                >
+                <DropdownMenuItem @select="openEmail(row)">{{
+                  row.email ? 'Update email' : 'Add email'
+                }}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </template>
       </DataTable>
 

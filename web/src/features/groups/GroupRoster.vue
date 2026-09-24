@@ -80,7 +80,8 @@ watch([rows, groupName], () => (dirty.value = true), { deep: true })
 const filled = computed(() => rows.value.filter((r) => r.name.trim() || r.email.trim()))
 const missingEmail = computed(() => filled.value.filter((r) => !r.email.trim()).length)
 const overCapacity = computed(() => !!ctx.value && filled.value.length > ctx.value.remaining)
-const otherGroups = computed(() => ctx.value?.existingGroups.filter((g) => g.id !== groupId.value) ?? [])
+const otherGroupsAll = computed(() => ctx.value?.existingGroups.filter((g) => g.id !== groupId.value) ?? [])
+const otherGroups = computed(() => otherGroupsAll.value.slice(0, 3))
 
 function addRow() {
   rows.value.push(row())
@@ -290,7 +291,7 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
           <template v-if="step === 'attendees'">
             <Alert>
               <Info class="size-4" />
-              <AlertTitle>Each attendee completes their own forms by link</AlertTitle>
+              <AlertTitle>Attendees finish their own forms</AlertTitle>
               <AlertDescription>
                 After you pay, we email every attendee a secure link to their waivers and questions. No account needed.
                 You'll see who's done on your tracker, but you can't fill in forms for them.
@@ -299,7 +300,10 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
 
             <Alert v-if="otherGroups.length">
               <Info class="size-4" />
-              <AlertTitle>You already have a group in this session</AlertTitle>
+              <AlertTitle
+                >You already have {{ otherGroupsAll.length === 1 ? 'a group' : `${otherGroupsAll.length} groups` }} in
+                this session</AlertTitle
+              >
               <AlertDescription>
                 <span>
                   <template v-for="(g, i) in otherGroups" :key="g.id"
@@ -310,6 +314,11 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
                       >{{ g.name }}</RouterLink
                     >
                     ({{ g.attendees }})</template
+                  ><template v-if="otherGroupsAll.length > otherGroups.length">
+                    and {{ otherGroupsAll.length - otherGroups.length }} more in
+                    <RouterLink class="font-medium text-foreground underline underline-offset-4" to="/groups"
+                      >Your groups</RouterLink
+                    ></template
                   >. Start a new roster below only for a separate group.
                 </span>
               </AlertDescription>
@@ -493,10 +502,20 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
 
               <div class="flex flex-col gap-2 pt-2 sm:flex-row lg:flex-col">
                 <template v-if="step === 'attendees'">
-                  <Button class="flex-1" size="lg" :disabled="saving || overCapacity" @click="toPayment">
+                  <Button
+                    class="sm:flex-1 lg:w-full lg:flex-none"
+                    size="lg"
+                    :disabled="saving || overCapacity"
+                    @click="toPayment"
+                  >
                     <Loader2 v-if="saving" class="size-4 animate-spin" />Continue to payment
                   </Button>
-                  <Button class="flex-1" variant="outline" size="lg" :disabled="saving" @click="saveDraft"
+                  <Button
+                    class="sm:flex-1 lg:w-full lg:flex-none"
+                    variant="outline"
+                    size="lg"
+                    :disabled="saving"
+                    @click="saveDraft"
                     >Save draft</Button
                   >
                   <p v-if="dirty && groupId" class="text-center text-xs text-amber-700">Unsaved changes</p>
