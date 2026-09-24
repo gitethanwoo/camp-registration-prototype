@@ -25,7 +25,7 @@ After this plan:
 
 - [x] (2026-09-24 00:00Z) Worktree `/Users/ethanwoo/dev/camp-wt/activities` on `slice/activities` from `main` 70609ee; read AGENTS.md, PLANS.md, QUALITY.md, the exec-plan index, the master plan, `docs/product/screen-specs.md` and the K8/O4/R4/P3/R5 concepts; read Checkout, GuestEndpoints, Register.vue, the Ops slice and the Family overview.
 - [x] (2026-09-24 17:10Z) Milestone 1: entities, `Activities` migration, seed, endpoints, checkout integration, O1/O5 change, `ActivitiesTests.cs` (18 tests; `npm run test:api` 238 passing, up from 220). Reverting the capacity guard, the decline release or the household check each fails tests (6 failures together).
-- [ ] Milestone 2: web K8, O4, R4, P3, R5, family route and checklist item, O1 update, local SVG images.
+- [x] (2026-09-24 19:40Z) Milestone 2: web slice `web/src/features/activities/` (K8 catalog and editor sheet, O4 schedule with block tabs, cell sheet, keep and move, assign preview; R4 `ActivityStep` with just-filled notice and suggested next choice; P3 page and sheet; R5 `CabinmateStep`; family route `/family/activities/:registrationId`), seven local SVGs in `web/public/images/activities/`, O1 filter and column from the new `activity` shape, F1 "Choose activities" / "Change activities" item. API tweaks: the family activities GET returns `sessionId` (for the P3 sheet) and O4 rows carry `gradeMin`/`gradeMax` (to offer only moves that fit the camper's grade). `e2e/activities.spec.ts` (3 tests) passes on a fresh database.
 - [ ] Milestone 3: `e2e/activities.spec.ts`, full gates, screenshots, seven-pass review.
 - [ ] Milestone 4: plan completed with `node scripts/complete-exec-plan.mjs activities`.
 
@@ -53,6 +53,9 @@ After this plan:
   Date/Author: 2026-09-24 / Claude
 - Decision: F1 demo household: one ready, fully paid Girls G3–5 filler camper's registration, order and person move into Pastor Dave Kim's household (last name Kim) during the Activities seed, with no activity choice. The e2e family flow also uses Pastor Dave.
   Rationale: the card asks for a persona with an ON Session 3 registration without activities, preferably one no other slice's e2e depends on. Maria's household (Johnson) is used by the family, finance, forms, admittance, polish and staff-cx specs; Sam starts empty; Pastor Dave is used only by the groups spec, which reads group pages and not the family home. 186/9/159/27 are unchanged because the registration stays.
+  Date/Author: 2026-09-24 / Claude
+- Decision: R4 keeps the wizard's draft separate (`useActivityDraft`, one store per session in session storage) and renders as slice components; Register.vue only decides when the steps show and what goes in the checkout payload.
+  Rationale: keeps the shared wizard change small (about 60 lines) and lets the family route reuse the same step pieces (`PeriodPicker`, ranking helpers, detail sheet).
   Date/Author: 2026-09-24 / Claude
 - Decision: Shared-file edits (recorded as they land): see Artifacts and Notes.
   Rationale: the task lists which shared files this slice may touch.
@@ -113,6 +116,9 @@ Shared-file edits:
 - `api/Camp.Api/Features/Ops/OpsEntities.cs` and `OpsSeed.cs`: `OpsPlacement.Activity` and its seeded names removed (the migration drops the column).
 - `api/Camp.Api/Features/Ops/ReadinessEndpoints.cs`: O1 `activities` filter list and roster `activity` (now `{ names, state, label }`) come from `ActivityReadModel`.
 - `api/Camp.Api/Features/Ops/CheckInEndpoints.cs`: O5 `activity` label comes from `ActivityReadModel`.
+- `web/src/pages/guest/Register.vue`: `steps` is computed; when register-context says `activities` and at least one chosen camper will be seated, the R4 (`ActivityStep`) and R5 (`CabinmateStep`) steps follow the questions. Continue on R4 refreshes slots left and stays once if a ranked choice just filled. Checkout sends each seated camper's `activities` and `cabinmates`; a 409 with `conflicts` returns to R4 with the just-filled state. Review shows each camper's activities. State lives in `useActivityDraft` (session storage), not in the wizard.
+- `web/src/features/ops/types.ts` and `SessionReadiness.vue`: `ReadinessRow.activity` is `{ names, state, label }`; the O1 filter adds "Chosen, not placed"; column and CSV header "Activities".
+- `web/src/features/family/types.ts` and `FamilyHome.vue`: checklist kind `activities`; a done activities item still links ("Change activities").
 
 ## Interfaces and Dependencies
 

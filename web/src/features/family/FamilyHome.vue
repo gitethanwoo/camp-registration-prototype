@@ -286,7 +286,7 @@ function role(m: Overview['members'][number]) {
                 <a :href="c.href" target="_blank" rel="noopener">{{ c.action }}<ExternalLink class="size-3.5" /></a>
               </Button>
               <Button
-                v-else-if="c.action && (!c.done || c.kind === 'balance')"
+                v-else-if="c.action && (!c.done || c.kind === 'balance' || c.kind === 'activities')"
                 size="sm"
                 :variant="c.done ? 'ghost' : 'default'"
                 class="ml-8 sm:ml-0"

@@ -95,6 +95,7 @@ public sealed class ActivityGuestEndpoints : IEndpointModule
             return Results.Ok(new
             {
                 RegistrationId = reg.Id,
+                reg.SessionId,
                 reg.PersonId,
                 reg.Person.FirstName,
                 reg.Grade,

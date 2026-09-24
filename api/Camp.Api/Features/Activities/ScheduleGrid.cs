@@ -138,6 +138,8 @@ internal sealed class ScheduleGrid
             {
                 g.Key.ActivityId,
                 g.Key.Name,
+                g.Key.GradeMin,
+                g.Key.GradeMax,
                 ImageUrl = Images.GetValueOrDefault(g.Key.ActivityId),
                 Grades = $"Grades {g.Key.GradeMin}–{g.Key.GradeMax}",
                 Cells = g.OrderBy(s => s.Period).Select(s =>

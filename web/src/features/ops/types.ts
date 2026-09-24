@@ -25,7 +25,8 @@ export interface ReadinessRow {
   health: 'Complete' | 'Incomplete'
   cabin: string
   group: string
-  activity: string | null
+  /** Activities by period (O4). NotChosen: the family hasn't ranked any yet. */
+  activity: { names: string[]; state: 'Assigned' | 'Partial' | 'Chosen' | 'NotChosen'; label: string }
   reasons: Reason[]
   remindedAt: string | null
   checkedIn: boolean
