@@ -81,6 +81,10 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal("Paid", status.GetProperty("payment").GetProperty("state").GetString());
         Assert.StartsWith("WS-", status.GetProperty("confirmationCode").GetString());
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(e => e.Action == "application.approved" && e.EntityId == $"{id}" && e.Actor.Contains("Diane Carter"))));
+
+        // F5 opens for the new registration: its order has no K6 answers, so the page reads the stored ones.
+        var answers = await family.GetAsync($"/api/family/forms/orders/{status.GetProperty("confirmationCode").GetString()}/answers");
+        Assert.Equal(HttpStatusCode.OK, answers.StatusCode);
     }
 
     [Fact]

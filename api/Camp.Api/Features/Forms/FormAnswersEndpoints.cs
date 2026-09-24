@@ -31,7 +31,7 @@ public sealed class FormAnswersEndpoints : IEndpointModule
                 ? await db.Set<FormAnswer>().AsNoTracking().Include(a => a.Question)
                     .Where(a => a.OrderId == orderId && (a.RegistrationId == id || a.RegistrationId == null)).ToListAsync(ct)
                 : [];
-            if (answers.Count == 0) return Results.Ok(Legacy(r));
+            if (answers.Count == 0) return Results.Ok(Legacy(r, r.Session.Program));
             var version = await VersionNumber(db, answers[0].FormVersionId, ct);
 
             // Health answers (K6 questions marked Health) follow the same rule as the health form (K9/K11):
@@ -72,7 +72,7 @@ public sealed class FormAnswersEndpoints : IEndpointModule
             var answers = await db.Set<FormAnswer>().AsNoTracking().Include(a => a.Question).Where(a => a.OrderId == order.Id).ToListAsync(ct);
             if (answers.Count == 0)
             {
-                var legacy = regs.Select(r => new { Registration = r, View = Legacy(r) }).ToList();
+                var legacy = regs.Select(r => new { Registration = r, View = Legacy(r, order.Session.Program) }).ToList();
                 return Results.Ok(new
                 {
                     FormVersion = (int?)null,
@@ -98,12 +98,13 @@ public sealed class FormAnswersEndpoints : IEndpointModule
     sealed record LegacyView(int? FormVersion, List<AnswerView> Household, List<AnswerView> Participant);
 
     /// <summary>Answers stored before K6 forms: the JSON on the registration, labelled by the program's original questions.</summary>
-    static LegacyView Legacy(Registration r)
+    /// The program is passed in because an order's registrations are loaded without their session.
+    static LegacyView Legacy(Registration r, CampProgram program)
     {
         Dictionary<string, string> stored;
-        try { stored = JsonSerializer.Deserialize<Dictionary<string, string>>(r.AnswersJson) ?? []; }
+        try { stored = string.IsNullOrWhiteSpace(r.AnswersJson) ? [] : JsonSerializer.Deserialize<Dictionary<string, string>>(r.AnswersJson) ?? []; }
         catch (JsonException) { stored = []; }
-        var questions = r.Session.Program.Questions.OrderBy(q => q.SortOrder).ToList();
+        var questions = program.Questions.OrderBy(q => q.SortOrder).ToList();
         AnswerView View(Question q) => new(q.Key, q.Label, FormViews.FromLegacy(q).Type.ToString(), stored[q.Key]);
         var known = questions.Where(q => stored.ContainsKey(q.Key) && !string.IsNullOrWhiteSpace(stored[q.Key])).ToList();
         var unknown = stored.Where(kv => questions.All(q => q.Key != kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))

@@ -73,6 +73,17 @@ test('a couple applies with the card held, CET approves, and the charge confirms
   await expect(page.getByText('Paid', { exact: true })).toBeVisible()
   await expect(page.getByText("You're confirmed")).toBeVisible()
   await expect(page.getByText('$900 paid on your card ending 4242.')).toBeVisible()
+
+  // F5: the waiver signed at submit is on the registration, and the page loads its answers.
+  await page.goto('/family/registrations')
+  await page.getByRole('link', { name: /View details for Fall Marriage Retreat/ }).click()
+  const checklist = page.locator('[data-slot="card"]').filter({ hasText: 'Registration checklist' })
+  await expect(checklist.getByText('Fall Marriage Retreat Release and Waiver of Liability')).toBeVisible()
+  await expect(checklist.getByText('Complete').first()).toBeVisible()
+  await expect(checklist.getByText('Missing')).toHaveCount(0)
+  await expect(checklist.getByRole('button', { name: 'Review and sign' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Your answers' })).toBeVisible()
+  await expect(page.getByText("Answers couldn't be loaded")).toHaveCount(0)
 })
 
 test('staff without the CET role can read the queue but not decide @phone', async ({ page }) => {

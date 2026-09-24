@@ -22,8 +22,10 @@ public static class GuestEndpoints
         var family = api.MapGroup("").RequireAuthorization(Policies.Family);
 
         // FR-15: every program from one entry point.
-        api.MapGet("/programs", async (CampDbContext db) =>
+        // Sessions that ended before the demo clock's today are history: families can't book them.
+        api.MapGet("/programs", async (CampDbContext db, TimeProvider clock) =>
         {
+            var today = clock.Today();
             var programs = await db.Programs.Where(p => p.IsPublished)
                 .Include(p => p.Ministry).Include(p => p.Sessions).ThenInclude(s => s.Pools)
                 .AsNoTracking().ToListAsync();
@@ -37,7 +39,7 @@ public static class GuestEndpoints
                 p.HostOrganization,
                 Ministry = p.Ministry.Name,
                 Type = p.Type.ToString(),
-                Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new
+                Sessions = p.Sessions.Where(s => s.EndDate >= today).OrderBy(s => s.StartDate).Select(s => new
                 {
                     s.Id,
                     s.Name,
@@ -79,7 +81,7 @@ public static class GuestEndpoints
                     HealthMechanism.ThirdParty => "Health form (external)",
                     _ => "Health form (completed during registration)",
                 }),
-                Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new
+                Sessions = p.Sessions.Where(s => s.EndDate >= clock.Today()).OrderBy(s => s.StartDate).Select(s => new
                 {
                     s.Id,
                     s.Name,

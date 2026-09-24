@@ -72,6 +72,13 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(await factory.WithDb(db => db.Programs.Where(p => p.Id == id).Select(p => p.IsPublished).SingleAsync()));
         Assert.Equal(PublishState.Published, await factory.WithDb(db => db.Set<ProgramSetup>().Where(s => s.ProgramId == id).Select(s => s.State).SingleAsync()));
         Assert.Contains("family-weekend", await factory.CreateClient().GetStringAsync("/api/programs"));
+        // Summer 2026 ended before the demo clock's today: the guest site lists only Summer 2028.
+        foreach (var url in new[] { "/api/programs", $"/api/programs/{SetupSeed.FamilyWeekendSlug}" })
+        {
+            var body = await factory.CreateClient().GetStringAsync(url);
+            Assert.Contains("Summer 2028", body);
+            Assert.DoesNotContain("Summer 2026", body);
+        }
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(e => e.Action == "program.published" && e.EntityId == $"{id}" && e.Actor == "Alex Morgan (ADMIN)")));
 
         // A second approval of the same program is refused, and a published program can't be edited in place.
