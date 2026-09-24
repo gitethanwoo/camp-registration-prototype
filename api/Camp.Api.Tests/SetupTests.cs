@@ -93,6 +93,9 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var session = await alex.PostAsJsonAsync($"{Setup}/programs/{id}/sessions",
             new NewSessionInput("Fall 2028", new(2028, 10, 6), new(2028, 10, 8), 20000, 5000, "Everyone", null, 0, 12, 30));
         Assert.Equal(HttpStatusCode.OK, session.StatusCode);
+        // No waiver yet: the publish guard refuses it (polish).
+        Assert.Equal(HttpStatusCode.BadRequest, (await alex.PostAsync($"{Setup}/programs/{id}/submit", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{id}/waivers", null)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{id}/submit", null)).StatusCode);
 
         var self = await alex.PostAsync($"{Setup}/programs/{id}/approve", null);
@@ -123,6 +126,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.False(await factory.WithDb(db => db.Orders.AnyAsync(o => o.SessionId == sessionId)));
 
         // Pending approval is still not published.
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{programId}/waivers", null)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{programId}/submit", null)).StatusCode);
         await Assert.ThrowsAsync<CheckoutValidationException>(() => Checkout(household, kid, sessionId, null));
 
