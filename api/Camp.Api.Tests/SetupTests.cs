@@ -36,9 +36,9 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Setup_mutations_are_admin_only()
     {
         var cet = await factory.SignInAsStaff("cet", "Diane Carter");
-        var session = await FamilyCampSummer2028();
+        var session = await FamilyWeekendSummer2028();
         Assert.Equal(HttpStatusCode.Forbidden, (await cet.PutAsJsonAsync($"{Setup}/sessions/{session}/pricing", new { })).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await cet.PostAsync($"{Setup}/programs/{await FamilyCampId()}/approve", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cet.PostAsync($"{Setup}/programs/{await FamilyWeekendId()}/approve", null)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().PostAsJsonAsync($"{Setup}/discount-rules", new { })).StatusCode);
     }
 
@@ -59,23 +59,23 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Family_Camp_publishes_after_the_second_approval_and_is_audited()
     {
         var alex = await Alex();
-        var id = await FamilyCampId();
+        var id = await FamilyWeekendId();
         var row = (await Json(await alex.GetAsync($"{Setup}/programs"))).GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("id").GetInt32() == id);
         Assert.Equal("PendingApproval", row.GetProperty("state").GetString());
         Assert.True(row.GetProperty("canApprove").GetBoolean());
 
         // Guests don't see it until it's published.
-        Assert.DoesNotContain("family-camp", await factory.CreateClient().GetStringAsync("/api/programs"));
+        Assert.DoesNotContain("family-weekend", await factory.CreateClient().GetStringAsync("/api/programs"));
 
         Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{id}/approve", null)).StatusCode);
         Assert.True(await factory.WithDb(db => db.Programs.Where(p => p.Id == id).Select(p => p.IsPublished).SingleAsync()));
         Assert.Equal(PublishState.Published, await factory.WithDb(db => db.Set<ProgramSetup>().Where(s => s.ProgramId == id).Select(s => s.State).SingleAsync()));
-        Assert.Contains("family-camp", await factory.CreateClient().GetStringAsync("/api/programs"));
+        Assert.Contains("family-weekend", await factory.CreateClient().GetStringAsync("/api/programs"));
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(e => e.Action == "program.published" && e.EntityId == $"{id}" && e.Actor == "Alex Morgan (ADMIN)")));
 
         // A second approval of the same program is refused, and a published program can't be edited in place.
         Assert.Equal(HttpStatusCode.Conflict, (await alex.PostAsync($"{Setup}/programs/{id}/approve", null)).StatusCode);
-        var edit = await alex.PutAsJsonAsync($"{Setup}/programs/{id}", NewProgram("Family Camp 2"));
+        var edit = await alex.PutAsJsonAsync($"{Setup}/programs/{id}", NewProgram("Family Weekend 2"));
         Assert.Equal(HttpStatusCode.Conflict, edit.StatusCode);
     }
 
@@ -138,7 +138,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Capacity_cannot_drop_below_seats_taken_and_a_pool_with_campers_cannot_be_removed()
     {
         var alex = await Alex();
-        var pool = await factory.WithDb(db => db.CapacityPools.Where(p => p.Session.Program.Slug == SetupSeed.FamilyCampSlug && p.Session.Name == "Summer 2026").SingleAsync());
+        var pool = await factory.WithDb(db => db.CapacityPools.Where(p => p.Session.Program.Slug == SetupSeed.FamilyWeekendSlug && p.Session.Name == "Summer 2026").SingleAsync());
         Assert.Equal(14, pool.Reserved);
 
         var tooLow = await alex.PutAsJsonAsync($"{Setup}/pools/{pool.Id}", new PoolInput(pool.Name, null, pool.GradeMin, pool.GradeMax, 10));
@@ -160,7 +160,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Pools_in_a_session_cannot_overlap_and_registration_dates_must_make_sense()
     {
         var alex = await Alex();
-        var sessionId = await FamilyCampSummer2028();
+        var sessionId = await FamilyWeekendSummer2028();
         var overlap = await alex.PostAsJsonAsync($"{Setup}/sessions/{sessionId}/pools", new PoolInput("Grades 4–6", null, 4, 6, 10));
         Assert.Equal(HttpStatusCode.BadRequest, overlap.StatusCode);
 
@@ -177,8 +177,8 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Pricing_changes_are_validated_audited_and_leave_existing_registrations_alone()
     {
         var alex = await Alex();
-        var past = await factory.WithDb(db => db.Sessions.Where(s => s.Program.Slug == SetupSeed.FamilyCampSlug && s.Name == "Summer 2026").Select(s => s.Id).SingleAsync());
-        var sessionId = await FamilyCampSummer2028();
+        var past = await factory.WithDb(db => db.Sessions.Where(s => s.Program.Slug == SetupSeed.FamilyWeekendSlug && s.Name == "Summer 2026").Select(s => s.Id).SingleAsync());
+        var sessionId = await FamilyWeekendSummer2028();
         Tier[] tiers = [new(30, 100, RefundBasis.AmountPaid, 2500), new(0, 0, RefundBasis.AmountPaid, 0)];
 
         Assert.Equal(HttpStatusCode.BadRequest, (await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 50000, tiers))).StatusCode);
@@ -417,10 +417,10 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     Task<HttpClient> Alex() => factory.SignInAsStaff("admin", "Alex Morgan");
 
-    Task<int> FamilyCampId() => factory.WithDb(db => db.Programs.Where(p => p.Slug == SetupSeed.FamilyCampSlug).Select(p => p.Id).SingleAsync());
+    Task<int> FamilyWeekendId() => factory.WithDb(db => db.Programs.Where(p => p.Slug == SetupSeed.FamilyWeekendSlug).Select(p => p.Id).SingleAsync());
 
-    Task<int> FamilyCampSummer2028() =>
-        factory.WithDb(db => db.Sessions.Where(s => s.Program.Slug == SetupSeed.FamilyCampSlug && s.Name == "Summer 2028").Select(s => s.Id).SingleAsync());
+    Task<int> FamilyWeekendSummer2028() =>
+        factory.WithDb(db => db.Sessions.Where(s => s.Program.Slug == SetupSeed.FamilyWeekendSlug && s.Name == "Summer 2028").Select(s => s.Id).SingleAsync());
 
     /// <summary>Day Camp's program id, its June week, and a second Day Camp session with open seats for any grade.</summary>
     Task<(int Program, int June, int Other)> TwoDayCampSessions() => factory.WithDb(async db =>

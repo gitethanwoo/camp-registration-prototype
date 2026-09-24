@@ -9,13 +9,13 @@ namespace Camp.Api.Features.Setup;
 /// Setup rows. First it backfills what every existing program and session needs (publish state,
 /// location and dates, the refund table C3 already used, the live waiver version), so nothing about
 /// the other screens changes. Then it adds the demo program the setup screens are shown with:
-/// Family Camp, a returning Mount Berry program waiting on its second approval, with a new waiver
+/// Family Weekend, a returning Mount Berry program waiting on its second approval, with a new waiver
 /// version waiting too. Runs after every other slice's seed.
 /// </summary>
 public sealed class SetupSeed : ISeedModule
 {
-    public const string FamilyCampSlug = "family-camp";
-    public const string FamilyWaiverTitle = "Family Camp Release and Waiver";
+    public const string FamilyWeekendSlug = "family-weekend";
+    public const string FamilyWaiverTitle = "Family Weekend Release and Waiver";
     public const string Submitter = "Brian Hughes (Operations)";
     public const string SubmitterEmail = "brian.hughes@winshape.example";
 
@@ -24,7 +24,7 @@ public sealed class SetupSeed : ISeedModule
     public async Task RunAsync(CampDbContext db, CancellationToken ct)
     {
         db.ChangeTracker.Clear();
-        await SeedFamilyCamp(db, ct);
+        await SeedFamilyWeekend(db, ct);
         await Backfill(db, ct);
         await SeedDiscountRules(db, ct);
         await SeedHistory(db, ct);
@@ -104,15 +104,15 @@ public sealed class SetupSeed : ISeedModule
     /// <summary>A live version's effective date: a future date becomes the WIN import date.</summary>
     static DateOnly LiveSince(DateOnly effective) => effective > DateOnly.FromDateTime(DateTime.UtcNow) ? ImportedOn : effective;
 
-    static async Task SeedFamilyCamp(CampDbContext db, CancellationToken ct)
+    static async Task SeedFamilyWeekend(CampDbContext db, CancellationToken ct)
     {
-        if (await db.Programs.AnyAsync(p => p.Slug == FamilyCampSlug, ct)) return;
+        if (await db.Programs.AnyAsync(p => p.Slug == FamilyWeekendSlug, ct)) return;
         var wsc = await db.Ministries.FirstAsync(m => m.Code == "WSC", ct);
         var program = new CampProgram
         {
             MinistryId = wsc.Id,
-            Slug = FamilyCampSlug,
-            Name = "Family Camp",
+            Slug = FamilyWeekendSlug,
+            Name = "Family Weekend",
             Tagline = "A weekend at Mount Berry for the whole family.",
             Description = "Families stay together in the lodges, eat together in the dining hall, and split up by age for the day's activities: the lake, the ropes course, and worship on the hill.",
             Type = ProgramType.Standard,
@@ -313,7 +313,7 @@ public sealed class SetupSeed : ISeedModule
     static async Task SeedHistory(CampDbContext db, CancellationToken ct)
     {
         if (await db.AuditEvents.AnyAsync(e => e.Action.StartsWith("program.") || e.Action.StartsWith("discount.rule"), ct)) return;
-        var family = await db.Programs.AsNoTracking().FirstOrDefaultAsync(p => p.Slug == FamilyCampSlug, ct);
+        var family = await db.Programs.AsNoTracking().FirstOrDefaultAsync(p => p.Slug == FamilyWeekendSlug, ct);
         var waiver = await db.WaiverTemplates.AsNoTracking().FirstOrDefaultAsync(w => w.Title == FamilyWaiverTitle, ct);
         var sibling = await db.DiscountCodes.AsNoTracking().FirstOrDefaultAsync(d => d.Code == "SIBLING10", ct);
         if (family is null || waiver is null || sibling is null) return;
@@ -323,8 +323,8 @@ public sealed class SetupSeed : ISeedModule
         {
             created,
             new AuditEvent { Actor = Submitter, Action = "waiver.submitted", EntityType = "WaiverTemplate", EntityId = $"{waiver.Id}", Detail = $"Sent version 3 of {FamilyWaiverTitle} for approval: Adds the lake and waterfront section.", CreatedAt = new(2026, 9, 18, 15, 10, 0, DateTimeKind.Utc) },
-            new AuditEvent { Actor = Submitter, Action = "program.submitted", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Submitted Family Camp for approval.", CreatedAt = new(2026, 9, 18, 15, 12, 0, DateTimeKind.Utc) },
-            new AuditEvent { Actor = "Jamie Dalton (Camp director)", Action = "program.step_approved", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Approved the camp director step for Family Camp.", CreatedAt = new(2026, 9, 20, 18, 12, 0, DateTimeKind.Utc) },
+            new AuditEvent { Actor = Submitter, Action = "program.submitted", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Submitted Family Weekend for approval.", CreatedAt = new(2026, 9, 18, 15, 12, 0, DateTimeKind.Utc) },
+            new AuditEvent { Actor = "Jamie Dalton (Camp director)", Action = "program.step_approved", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Approved the camp director step for Family Weekend.", CreatedAt = new(2026, 9, 20, 18, 12, 0, DateTimeKind.Utc) },
         };
         db.AuditEvents.AddRange(events);
         db.Set<AuditChange>().AddRange(
@@ -342,7 +342,7 @@ public sealed class SetupSeed : ISeedModule
         var lake = includeLake
             ? "\n\nLake and waterfront. Swimming, canoeing and the lake slide happen only when a certified lifeguard is on duty. Campers wear a life jacket in any boat and take a swim check before swimming in deep water."
             : "";
-        return "Family Camp at Mount Berry includes hiking, the ropes course, field games and other outdoor activities. These carry a risk of injury.\n\n"
+        return "Family Weekend at Mount Berry includes hiking, the ropes course, field games and other outdoor activities. These carry a risk of injury.\n\n"
             + "I agree that my family members attend voluntarily and accept those risks. I release WinShape Foundation, Berry College and their staff and volunteers from claims arising from ordinary negligence.\n\n"
             + "If someone in my family needs medical care and I can't be reached, I authorize staff to get treatment and agree to pay for it."
             + lake + "\n\n" + signer;

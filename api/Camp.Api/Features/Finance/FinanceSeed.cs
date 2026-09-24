@@ -52,7 +52,7 @@ public sealed class FinanceSeed : ISeedModule
             HealthMechanism = HealthMechanism.Embedded,
             Location = "WinShape Camps · Mount Berry, GA",
             ImageUrl = "/images/overnight.jpg",
-            IsPublished = false, // registration is outside this slice; its rows exist for the finance screens
+            IsPublished = true, // families already registered (seeded); wave 2 integration publishes it so K2 and checkout agree
         };
         var session = new Session
         {

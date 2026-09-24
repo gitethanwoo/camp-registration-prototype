@@ -1,36 +1,36 @@
 import { expect, signInAs, test } from './fixtures'
 
-// Slice 5 demo path: Alex (admin) finishes Family Camp's approval, resizes a pool, adds a discount rule,
+// Slice 5 demo path: Alex (admin) finishes Family Weekend's approval, resizes a pool, adds a discount rule,
 // approves the waiver v3 another admin wrote, and finds all of it in the audit log.
 // The spec changes seeded rows for good, so it runs once per fresh database, in order.
 test.describe.configure({ mode: 'serial' })
 
-test('Alex approves Family Camp and it appears on the guest site', async ({ page }) => {
+test('Alex approves Family Weekend and it appears on the guest site', async ({ page }) => {
   await signInAs(page, 'alex', '/admin/setup/programs')
   await expect(page.getByRole('heading', { name: 'Programs' })).toBeVisible()
-  await page.getByPlaceholder('Search programs').fill('Family Camp')
-  await page.getByRole('row').filter({ hasText: 'Family Camp' }).click()
+  await page.getByPlaceholder('Search programs').fill('Family Weekend')
+  await page.getByRole('row').filter({ hasText: 'Family Weekend' }).click()
 
   const sheet = page.getByRole('dialog')
   await expect(sheet.getByText('Pending approval').first()).toBeVisible()
   await sheet.getByRole('tab', { name: 'Approval' }).click()
   await expect(sheet.getByText('Jamie Dalton')).toBeVisible()
   await sheet.getByRole('button', { name: 'Approve as ministry owner' }).click()
-  await expect(page.getByText('Family Camp is published. Families can register now.')).toBeVisible()
+  await expect(page.getByText('Family Weekend is published. Families can register now.')).toBeVisible()
   await expect(sheet.getByText('Published').first()).toBeVisible()
 
   await page.goto('/programs')
-  await expect(page.getByRole('link', { name: /Family Camp/ }).first()).toBeVisible()
+  await expect(page.getByRole('link', { name: /Family Weekend/ }).first()).toBeVisible()
 })
 
-test('Alex resizes a Family Camp pool and the change is saved', async ({ page }) => {
+test('Alex resizes a Family Weekend pool and the change is saved', async ({ page }) => {
   await signInAs(page, 'alex', '/admin/setup/programs')
-  await page.getByPlaceholder('Search programs').fill('Family Camp')
-  await page.getByRole('row').filter({ hasText: 'Family Camp' }).click()
+  await page.getByPlaceholder('Search programs').fill('Family Weekend')
+  await page.getByRole('row').filter({ hasText: 'Family Weekend' }).click()
   await page.getByRole('dialog').getByRole('tab', { name: 'Sessions' }).click()
   await page.getByRole('link', { name: /Summer 2028/ }).click()
 
-  await expect(page.getByRole('heading', { name: 'Family Camp · Summer 2028' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Family Weekend · Summer 2028' })).toBeVisible()
   const pool = page.getByRole('row').filter({ hasText: 'Grades 6–12' })
   await expect(pool).toContainText('40')
   await page.getByRole('button', { name: 'Actions for Grades 6–12' }).click()
@@ -65,7 +65,7 @@ test('Alex creates a discount rule and previews it on a registered camper', asyn
 test('Alex approves waiver v3, and families who signed v2 keep v2', async ({ page }) => {
   await signInAs(page, 'alex', '/admin/setup/waivers')
   await expect(page.getByRole('heading', { name: 'Waiver templates' })).toBeVisible()
-  await page.getByRole('button', { name: /Family Camp Release and Waiver/ }).click()
+  await page.getByRole('button', { name: /Family Weekend Release and Waiver/ }).click()
   await expect(page.getByText('v3 waiting for approval').first()).toBeVisible()
   await expect(page.getByLabel('Waiver text')).toHaveValue(/Lake and waterfront/)
 
