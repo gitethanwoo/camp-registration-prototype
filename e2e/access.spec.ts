@@ -40,9 +40,12 @@ test('Diane is refused a Day Camp health form without health-data access', async
   await expect(dialog).not.toContainText('Physician')
   await dialog.getByRole('button', { name: 'Close' }).first().click()
 
-  // Admin pages stay closed to her.
+  // Admin pages stay closed to her: the role guard shows the console's No access page.
   await page.goto('/admin/setup/users')
-  await expect(page.getByText('Staff access is for admins')).toBeVisible()
+  await expect(page).toHaveURL(/\/admin\/no-access/)
+  await expect(page.getByRole('heading', { name: "You don't have access to this page" })).toBeVisible()
+  await expect(page.getByText('This page needs the Administrator role.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Staff access' })).toHaveCount(0)
 })
 
 test('Alex syncs staff from WorkOS and the former staff member is revoked', async ({ page }) => {
