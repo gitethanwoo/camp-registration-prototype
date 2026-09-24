@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Camp.Api.Domain;
 using Camp.Api.Features.Finance;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Tests;
@@ -61,7 +62,7 @@ public class FinanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Report_settled_revenue_equals_the_reconciliation_batches_to_the_cent()
     {
         var marcus = await Finance();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = factory.Clock.Today();
         var from = today.AddDays(-30);
         var report = await Json(await marcus.GetAsync($"/api/admin/finance/reports?from={from:yyyy-MM-dd}&to={today:yyyy-MM-dd}"));
         var settlements = await Json(await marcus.GetAsync("/api/admin/finance/settlements"));

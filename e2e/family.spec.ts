@@ -22,7 +22,12 @@ async function registerForDayCamp(page: Page, kids: string[], option: 'Pay depos
     await card.getByRole('combobox', { name: /Swimming ability/ }).click()
     await page.getByRole('option', { name: 'Beginner' }).click()
   }
-  await page.getByRole('radio', { name: 'No' }).click()
+  // Each camper card now has its own yes/no (the forms slice's medication question), so answer the family's.
+  await page
+    .locator('[data-slot="card"]')
+    .filter({ hasText: 'About your family' })
+    .getByRole('radio', { name: 'No' })
+    .click()
   await page.getByRole('button', { name: 'Continue' }).click()
 
   const physicians = page.getByLabel(/Physician name/)
@@ -112,13 +117,13 @@ test('Maria registers Avery and Mia on the plan, a declined card changes nothing
   await page.goto('/family/registrations')
   const upcoming = page.getByRole('region', { name: /^Upcoming/ })
   const past = page.getByRole('region', { name: /^Past/ })
-  await expect(upcoming.getByRole('link', { name: /View details for Day Camp/ })).toHaveCount(1)
+  await expect(upcoming.getByRole('link', { name: /View details for Day Camp · Atlanta/ })).toHaveCount(1)
   await expect(upcoming).toContainText('3 × $150 payment plan')
   await expect(upcoming).not.toContainText('Spring Marriage Retreat')
   await expect(page.getByRole('heading', { name: 'Past (1)' })).toBeVisible()
   await expect(past).toContainText('Spring Marriage Retreat')
   await expect(page.getByRole('heading', { name: 'Cancelled (0)' })).toBeVisible()
-  await upcoming.getByRole('link', { name: /View details for Day Camp/ }).click()
+  await upcoming.getByRole('link', { name: /View details for Day Camp · Atlanta/ }).click()
   await expect(page.getByRole('heading', { name: 'Day Camp · Atlanta registration' })).toBeVisible()
   await expect(page.getByText('Avery and Mia Johnson')).toBeVisible()
   await expect(page.locator('#checklist')).toContainText('Avery · Waivers (3 signed)')

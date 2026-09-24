@@ -1,4 +1,5 @@
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Data;
@@ -11,11 +12,11 @@ public static class Seed
 {
     public const string JohnsonEmail = "maria.johnson@example.com";
 
-    public static async Task RunAsync(CampDbContext db)
+    public static async Task RunAsync(CampDbContext db, TimeProvider clock)
     {
         if (await db.Ministries.AnyAsync()) return;
         var rng = new Random(2028);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
 
         var wsc = new Ministry { Code = "WSC", Name = "WSC Camps" };
         var wsm = new Ministry { Code = "WSM", Name = "WSM Marriage" };

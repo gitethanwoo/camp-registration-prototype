@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -16,14 +17,15 @@ public sealed class AdmittanceException(int status, string message, Dictionary<s
 }
 
 public sealed record DraftRequest(int? SpousePersonId, string? SpouseFirstName, string? SpouseLastName, string? SpouseEmail, Dictionary<string, string>? Answers, int Step);
-public sealed record CardRequest(string CardToken, string IdempotencyKey);
+/// <summary>A card for the hold. At submit, also the program's waivers the couple accepted and the name they signed with.</summary>
+public sealed record CardRequest(string CardToken, string IdempotencyKey, List<int>? AcceptedWaiverIds = null, string? SignerName = null);
 public sealed record MessageRequest(string Message);
 
 /// <summary>
 /// Admittance lifecycle: draft → submitted (card authorized) → review → approved (seat claimed,
 /// card captured) or declined (hold voided) or waitlisted (hold voided, only when full).
 /// </summary>
-public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit)
+public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock)
 {
     /// <summary>How long a card network honors a hold before it lapses.</summary>
     public static readonly TimeSpan HoldLifetime = TimeSpan.FromDays(7);
@@ -41,7 +43,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         var app = await db.Set<AdmittanceApplication>().Include(a => a.Applicant)
             .FirstOrDefaultAsync(a => a.HouseholdId == householdId && a.SessionId == session.Id, ct);
         var adults = await db.People.Where(p => p.HouseholdId == householdId && p.IsAdult).ToListAsync(ct);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
 
         if (app is null)
         {
@@ -102,13 +104,26 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
             throw new AdmittanceException(409, "This program isn't taking applications right now. Nothing was authorized.");
         var answers = Answers(app);
         var errors = ApplicationForm.Validate(answers, app.SpouseFirstName, app.SpouseLastName);
+        // The program's waivers are signed here, like the registration wizard's R7, so approval can confirm a complete registration.
+        var waivers = await db.WaiverTemplates.AsNoTracking().Where(w => w.ProgramId == app.Session.ProgramId).OrderBy(w => w.Id).ToListAsync(ct);
+        var accepted = req.AcceptedWaiverIds ?? [];
+        foreach (var w in waivers.Where(w => !accepted.Contains(w.Id)))
+            errors[$"waivers.{w.Id}"] = [$"Accept the {w.Title} to apply."];
+        var signer = (req.SignerName ?? "").Trim();
+        if (waivers.Count > 0 && signer.Length == 0) errors["signerName"] = ["Type your full name to sign the waiver."];
         if (errors.Count > 0) throw new AdmittanceException(400, "Some answers are missing.", errors);
 
         var hold = await gateway.AuthorizeAsync(req.CardToken, app.AmountCents, $"auth-{app.Id}-{req.IdempotencyKey}", ct);
         if (!hold.Succeeded) throw new AdmittanceException(402, hold.DeclineReason ?? "Your card was declined.");
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         SetHold(app, hold, now);
+        if (waivers.Count > 0)
+        {
+            app.WaiversAccepted = string.Join(';', waivers.Select(w => $"{w.Id}:{w.Version}"));
+            app.WaiverSignerName = Cap(signer, 120);
+            app.WaiverSignedAt = now;
+        }
         app.Stage = ApplicationStage.Submitted;
         app.SubmittedAt = now;
         app.UpdatedAt = now;
@@ -134,7 +149,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
     public async Task ReauthorizeAsync(int householdId, string actor, int id, CardRequest req, CancellationToken ct)
     {
         var app = await Owned(householdId, id, ct);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var approvedAwaitingCard = app.Stage == ApplicationStage.Approved && app.SeatHeld && app.Hold != HoldStatus.Captured;
         var pendingLapsed = AdmittanceApplication.Pending.Contains(app.Stage) && !app.HoldUsable(now);
         if (!approvedAwaitingCard && !pendingLapsed)
@@ -167,9 +182,9 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         if (app.Stage != ApplicationStage.InfoRequested) throw new AdmittanceException(409, "There's no open question on this application.");
         var reply = Required(message, "message", "Write a reply before sending.");
         app.InfoResponse = Cap(reply, 2000);
-        app.InfoRespondedAt = DateTime.UtcNow;
+        app.InfoRespondedAt = clock.UtcNow();
         app.Stage = ApplicationStage.UnderReview;
-        app.UpdatedAt = DateTime.UtcNow;
+        app.UpdatedAt = clock.UtcNow();
         audit.Record("application.info_provided", Entity, app.Id, $"{app.CoupleName} answered the team's question.");
         await SaveOrConflict(ct);
     }
@@ -181,9 +196,9 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         var app = await Tracked(id, ct);
         if (app.Stage != ApplicationStage.Submitted) throw new AdmittanceException(409, $"Only submitted applications can move to review; this one is {Label(app.Stage)}.");
         app.Stage = ApplicationStage.UnderReview;
-        app.ReviewStartedAt = DateTime.UtcNow;
+        app.ReviewStartedAt = clock.UtcNow();
         app.ReviewedBy = actor;
-        app.UpdatedAt = DateTime.UtcNow;
+        app.UpdatedAt = clock.UtcNow();
         audit.Record("application.review_started", Entity, id, $"Review started for {app.CoupleName}.");
         await SaveOrConflict(ct);
     }
@@ -194,7 +209,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         if (app.Stage is not (ApplicationStage.Submitted or ApplicationStage.UnderReview))
             throw new AdmittanceException(409, $"You can only ask a question while an application is in review; this one is {Label(app.Stage)}.");
         var question = Required(message, "message", "Write the question for the couple.");
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         app.Stage = ApplicationStage.InfoRequested;
         app.ReviewStartedAt ??= now;
         app.ReviewedBy = actor;
@@ -212,7 +227,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
     public async Task<bool> ApproveAsync(int id, string actor, CancellationToken ct)
     {
         var app = await Tracked(id, ct);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         if (app.Stage == ApplicationStage.Approved)
         {
             if (app.Hold == HoldStatus.Captured) throw new AdmittanceException(409, "This application is already approved and paid.");
@@ -269,10 +284,10 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         }
         var voided = await VoidHold(app, ct);
         app.Stage = ApplicationStage.Declined;
-        app.DecidedAt = DateTime.UtcNow;
+        app.DecidedAt = clock.UtcNow();
         app.ReviewedBy = actor;
         app.DecisionNote = Cap(note, 2000);
-        app.UpdatedAt = DateTime.UtcNow;
+        app.UpdatedAt = clock.UtcNow();
         audit.Record("application.declined", Entity, id, $"Declined {app.CoupleName}.{(voided ? $" {Money(app.AmountCents)} hold voided." : "")} Note: {app.DecisionNote}");
         Outbox("ApplicationDeclined", app, new { app.Id, to = app.Household.Email });
         await SaveOrConflict(ct);
@@ -291,10 +306,10 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
 
         var voided = await VoidHold(app, ct);
         app.Stage = ApplicationStage.Waitlisted;
-        app.DecidedAt = DateTime.UtcNow;
+        app.DecidedAt = clock.UtcNow();
         app.ReviewedBy = actor;
         app.DecisionNote = "The retreat is full. If a spot opens, we'll ask you to re-enter your card to confirm.";
-        app.UpdatedAt = DateTime.UtcNow;
+        app.UpdatedAt = clock.UtcNow();
         audit.Record("application.waitlisted", Entity, id, $"Waitlisted {app.CoupleName}; the session is full.{(voided ? $" {Money(app.AmountCents)} hold voided." : "")}");
         Outbox("ApplicationWaitlisted", app, new { app.Id, to = app.Household.Email });
         await SaveOrConflict(ct);
@@ -314,7 +329,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         if (app.Hold == HoldStatus.Captured) return true;
         var key = $"capture-{app.Id}-{app.AuthorizationRef}";
         var result = await gateway.CaptureAsync(app.AuthorizationRef ?? "", app.AmountCents, key, ct);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
 
         if (!result.Succeeded)
         {
@@ -360,6 +375,18 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
             AnswersJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["spouse"] = $"{app.SpouseFirstName} {app.SpouseLastName}".Trim(), ["applicationId"] = app.Id.ToString(CultureInfo.InvariantCulture) }),
             CreatedAt = now,
         };
+        // The waivers the couple signed when they applied (applications from before the program had one sign on F5).
+        foreach (var pair in (app.WaiversAccepted ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split(':');
+            registration.WaiverAcceptances.Add(new WaiverAcceptance
+            {
+                WaiverTemplateId = int.Parse(parts[0], CultureInfo.InvariantCulture),
+                Version = int.Parse(parts[1], CultureInfo.InvariantCulture),
+                SignerName = app.WaiverSignerName ?? app.Applicant.FullName,
+                AcceptedAt = app.WaiverSignedAt ?? now,
+            });
+        }
         db.Registrations.Add(registration);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException)
@@ -432,7 +459,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
     }
 
     void Outbox(string type, AdmittanceApplication app, object payload) =>
-        db.OutboxEvents.Add(new OutboxEvent { Type = type, Target = "HubSpot", AggregateId = $"app-{app.Id}", PayloadJson = JsonSerializer.Serialize(payload), CreatedAt = DateTime.UtcNow });
+        db.OutboxEvents.Add(new OutboxEvent { Type = type, Target = "HubSpot", AggregateId = $"app-{app.Id}", PayloadJson = JsonSerializer.Serialize(payload), CreatedAt = clock.UtcNow() });
 
     public static Dictionary<string, string> Answers(AdmittanceApplication app) =>
         JsonSerializer.Deserialize<Dictionary<string, string>>(app.AnswersJson) ?? [];

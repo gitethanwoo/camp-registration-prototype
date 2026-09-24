@@ -35,6 +35,7 @@ import { date, dateTime, money } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import PaymentBadge from './PaymentBadge.vue'
 import { isPending, stageLabels, type StaffDetail } from './types'
+import { nowMs } from '@/lib/clock'
 
 const props = defineProps<{ id: number | null }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -82,7 +83,7 @@ const sections = computed(() => {
 
 function expiryText(expiresAt: string | null) {
   if (!expiresAt) return ''
-  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
+  const days = Math.ceil((new Date(expiresAt).getTime() - nowMs()) / 86_400_000)
   if (days <= 0) return 'Expired'
   return days === 1 ? 'Expires tomorrow' : `Expires in ${days} days (${date(expiresAt)})`
 }

@@ -1,5 +1,6 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Features.Setup;
@@ -12,11 +13,11 @@ namespace Camp.Api.Features.Setup;
 public static class DiscountRuleGate
 {
     /// <summary>The code if it may be used for <paramref name="session"/> today, otherwise null.</summary>
-    public static async Task<DiscountCode?> UsableAsync(CampDbContext db, DiscountCode? code, Session session, CancellationToken ct = default)
+    public static async Task<DiscountCode?> UsableAsync(CampDbContext db, DiscountCode? code, Session session, TimeProvider clock, CancellationToken ct = default)
     {
         if (code is null) return null;
         var rule = await db.Set<DiscountRule>().AsNoTracking().FirstOrDefaultAsync(r => r.DiscountCodeId == code.Id, ct);
-        return rule is null || Applies(rule, session.Id, session.ProgramId, SetupResults.Today) ? code : null;
+        return rule is null || Applies(rule, session.Id, session.ProgramId, clock.Today()) ? code : null;
     }
 
     /// <summary>Whether a rule allows its code for a session on a date, ignoring nothing but the code's own approval.</summary>

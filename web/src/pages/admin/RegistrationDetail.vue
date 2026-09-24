@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import StatusBadge from '@/components/StatusBadge.vue'
+import HealthRecordButton from '@/features/access/HealthRecordButton.vue'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -23,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import FormAnswers from '@/features/forms/FormAnswers.vue'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, dateTime, money } from '@/lib/format'
 
@@ -38,9 +40,6 @@ interface Detail {
     lastName: string
     dateOfBirth: string
     gender: string
-    dietary: string | null
-    allergies: string | null
-    adaNeeds: string | null
   }
   household: {
     id: number
@@ -55,7 +54,6 @@ interface Detail {
   program: { name: string; slug: string; healthMechanism: string }
   session: { id: number; name: string; startDate: string; endDate: string }
   pool: string
-  answers: Record<string, string>
   healthStatus: string
   healthOnFile: boolean
   waivers: {
@@ -158,15 +156,6 @@ async function load() {
   r.value = await api.get<Detail>(`/admin/registrations/${props.id}`)
 }
 onMounted(load)
-
-const answerLabels: Record<string, string> = {
-  tshirt: 'T-shirt size',
-  swim: 'Swim level',
-  church: 'Attends church',
-  churchName: 'Church',
-  cabinmate: 'Cabin-mate request',
-  bus: 'Bus from Atlanta',
-}
 
 // ── Cancel + refund, on this screen (FR-40/49) ──
 const cancelOpen = ref(false)
@@ -304,6 +293,7 @@ async function cancel() {
                         >Status synced from CampDoc.</template
                       >
                     </p>
+                    <HealthRecordButton v-if="r.healthOnFile" class="mt-2" :registration-id="id" />
                   </div>
                   <StatusBadge :status="r.healthStatus" />
                 </div>
@@ -328,20 +318,9 @@ async function cancel() {
             <Card>
               <CardHeader><CardTitle>Answers</CardTitle></CardHeader>
               <CardContent>
-                <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                  <div v-for="(v, k) in r.answers" :key="k">
-                    <dt class="text-muted-foreground">{{ answerLabels[k] ?? k }}</dt>
-                    <dd>{{ v || '—' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted-foreground">Allergies</dt>
-                    <dd>{{ r.participant.allergies || 'None' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted-foreground">Dietary</dt>
-                    <dd>{{ r.participant.dietary || 'None' }}</dd>
-                  </div>
-                </dl>
+                <!-- K6: the questions this registration answered, labelled with the form version (forms slice).
+                     Health answers are shown only to staff with health access (access slice rules). -->
+                <FormAnswers :registration-id="id" />
               </CardContent>
             </Card>
           </TabsContent>

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -71,6 +72,13 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(await factory.WithDb(db => db.Programs.Where(p => p.Id == id).Select(p => p.IsPublished).SingleAsync()));
         Assert.Equal(PublishState.Published, await factory.WithDb(db => db.Set<ProgramSetup>().Where(s => s.ProgramId == id).Select(s => s.State).SingleAsync()));
         Assert.Contains("family-weekend", await factory.CreateClient().GetStringAsync("/api/programs"));
+        // Summer 2026 ended before the demo clock's today: the guest site lists only Summer 2028.
+        foreach (var url in new[] { "/api/programs", $"/api/programs/{SetupSeed.FamilyWeekendSlug}" })
+        {
+            var body = await factory.CreateClient().GetStringAsync(url);
+            Assert.Contains("Summer 2028", body);
+            Assert.DoesNotContain("Summer 2026", body);
+        }
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(e => e.Action == "program.published" && e.EntityId == $"{id}" && e.Actor == "Alex Morgan (ADMIN)")));
 
         // A second approval of the same program is refused, and a published program can't be edited in place.
@@ -92,6 +100,9 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var session = await alex.PostAsJsonAsync($"{Setup}/programs/{id}/sessions",
             new NewSessionInput("Fall 2028", new(2028, 10, 6), new(2028, 10, 8), 20000, 5000, "Everyone", null, 0, 12, 30));
         Assert.Equal(HttpStatusCode.OK, session.StatusCode);
+        // No waiver yet: the publish guard refuses it (polish).
+        Assert.Equal(HttpStatusCode.BadRequest, (await alex.PostAsync($"{Setup}/programs/{id}/submit", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{id}/waivers", null)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{id}/submit", null)).StatusCode);
 
         var self = await alex.PostAsync($"{Setup}/programs/{id}/approve", null);
@@ -122,6 +133,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.False(await factory.WithDb(db => db.Orders.AnyAsync(o => o.SessionId == sessionId)));
 
         // Pending approval is still not published.
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{programId}/waivers", null)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{programId}/submit", null)).StatusCode);
         await Assert.ThrowsAsync<CheckoutValidationException>(() => Checkout(household, kid, sessionId, null));
 
@@ -188,7 +200,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("can't refund more", await rising.Content.ReadAsStringAsync());
 
         // A plan can't put an installment in the past.
-        var pastPlan = await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 10000, tiers) with { PlanInstallments = 3, BalanceDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1) });
+        var pastPlan = await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 10000, tiers) with { PlanInstallments = 3, BalanceDueDate = factory.Clock.Today().AddMonths(1) });
         Assert.Equal(HttpStatusCode.BadRequest, pastPlan.StatusCode);
         Assert.Contains("which has passed", await pastPlan.Content.ReadAsStringAsync());
 

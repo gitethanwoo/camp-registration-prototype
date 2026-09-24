@@ -97,7 +97,9 @@ test('the audit log shows what Alex changed, with before and after values', asyn
 
 test('a CET staff member can read the audit log but not program setup @phone', async ({ page }) => {
   await signInAs(page, 'diane', '/admin/setup/programs')
-  await expect(page.getByText('Programs is for admins')).toBeVisible()
+  // The router guard sends a role mismatch to the No access page before the page's own 403 copy can render.
+  await expect(page).toHaveURL(/\/no-access\?need=role/)
+  await expect(page.getByText(/needs the Administrator role/)).toBeVisible()
   await page.goto('/admin/setup/audit')
   await expect(page.getByRole('heading', { name: 'Audit log' })).toBeVisible()
   await expect(page.getByText(/\d+ entries/)).toBeVisible()

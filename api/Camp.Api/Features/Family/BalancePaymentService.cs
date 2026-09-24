@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +22,7 @@ public sealed record PayResult(PayOutcome Outcome, int AmountCents, string? Mess
 /// 2. Charge the card with the payment's idempotency key.
 /// 3. Record the charge, spread it across the order's registrations, and mark installments paid.
 /// </summary>
-public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit)
+public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock)
 {
     static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(2);
 
@@ -54,7 +55,7 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
             Kind = installment is null ? BalancePaymentKind.Balance : BalancePaymentKind.Installment,
             InstallmentSequence = installment?.Sequence,
             Status = BalancePaymentStatus.Pending,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         };
 
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
@@ -114,7 +115,7 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
             ProcessorRef = result.ProcessorRef,
             CardLast4 = result.CardLast4,
             Reason = result.Succeeded ? label : $"{label}: {result.DeclineReason}",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         });
         payment.CardLast4 = result.CardLast4;
 
@@ -132,7 +133,7 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
                 Target = "HubSpot",
                 AggregateId = order.ConfirmationCode,
                 PayloadJson = JsonSerializer.Serialize(new { order.ConfirmationCode, amountCents = payment.AmountCents, label }),
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
         }
         else
@@ -150,7 +151,7 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
     /// </summary>
     async Task ReconcileStaleAsync(int orderId, CancellationToken ct)
     {
-        var cutoff = DateTime.UtcNow - StaleAfter;
+        var cutoff = clock.UtcNow() - StaleAfter;
         var stale = await db.Set<BalancePayment>().AsNoTracking()
             .Where(p => p.OrderId == orderId && p.Status == BalancePaymentStatus.Pending && p.CreatedAt < cutoff)
             .Select(p => new { p.Id, p.IdempotencyKey }).ToListAsync(ct);

@@ -4,6 +4,8 @@
 //   - No native browser dialogs (alert/confirm/prompt); use Dialog/AlertDialog/toast.
 //   - No filler UI copy.
 //   - No sleeps in e2e; wait on behavior.
+//   - One clock: "now" comes from TimeProvider (api) and now() in web/src/lib/clock.ts (web), never
+//     DateTime.UtcNow/Now/Today, DateTimeOffset.UtcNow/Now, new Date() or Date.now().
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
@@ -77,8 +79,35 @@ for (const path of e2eFiles) {
   }
 }
 
+// One clock. The demo runs in March 2028; a raw "now" read would stamp live actions with the real date.
+const CLOCK_FILES = new Set([
+  'web/src/lib/clock.ts',
+  'api/Camp.Api/Features/Polish/DemoClock.cs',
+  'api/Camp.Api/Features/Polish/ClockEndpoints.cs',
+])
+const WEB_NOW = [/\bnew Date\(\s*\)/g, /\bDate\.now\(\)/g]
+const API_NOW = [/\bDateTime\.(UtcNow|Now|Today)\b/g, /\bDateTimeOffset\.(UtcNow|Now)\b/g, /\bTimeProvider\.System\b/g]
+function scanNow(files, patterns, hint) {
+  for (const path of files) {
+    const rel = relative('.', path)
+    if (CLOCK_FILES.has(rel)) continue
+    const text = readFileSync(path, 'utf8')
+    for (const re of patterns)
+      for (const m of text.matchAll(re)) {
+        const line = text.split('\n')[lineOf(text, m.index) - 1] ?? ''
+        if (/^\s*(\/\/|\*|\/\*|\/\/\/)/.test(line) || line.includes('clock: allow-real-time')) continue
+        failures.push(`${rel}:${lineOf(text, m.index)} ${m[0]} reads the real time; ${hint}.`)
+      }
+  }
+}
+scanNow(webFiles, WEB_NOW, 'use now() or nowMs() from @/lib/clock')
+const apiFiles = walk('api').filter(
+  (p) => p.endsWith('.cs') && !/\/(bin|obj|Migrations)\//.test(p) && !p.includes('Camp.Api.Tests'),
+)
+scanNow(apiFiles, API_NOW, 'inject TimeProvider and use clock.UtcNow() or clock.Today()')
+
 if (failures.length) {
   for (const f of failures) console.error(`[slop] ${f}`)
   process.exit(1)
 }
-console.log(`[slop] ok (${webFiles.length + e2eFiles.length} files)`)
+console.log(`[slop] ok (${webFiles.length + e2eFiles.length + apiFiles.length} files)`)

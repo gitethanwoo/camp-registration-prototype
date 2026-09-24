@@ -1,6 +1,7 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Integrations;
@@ -9,7 +10,7 @@ namespace Camp.Api.Integrations;
 /// Delivers outbox events. Production: HubSpot transactional email, Salesforce upsert by external ID,
 /// with retry/backoff and a repair queue. Here delivery is logged and marked processed.
 /// </summary>
-public class OutboxDispatcher(IServiceScopeFactory scopes, ILogger<OutboxDispatcher> log) : BackgroundService
+public class OutboxDispatcher(IServiceScopeFactory scopes, ILogger<OutboxDispatcher> log, TimeProvider clock) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -23,7 +24,7 @@ public class OutboxDispatcher(IServiceScopeFactory scopes, ILogger<OutboxDispatc
                 foreach (var e in batch)
                 {
                     log.LogInformation("Outbox → {Target}: {Type} {Aggregate} {Payload}", e.Target, e.Type, e.AggregateId, e.PayloadJson);
-                    e.ProcessedAt = DateTime.UtcNow;
+                    e.ProcessedAt = clock.UtcNow();
                 }
                 await db.SaveChangesAsync(ct);
             }
@@ -37,7 +38,7 @@ public class OutboxDispatcher(IServiceScopeFactory scopes, ILogger<OutboxDispatc
 /// FR-45: detects orders left in Pending (process died between charging and recording the result)
 /// and repairs them from the processor's record, keyed by the idempotency key.
 /// </summary>
-public class PendingPaymentReconciler(IServiceScopeFactory scopes, ILogger<PendingPaymentReconciler> log) : BackgroundService
+public class PendingPaymentReconciler(IServiceScopeFactory scopes, ILogger<PendingPaymentReconciler> log, TimeProvider clock) : BackgroundService
 {
     static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(2);
 
@@ -51,7 +52,7 @@ public class PendingPaymentReconciler(IServiceScopeFactory scopes, ILogger<Pendi
                 var db = scope.ServiceProvider.GetRequiredService<CampDbContext>();
                 var gateway = scope.ServiceProvider.GetRequiredService<IPaymentGateway>();
                 var checkout = scope.ServiceProvider.GetRequiredService<CheckoutService>();
-                var cutoff = DateTime.UtcNow - StaleAfter;
+                var cutoff = clock.UtcNow() - StaleAfter;
                 var stale = await db.Orders.Where(o => o.Status == OrderStatus.Pending && o.CreatedAt < cutoff)
                     .Select(o => new { o.Id, o.IdempotencyKey }).ToListAsync(ct);
                 foreach (var o in stale)
@@ -72,7 +73,7 @@ public class PendingPaymentReconciler(IServiceScopeFactory scopes, ILogger<Pendi
 /// FR-36: an offered spot that isn't accepted by the deadline is released back to the pool
 /// (the admin then offers it to the next position; there is no auto-promotion in v1).
 /// </summary>
-public class WaitlistOfferExpiry(IServiceScopeFactory scopes, ILogger<WaitlistOfferExpiry> log) : BackgroundService
+public class WaitlistOfferExpiry(IServiceScopeFactory scopes, ILogger<WaitlistOfferExpiry> log, TimeProvider clock) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -83,14 +84,14 @@ public class WaitlistOfferExpiry(IServiceScopeFactory scopes, ILogger<WaitlistOf
                 using var scope = scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<CampDbContext>();
                 var expired = await db.WaitlistEntries.Include(w => w.Person)
-                    .Where(w => w.Status == WaitlistStatus.Offered && w.OfferExpiresAt < DateTime.UtcNow).ToListAsync(ct);
+                    .Where(w => w.Status == WaitlistStatus.Offered && w.OfferExpiresAt < clock.UtcNow()).ToListAsync(ct);
                 foreach (var w in expired)
                 {
                     await using var tx = await db.Database.BeginTransactionAsync(ct);
                     w.Status = WaitlistStatus.Expired;
                     await db.CapacityPools.Where(p => p.Id == w.PoolId && p.Reserved > 0)
                         .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1), ct);
-                    db.AuditEvents.Add(new AuditEvent { Actor = "system", Action = "waitlist.offer_expired", EntityType = "WaitlistEntry", EntityId = w.Id.ToString(CultureInfo.InvariantCulture), Detail = $"Offer to {w.Person.FullName} expired; seat released for the next position.", CreatedAt = DateTime.UtcNow });
+                    db.AuditEvents.Add(new AuditEvent { Actor = "system", Action = "waitlist.offer_expired", EntityType = "WaitlistEntry", EntityId = w.Id.ToString(CultureInfo.InvariantCulture), Detail = $"Offer to {w.Person.FullName} expired; seat released for the next position.", CreatedAt = clock.UtcNow() });
                     await db.SaveChangesAsync(ct);
                     await tx.CommitAsync(ct);
                     log.LogInformation("Waitlist offer {Id} expired", w.Id);

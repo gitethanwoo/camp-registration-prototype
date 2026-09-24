@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,14 +21,23 @@ import { Textarea } from '@/components/ui/textarea'
 import { useRegistrationDraft } from '@/composables/useRegistrationDraft'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
-import type { Participant, Question, Quote, RegisterContext } from '@/lib/types'
+import QuestionField from '@/features/forms/QuestionField.vue'
+import { unanswered, visibleAnswers, visibleKeys } from '@/features/forms/rules'
+import type { FormQuestion } from '@/features/forms/types'
+import type { Participant, Quote, RegisterContext } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { now } from '@/lib/clock'
 
 const props = defineProps<{ sessionId: number }>()
 const router = useRouter()
 const { draft, rotateKey, clear } = useRegistrationDraft(props.sessionId)
 
-const ctx = ref<RegisterContext | null>(null)
+// K6: register-context also carries the live form version and its question types (forms slice).
+type WizardContext = Omit<RegisterContext, 'questions'> & {
+  questions: FormQuestion[]
+  form: { id: number; version: number } | null
+}
+const ctx = ref<WizardContext | null>(null)
 const loadError = ref<string | null>(null)
 const quote = ref<Quote | null>(null)
 const attempted = ref(false)
@@ -62,7 +70,7 @@ const step = computed(() => steps[draft.step]?.key ?? 'participants')
 
 onMounted(async () => {
   try {
-    ctx.value = await api.get<RegisterContext>(`/sessions/${props.sessionId}/register-context`)
+    ctx.value = await api.get<WizardContext>(`/sessions/${props.sessionId}/register-context`)
   } catch (e) {
     loadError.value = (e as Error).message
     return
@@ -104,12 +112,17 @@ function toggle(p: Participant, on: boolean | 'indeterminate') {
 }
 
 // ── Questions ────────────────────────────────────────────────────────────
+// Visibility and required checks come from the forms slice so the wizard, the builder's preview and
+// checkout agree; household answers can reveal camper questions, never the other way round.
 const participantQuestions = computed(() => ctx.value?.questions.filter((q) => q.scope === 'Participant') ?? [])
 const householdQuestions = computed(() => ctx.value?.questions.filter((q) => q.scope === 'Household') ?? [])
-const visible = (q: Question, answers: Record<string, string>) =>
-  !q.showWhenKey || answers[q.showWhenKey] === q.showWhenValue
-const missing = (q: Question, answers: Record<string, string>) =>
-  q.required && visible(q, answers) && !answers[q.key]?.trim()
+const householdVisible = computed(() => visibleKeys(householdQuestions.value, draft.householdAnswers))
+const householdKnown = computed(() => visibleAnswers(householdQuestions.value, draft.householdAnswers))
+const householdMissing = computed(() => unanswered(householdQuestions.value, draft.householdAnswers))
+const camperVisible = (id: number) =>
+  visibleKeys(participantQuestions.value, draft.answers[id] ?? {}, householdKnown.value)
+const camperMissing = (id: number) =>
+  unanswered(participantQuestions.value, draft.answers[id] ?? {}, householdKnown.value)
 
 // ── Waivers ──────────────────────────────────────────────────────────────
 const waiverKey = (waiverId: number, personId?: number) => `${waiverId}:${personId ?? 'household'}`
@@ -124,10 +137,10 @@ const stepErrors = computed<string[]>(() => {
     case 'questions': {
       const errs: string[] = []
       for (const p of selected.value) {
-        const n = participantQuestions.value.filter((q) => missing(q, draft.answers[p.id] ?? {})).length
+        const n = camperMissing(p.id).length
         if (n) errs.push(`${p.firstName}: ${n} required ${n === 1 ? 'question' : 'questions'} unanswered.`)
       }
-      const h = householdQuestions.value.filter((q) => missing(q, draft.householdAnswers)).length
+      const h = householdMissing.value.length
       if (h) errs.push(`Family: ${h} required ${h === 1 ? 'question' : 'questions'} unanswered.`)
       return errs
     }
@@ -230,18 +243,10 @@ async function pay() {
       sessionId: props.sessionId,
       participants: selected.value.map((p) => ({
         personId: p.id,
-        answers: Object.fromEntries(
-          participantQuestions.value
-            .filter((q) => visible(q, draft.answers[p.id] ?? {}))
-            .map((q) => [q.key, draft.answers[p.id]?.[q.key] ?? '']),
-        ),
+        answers: visibleAnswers(participantQuestions.value, draft.answers[p.id] ?? {}, householdKnown.value),
         health: c.program.healthMechanism === 'Embedded' ? draft.health[p.id] : null,
       })),
-      householdAnswers: Object.fromEntries(
-        householdQuestions.value
-          .filter((q) => visible(q, draft.householdAnswers))
-          .map((q) => [q.key, draft.householdAnswers[q.key] ?? '']),
-      ),
+      householdAnswers: householdKnown.value,
       waivers: c.waivers.flatMap((w): { waiverId: number; personId: number | null; signerName: string }[] =>
         w.perParticipant
           ? selected.value.map((p) => ({ waiverId: w.id, personId: p.id, signerName: draft.signer }))
@@ -250,6 +255,7 @@ async function pay() {
       paymentOption: draft.paymentOption,
       discountCode: quote.value?.appliedDiscountCode ?? null,
       cardToken: token,
+      formVersionId: c.form?.id ?? null,
     })
     clear()
     router.replace(`/confirmation/${res.confirmationCode}`)
@@ -427,7 +433,7 @@ const paymentOptions = computed(() => {
             </CardContent>
           </Card>
 
-          <!-- R3 · Questions -->
+          <!-- R3 · Questions: the program's live form (K6), or its original questions -->
           <template v-if="step === 'questions'">
             <Card v-for="p in selected" :key="p.id">
               <CardHeader>
@@ -435,39 +441,13 @@ const paymentOptions = computed(() => {
               </CardHeader>
               <CardContent class="grid gap-5 sm:grid-cols-2">
                 <template v-for="q in participantQuestions" :key="q.key">
-                  <div v-if="visible(q, draft.answers[p.id]!)" class="space-y-2">
-                    <Label :for="`q-${p.id}-${q.key}`"
-                      >{{ q.label }}<span v-if="q.required" class="text-destructive"> *</span></Label
-                    >
-                    <Select v-if="q.type === 'Select'" v-model="draft.answers[p.id]![q.key]">
-                      <SelectTrigger
-                        :id="`q-${p.id}-${q.key}`"
-                        class="w-full"
-                        :aria-invalid="(attempted && missing(q, draft.answers[p.id]!)) || undefined"
-                      >
-                        <SelectValue placeholder="Choose…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in q.options" :key="o" :value="o">{{ o }}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <RadioGroup
-                      v-else-if="q.type === 'YesNo'"
-                      v-model="draft.answers[p.id]![q.key]"
-                      class="flex gap-6"
-                      :aria-invalid="(attempted && missing(q, draft.answers[p.id]!)) || undefined"
-                    >
-                      <Label v-for="o in ['Yes', 'No']" :key="o" class="font-normal"
-                        ><RadioGroupItem :value="o" :aria-label="o" />{{ o }}</Label
-                      >
-                    </RadioGroup>
-                    <Input
-                      v-else
-                      :id="`q-${p.id}-${q.key}`"
-                      v-model="draft.answers[p.id]![q.key]"
-                      :aria-invalid="(attempted && missing(q, draft.answers[p.id]!)) || undefined"
-                    />
-                  </div>
+                  <QuestionField
+                    v-if="camperVisible(p.id).has(q.key)"
+                    v-model="draft.answers[p.id]![q.key]"
+                    :question="q"
+                    :field-id="`q-${p.id}-${q.key}`"
+                    :invalid="attempted && camperMissing(p.id).includes(q)"
+                  />
                 </template>
               </CardContent>
             </Card>
@@ -478,37 +458,13 @@ const paymentOptions = computed(() => {
               </CardHeader>
               <CardContent class="grid gap-5 sm:grid-cols-2">
                 <template v-for="q in householdQuestions" :key="q.key">
-                  <div v-if="visible(q, draft.householdAnswers)" class="space-y-2">
-                    <Label :for="`hq-${q.key}`"
-                      >{{ q.label }}<span v-if="q.required" class="text-destructive"> *</span></Label
-                    >
-                    <Select v-if="q.type === 'Select'" v-model="draft.householdAnswers[q.key]">
-                      <SelectTrigger
-                        :id="`hq-${q.key}`"
-                        class="w-full"
-                        :aria-invalid="(attempted && missing(q, draft.householdAnswers)) || undefined"
-                        ><SelectValue placeholder="Choose…"
-                      /></SelectTrigger>
-                      <SelectContent
-                        ><SelectItem v-for="o in q.options" :key="o" :value="o">{{ o }}</SelectItem></SelectContent
-                      >
-                    </Select>
-                    <RadioGroup
-                      v-else-if="q.type === 'YesNo'"
-                      v-model="draft.householdAnswers[q.key]"
-                      class="flex gap-6"
-                    >
-                      <Label v-for="o in ['Yes', 'No']" :key="o" class="font-normal"
-                        ><RadioGroupItem :value="o" :aria-label="o" />{{ o }}</Label
-                      >
-                    </RadioGroup>
-                    <Input
-                      v-else
-                      :id="`hq-${q.key}`"
-                      v-model="draft.householdAnswers[q.key]"
-                      :aria-invalid="(attempted && missing(q, draft.householdAnswers)) || undefined"
-                    />
-                  </div>
+                  <QuestionField
+                    v-if="householdVisible.has(q.key)"
+                    v-model="draft.householdAnswers[q.key]"
+                    :question="q"
+                    :field-id="`hq-${q.key}`"
+                    :invalid="attempted && householdMissing.includes(q)"
+                  />
                 </template>
               </CardContent>
             </Card>
@@ -635,7 +591,7 @@ const paymentOptions = computed(() => {
                   :aria-invalid="(attempted && !draft.signer.trim()) || undefined"
                 />
                 <p class="text-xs text-muted-foreground">
-                  Signed {{ date(new Date().toISOString()) }} · {{ ctx.household.email }}
+                  Signed {{ date(now().toISOString()) }} · {{ ctx.household.email }}
                 </p>
               </CardContent>
             </Card>

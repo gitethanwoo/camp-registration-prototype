@@ -2,6 +2,7 @@ import { CalendarCog, ClipboardList, Gauge, ListOrdered } from '@lucide/vue'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import GuestLayout from '@/layouts/GuestLayout.vue'
+import type { StaffRole } from '@/lib/nav'
 import { loadSession, signIn } from '@/lib/session'
 
 // Feature slices register pages from src/features/<slice>/routes.ts; see src/features/README.md.
@@ -88,6 +89,8 @@ export const router = createRouter({
             nav: { group: 'Setup', label: 'Sessions & capacity', icon: CalendarCog, order: 10 },
           },
         },
+        // Staff who open a page their role can't use stay in the console shell (sidebar and account menu).
+        { path: 'no-access', component: () => import('@/pages/NoAccess.vue'), meta: { title: 'No access' } },
         ...sliceAdminRoutes,
       ],
     },
@@ -110,7 +113,15 @@ router.beforeEach(async (to) => {
     return session.role === 'host' ? true : { path: '/admin' }
   }
   if (needs === 'staff' && session.role === 'host') return { path: '/host' }
-  if (needs !== session.kind) return { path: '/no-access', query: { need: needs } }
+  if (needs !== session.kind) {
+    // Console staff who open a family page see the message inside the console; guests and hosts in the public shell.
+    const inConsole = session.kind === 'staff' && session.role !== 'host'
+    return { path: inConsole ? '/admin/no-access' : '/no-access', query: { need: needs } }
+  }
+  // A staff page that needs a role (meta.roles) sends other roles to a page that names it, instead of a 403 mid-page.
+  const roles = to.matched.findLast((r) => r.meta.roles)?.meta.roles
+  if (needs === 'staff' && roles && !roles.includes(session.role as StaffRole))
+    return { path: '/admin/no-access', query: { need: 'role', roles: roles.join(',') } }
   return true
 })
 

@@ -54,6 +54,8 @@ export interface ApplyContext {
   otherAdults: Adult[]
   sections: FormSection[]
   questions: FormQuestion[]
+  /** The program's waivers, signed on the review step. Approval puts the signature on the registration. */
+  waivers: { id: number; title: string; version: number; effectiveDate: string; body: string }[]
   application: {
     id: number
     stage: Stage

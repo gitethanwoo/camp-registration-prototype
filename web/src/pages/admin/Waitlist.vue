@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, ApiError } from '@/lib/api'
 import { dateTime } from '@/lib/format'
+import { nowMs } from '@/lib/clock'
 
 interface Entry {
   id: number
@@ -92,7 +93,7 @@ function localInput(d: Date) {
 }
 function openOffer(entry: Entry, pool: PoolWaitlist) {
   target.value = { mode: 'offer', entry, pool }
-  deadline.value = localInput(new Date(Date.now() + 48 * 3600_000))
+  deadline.value = localInput(new Date(nowMs() + 48 * 3600_000))
   error.value = null
 }
 function openRemove(entry: Entry, pool: PoolWaitlist) {

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
@@ -41,7 +42,7 @@ public static class AdminEndpoints
         });
 
         // O1-lite · session KPIs + needs-attention (unique people, reasons overlap)
-        admin.MapGet("/sessions/{id:int}/overview", async (int id, CampDbContext db) =>
+        admin.MapGet("/sessions/{id:int}/overview", async (int id, CampDbContext db, TimeProvider clock) =>
         {
             var s = await db.Sessions.Include(x => x.Program).ThenInclude(p => p.Waivers).Include(x => x.Pools).AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             if (s is null) return Results.NotFound();
@@ -55,7 +56,7 @@ public static class AdminEndpoints
             var waiverMissing = regs.Where(r => r.WaiverAcceptances.Count < waiverCount).Select(r => r.Id).ToHashSet();
             var balanceDue = regs.Where(r => r.BalanceCents > 0).Select(r => r.Id).ToHashSet();
             var attention = healthIncomplete.Union(waiverMissing).Union(balanceDue).ToHashSet();
-            var today = DateTime.UtcNow.Date;
+            var today = clock.UtcNow().Date;
             var collected = await db.PaymentOperations.Where(o => o.Succeeded && db.Orders.Any(x => x.Id == o.OrderId && x.SessionId == id))
                 .SumAsync(o => o.Kind == PaymentKind.Charge ? o.AmountCents : o.Kind == PaymentKind.Refund ? -o.AmountCents : 0);
 
@@ -137,7 +138,7 @@ public static class AdminEndpoints
         });
 
         // C3 · Registration detail: timeline, documents, payments with refund on the same screen, audit.
-        admin.MapGet("/registrations/{id:int}", async (int id, CampDbContext db) =>
+        admin.MapGet("/registrations/{id:int}", async (int id, CampDbContext db, TimeProvider clock) =>
         {
             var r = await db.Registrations.Include(x => x.Person).Include(x => x.Pool)
                 .Include(x => x.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Waivers)
@@ -164,7 +165,9 @@ public static class AdminEndpoints
                 r.Grade,
                 GradeLabel = Eligibility.GradeLabel(r.Grade),
                 r.CreatedAt,
-                Participant = new { r.Person.Id, r.Person.FirstName, r.Person.LastName, r.Person.DateOfBirth, Gender = r.Person.Gender.ToString(), r.Person.Dietary, r.Person.Allergies, r.Person.AdaNeeds },
+                Participant = new { r.Person.Id, r.Person.FirstName, r.Person.LastName, r.Person.DateOfBirth, Gender = r.Person.Gender.ToString() },
+                // No allergies, dietary or ADA needs here: they are health details, read only through
+                // GET /api/access/registrations/{id}/health, which enforces K9/K11 access and audits the view.
                 Household = new
                 {
                     h.Id,
@@ -179,7 +182,8 @@ public static class AdminEndpoints
                 Program = new { r.Session.Program.Name, r.Session.Program.Slug, HealthMechanism = r.Session.Program.HealthMechanism.ToString() },
                 Session = new { r.Session.Id, r.Session.Name, r.Session.StartDate, r.Session.EndDate },
                 Pool = r.Pool.Name,
-                Answers = JsonSerializer.Deserialize<Dictionary<string, string>>(r.AnswersJson),
+                // Registration answers come from GET /api/admin/forms/registrations/{id}/answers, which withholds
+                // K6 health questions (medication) from staff without health access and audits the view.
                 // Embedded health data is intentionally not returned to CET by default (FR-112 access scope).
                 HealthStatus = r.HealthStatus.ToString(),
                 HealthOnFile = r.HealthJson is not null,
@@ -203,7 +207,7 @@ public static class AdminEndpoints
                 },
                 // K4: the session's cancellation and refund table.
                 Cancellation = r.Status == RegistrationStatus.Confirmed
-                    ? RefundPolicy.Quote(r, await RefundPolicy.TiersForAsync(db, r.SessionId), DateOnly.FromDateTime(DateTime.UtcNow))
+                    ? RefundPolicy.Quote(r, await RefundPolicy.TiersForAsync(db, r.SessionId), clock.Today())
                     : null,
                 Audit = audit.Select(a => new { a.Actor, a.Action, a.Detail, a.CreatedAt }),
                 Messages = messages.Select(m => new { m.Type, m.Target, m.CreatedAt, m.ProcessedAt }),
@@ -212,7 +216,7 @@ public static class AdminEndpoints
 
         // Cancel under the time-based policy, refund on the same screen (FR-40, FR-49), release the seat.
         // The waitlist is not auto-promoted: the freed seat shows up for an admin to offer (FR-69).
-        admin.MapPost("/registrations/{id:int}/cancel", async (int id, CancelRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit) =>
+        admin.MapPost("/registrations/{id:int}/cancel", async (int id, CancelRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock) =>
         {
             if (string.IsNullOrWhiteSpace(req.Reason)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["reason"] = ["A reason is required."] });
             var r = await db.Registrations.Include(x => x.Person).Include(x => x.Session).Include(x => x.Order).ThenInclude(o => o!.Operations).FirstOrDefaultAsync(x => x.Id == id);
@@ -225,13 +229,13 @@ public static class AdminEndpoints
             {
                 var charge = r.Order!.Operations.Where(o => o.Kind == PaymentKind.Charge && o.Succeeded).OrderBy(o => o.CreatedAt).Last();
                 var result = await gateway.RefundAsync(charge.ProcessorRef, req.RefundCents);
-                db.PaymentOperations.Add(new PaymentOperation { OrderId = r.Order.Id, Kind = PaymentKind.Refund, AmountCents = req.RefundCents, Succeeded = result.Succeeded, ProcessorRef = result.ProcessorRef, CardLast4 = charge.CardLast4, Reason = req.Reason, CreatedAt = DateTime.UtcNow });
+                db.PaymentOperations.Add(new PaymentOperation { OrderId = r.Order.Id, Kind = PaymentKind.Refund, AmountCents = req.RefundCents, Succeeded = result.Succeeded, ProcessorRef = result.ProcessorRef, CardLast4 = charge.CardLast4, Reason = req.Reason, CreatedAt = clock.UtcNow() });
                 r.PaidCents -= req.RefundCents;
             }
             r.Status = RegistrationStatus.Cancelled;
             await db.CapacityPools.Where(p => p.Id == r.PoolId && p.Reserved > 0).ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1));
             audit.Record("registration.cancelled", "Registration", id, $"Cancelled {r.Person.FullName}. Refund {CheckoutService.Money(req.RefundCents)}. Reason: {req.Reason}");
-            db.OutboxEvents.Add(new OutboxEvent { Type = "RegistrationCancelled", Target = "HubSpot", AggregateId = "reg-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.RefundCents }), CreatedAt = DateTime.UtcNow });
+            db.OutboxEvents.Add(new OutboxEvent { Type = "RegistrationCancelled", Target = "HubSpot", AggregateId = "reg-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.RefundCents }), CreatedAt = clock.UtcNow() });
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok();
@@ -317,12 +321,12 @@ public static class AdminEndpoints
             };
         });
 
-        admin.MapPost("/waitlist/{id:int}/offer", async (int id, OfferRequest req, CampDbContext db, IAuditLog audit) =>
+        admin.MapPost("/waitlist/{id:int}/offer", async (int id, OfferRequest req, CampDbContext db, IAuditLog audit, TimeProvider clock) =>
         {
             var entry = await db.WaitlistEntries.Include(w => w.Person).Include(w => w.Pool).FirstOrDefaultAsync(w => w.Id == id);
             if (entry is null) return Results.NotFound();
             if (entry.Status != WaitlistStatus.Waiting) return Results.Conflict(new { error = "Only waiting entries can be offered a spot." });
-            if (req.Deadline <= DateTime.UtcNow) return Results.ValidationProblem(new Dictionary<string, string[]> { ["deadline"] = ["Deadline must be in the future."] });
+            if (req.Deadline <= clock.UtcNow()) return Results.ValidationProblem(new Dictionary<string, string[]> { ["deadline"] = ["Deadline must be in the future."] });
 
             await using var tx = await db.Database.BeginTransactionAsync();
             // An offer holds a real seat, so it can't be offered twice or into a full pool.
@@ -332,7 +336,7 @@ public static class AdminEndpoints
             entry.Status = WaitlistStatus.Offered;
             entry.OfferExpiresAt = req.Deadline;
             audit.Record("waitlist.offered", "WaitlistEntry", id, $"Offered {entry.Pool.Name} spot to {entry.Person.FullName} (#{entry.Position}); respond by {req.Deadline:MMM d, h:mm tt} UTC.");
-            db.OutboxEvents.Add(new OutboxEvent { Type = "WaitlistOfferSent", Target = "HubSpot", AggregateId = "wl-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.Deadline }), CreatedAt = DateTime.UtcNow });
+            db.OutboxEvents.Add(new OutboxEvent { Type = "WaitlistOfferSent", Target = "HubSpot", AggregateId = "wl-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.Deadline }), CreatedAt = clock.UtcNow() });
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok();

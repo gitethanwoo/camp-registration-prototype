@@ -10,23 +10,24 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { dateRange, money } from '@/lib/format'
 import type { PoolAvailability, ProgramDetail } from '@/lib/types'
+import { nowMs } from '@/lib/clock'
 
 const props = defineProps<{ slug: string }>()
 const router = useRouter()
 const program = ref<ProgramDetail | null>(null)
 const asOf = ref<Date | null>(null)
-const now = ref(Date.now())
+const now = ref(nowMs())
 const stale = ref(false)
 let poll: number | undefined
 let tick: number | undefined
 
 onMounted(async () => {
   program.value = await api.get<ProgramDetail>(`/programs/${props.slug}`)
-  asOf.value = new Date()
+  asOf.value = new Date(nowMs())
   // NFR-1: near-real-time. Poll every 10s; if the API is unreachable, keep showing the
   // last-known numbers with a visible "as of" indicator instead of blanking the page.
   poll = window.setInterval(refresh, 10_000)
-  tick = window.setInterval(() => (now.value = Date.now()), 1_000)
+  tick = window.setInterval(() => (now.value = nowMs()), 1_000)
 })
 onUnmounted(() => {
   clearInterval(poll)
@@ -40,7 +41,7 @@ async function refresh() {
       const a = await api.get<{ pools: PoolAvailability[] }>(`/sessions/${s.id}/availability`)
       s.pools = a.pools
     }
-    asOf.value = new Date()
+    asOf.value = new Date(nowMs())
     stale.value = false
   } catch {
     stale.value = true

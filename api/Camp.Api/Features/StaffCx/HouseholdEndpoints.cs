@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -94,13 +95,13 @@ public sealed class HouseholdEndpoints : IEndpointModule
         });
 
         // C2 · Household 360: everything about one household, across ministries. No health details (FR-112).
-        admin.MapGet("/households/{id:int}", async (int id, CampDbContext db, CancellationToken ct) =>
+        admin.MapGet("/households/{id:int}", async (int id, CampDbContext db, TimeProvider clock, CancellationToken ct) =>
         {
             var h = await db.Households.Include(x => x.Members).AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (h is null) return Results.NotFound();
 
-            var season = await db.Sessions.Where(s => s.StartDate >= DateOnly.FromDateTime(DateTime.UtcNow)).MinAsync(s => (DateOnly?)s.StartDate, ct)
-                ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var season = await db.Sessions.Where(s => s.StartDate >= clock.Today()).MinAsync(s => (DateOnly?)s.StartDate, ct)
+                ?? clock.Today();
             var regs = await db.Registrations.AsNoTracking()
                 .Where(r => r.HouseholdId == id && r.Order!.Status != OrderStatus.Declined)
                 .Include(r => r.Person).Include(r => r.Pool).Include(r => r.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Ministry)
@@ -201,27 +202,27 @@ public sealed class HouseholdEndpoints : IEndpointModule
             });
         });
 
-        admin.MapPost("/households/{id:int}/notes", async (int id, NoteRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        admin.MapPost("/households/{id:int}/notes", async (int id, NoteRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             if (!await db.Households.AnyAsync(h => h.Id == id, ct)) return Results.NotFound();
             var body = req.Body?.Trim() ?? "";
             if (body.Length == 0) return StaffCx.Invalid("body", "Write the note first.");
             if (body.Length > 2000) return StaffCx.Invalid("body", "Notes are limited to 2,000 characters.");
-            var note = new HouseholdNote { HouseholdId = id, Body = body, Author = staff.Actor, CreatedAt = DateTime.UtcNow };
+            var note = new HouseholdNote { HouseholdId = id, Body = body, Author = staff.Actor, CreatedAt = clock.UtcNow() };
             db.Set<HouseholdNote>().Add(note);
             audit.Record("household.note_added", "Household", id, $"Note added: {(body.Length > 120 ? body[..120] + "…" : body)}");
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { note.Id, note.Body, note.Author, note.CreatedAt });
         });
 
-        admin.MapPut("/households/{id:int}/verification/{key}", async (int id, string key, VerificationRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        admin.MapPut("/households/{id:int}/verification/{key}", async (int id, string key, VerificationRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             if (!await db.Households.AnyAsync(h => h.Id == id, ct)) return Results.NotFound();
             var item = VerificationItems.FirstOrDefault(i => i.Key == key);
             if (item.Key is null) return Results.NotFound();
             var existing = await db.Set<HouseholdVerification>().FirstOrDefaultAsync(v => v.HouseholdId == id && v.ItemKey == key, ct);
             if (req.Checked && existing is null)
-                db.Set<HouseholdVerification>().Add(new HouseholdVerification { HouseholdId = id, ItemKey = key, CheckedBy = staff.Actor, CheckedAt = DateTime.UtcNow });
+                db.Set<HouseholdVerification>().Add(new HouseholdVerification { HouseholdId = id, ItemKey = key, CheckedBy = staff.Actor, CheckedAt = clock.UtcNow() });
             else if (!req.Checked && existing is not null)
                 db.Set<HouseholdVerification>().Remove(existing);
             else

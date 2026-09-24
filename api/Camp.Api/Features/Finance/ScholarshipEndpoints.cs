@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,7 +44,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
 
     // ---- O6: family ----
 
-    static async Task<IResult> FamilyOverview(CampDbContext db, CurrentUser user, CancellationToken ct)
+    static async Task<IResult> FamilyOverview(CampDbContext db, CurrentUser user, TimeProvider clock, CancellationToken ct)
     {
         var household = await db.Households.AsNoTracking().Include(h => h.Members).SingleAsync(h => h.Id == user.HouseholdId, ct);
         var orders = await db.Orders.AsNoTracking()
@@ -55,7 +56,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
             .Where(a => a.HouseholdId == user.HouseholdId)
             .Include(a => a.Lines).Include(a => a.Document)
             .OrderByDescending(a => a.SubmittedAt).ToListAsync(ct);
-        var today = Fin.Today;
+        var today = clock.Today();
         var primary = household.Members.Where(m => m.IsAdult).OrderBy(m => m.Role != "Primary").ThenBy(m => m.Id).FirstOrDefault();
 
         return Results.Ok(new
@@ -103,13 +104,13 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         });
     }
 
-    static async Task<IResult> Apply(ScholarshipApplyRequest req, CampDbContext db, CurrentUser user, IAuditLog audit, CancellationToken ct)
+    static async Task<IResult> Apply(ScholarshipApplyRequest req, CampDbContext db, CurrentUser user, IAuditLog audit, TimeProvider clock, CancellationToken ct)
     {
         var code = req.Code?.Trim() ?? "";
         var order = await db.Orders.Include(o => o.Registrations).ThenInclude(r => r.Person).Include(o => o.Session).ThenInclude(s => s.Program)
             .FirstOrDefaultAsync(o => o.ConfirmationCode == code && o.HouseholdId == user.HouseholdId && o.Status == OrderStatus.Paid, ct);
         if (order is null) return Results.NotFound();
-        if (order.Session.EndDate < Fin.Today) return Fin.Invalid("code", "This camp has already ended.");
+        if (order.Session.EndDate < clock.Today()) return Fin.Invalid("code", "This camp has already ended.");
 
         var ids = (req.RegistrationIds ?? []).Distinct().ToList();
         var regs = order.Registrations.Where(r => ids.Contains(r.Id) && r.Status == RegistrationStatus.Confirmed).ToList();
@@ -125,7 +126,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         var reason = req.Reason?.Trim();
         if (string.IsNullOrEmpty(reason)) return Fin.Invalid("reason", "Tell us a little about your situation.");
         if (reason.Length > MaxReasonLength) return Fin.Invalid("reason", $"Keep this to {MaxReasonLength:N0} characters.");
-        var (doc, docError) = ReadDocument(req.Document);
+        var (doc, docError) = ReadDocument(req.Document, clock);
         if (doc is null) return Fin.Invalid("document", docError!);
 
         var submitter = order.Registrations.Select(r => r.Person).FirstOrDefault(p => p.IsAdult)?.FullName;
@@ -134,7 +135,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
             HouseholdId = user.HouseholdId,
             OrderId = order.Id,
             SubmittedBy = string.IsNullOrWhiteSpace(user.Name) ? submitter ?? user.Email : user.Name,
-            SubmittedAt = DateTime.UtcNow,
+            SubmittedAt = clock.UtcNow(),
             RequestedCents = req.RequestedCents,
             IncomeBand = band,
             Reason = reason,
@@ -144,7 +145,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         application.Lines.AddRange(regs.Select(r => new ScholarshipAwardLine { RegistrationId = r.Id }));
         db.Add(application);
         audit.Record("scholarship.submitted", "PaymentOrder", order.Id, $"Applied for {Fin.Money(req.RequestedCents)} in financial assistance for {string.Join(" and ", regs.Select(r => r.Person.FirstName))} ({order.Session.Program.Name}).");
-        db.OutboxEvents.Add(new OutboxEvent { Type = "ScholarshipSubmitted", Target = "HubSpot", AggregateId = order.ConfirmationCode, PayloadJson = JsonSerializer.Serialize(new { order.ConfirmationCode, req.RequestedCents }), CreatedAt = DateTime.UtcNow });
+        db.OutboxEvents.Add(new OutboxEvent { Type = "ScholarshipSubmitted", Target = "HubSpot", AggregateId = order.ConfirmationCode, PayloadJson = JsonSerializer.Serialize(new { order.ConfirmationCode, req.RequestedCents }), CreatedAt = clock.UtcNow() });
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException e) when (e.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 })
         {
@@ -154,7 +155,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
     }
 
     /// <summary>Accepts a PDF, PNG or JPEG up to 5 MB, judged by its first bytes rather than its name.</summary>
-    static (ScholarshipDocument?, string?) ReadDocument(ScholarshipDocumentUpload? upload)
+    static (ScholarshipDocument?, string?) ReadDocument(ScholarshipDocumentUpload? upload, TimeProvider clock)
     {
         if (upload is null || string.IsNullOrEmpty(upload.Base64)) return (null, "A supporting document is required. Upload a tax return, pay stub or similar.");
         byte[] bytes;
@@ -173,7 +174,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         var name = Path.GetFileName(upload.FileName ?? "").Trim();
         if (name.Length == 0) name = "document";
         if (name.Length > 200) name = name[..200];
-        return (new ScholarshipDocument { FileName = name, ContentType = type, SizeBytes = bytes.Length, Content = bytes, UploadedAt = DateTime.UtcNow }, null);
+        return (new ScholarshipDocument { FileName = name, ContentType = type, SizeBytes = bytes.Length, Content = bytes, UploadedAt = clock.UtcNow() }, null);
     }
 
     // ---- O7: staff ----
@@ -266,7 +267,7 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         });
     }
 
-    static async Task<IResult> Approve(int id, ScholarshipApproveRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct)
+    static async Task<IResult> Approve(int id, ScholarshipApproveRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct)
     {
         var note = req.Note?.Trim();
         if (note?.Length > MaxReasonLength) return Fin.Invalid("note", $"Notes are limited to {MaxReasonLength:N0} characters.");
@@ -283,19 +284,19 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         if (req.AwardCents > owed)
             return Fin.Invalid("awardCents", $"Cannot approve: award {Fin.Money(req.AwardCents)} is more than the {Fin.Money(owed)} still owed. The family has already paid the rest, so the difference would be a refund.");
 
-        if (!await Decide(db, id, ScholarshipStatus.Approved, req.AwardCents, staff.Actor, note, ct)) return await AlreadyDecided(db, id, ct);
+        if (!await Decide(db, id, ScholarshipStatus.Approved, req.AwardCents, staff.Actor, note, clock, ct)) return await AlreadyDecided(db, id, ct);
         ApplyAward(a.Lines, req.AwardCents);
         var order = await db.Orders.Include(o => o.Installments).Include(o => o.Registrations).SingleAsync(o => o.Id == a.OrderId, ct);
         Fin.ShrinkPlan(order.Installments, order.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled).Sum(r => r.BalanceCents));
         audit.Record("scholarship.approved", "ScholarshipApplication", a.Id,
             $"Awarded {Fin.Money(req.AwardCents)} to the {a.Household.Name} household ({a.Order.ConfirmationCode}, {string.Join(" and ", regs.Select(r => r.Person.FirstName))}). Balance now {Fin.Money(regs.Sum(r => r.BalanceCents))}.{(note is { Length: > 0 } ? $" Note: {note}" : "")}");
-        db.OutboxEvents.Add(new OutboxEvent { Type = "ScholarshipAwarded", Target = "HubSpot", AggregateId = a.Order.ConfirmationCode, PayloadJson = JsonSerializer.Serialize(new { a.Order.ConfirmationCode, awardCents = req.AwardCents }), CreatedAt = DateTime.UtcNow });
+        db.OutboxEvents.Add(new OutboxEvent { Type = "ScholarshipAwarded", Target = "HubSpot", AggregateId = a.Order.ConfirmationCode, PayloadJson = JsonSerializer.Serialize(new { a.Order.ConfirmationCode, awardCents = req.AwardCents }), CreatedAt = clock.UtcNow() });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(new { AwardCents = req.AwardCents, BalanceCents = regs.Sum(r => r.BalanceCents) });
     }
 
-    static async Task<IResult> Deny(int id, ScholarshipDenyRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct)
+    static async Task<IResult> Deny(int id, ScholarshipDenyRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct)
     {
         var note = req.Note?.Trim();
         if (string.IsNullOrEmpty(note)) return Fin.Invalid("note", "Add a note saying why, for the file.");
@@ -303,9 +304,9 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var a = await db.Set<ScholarshipApplication>().Include(x => x.Household).Include(x => x.Order).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (a is null) return Results.NotFound();
-        if (!await Decide(db, id, ScholarshipStatus.Denied, 0, staff.Actor, note, ct)) return await AlreadyDecided(db, id, ct);
+        if (!await Decide(db, id, ScholarshipStatus.Denied, 0, staff.Actor, note, clock, ct)) return await AlreadyDecided(db, id, ct);
         audit.Record("scholarship.denied", "ScholarshipApplication", a.Id, $"Denied the {a.Household.Name} household's request for {Fin.Money(a.RequestedCents)} ({a.Order.ConfirmationCode}). Note: {note}");
-        db.OutboxEvents.Add(new OutboxEvent { Type = "ScholarshipDenied", Target = "HubSpot", AggregateId = a.Order.ConfirmationCode, PayloadJson = JsonSerializer.Serialize(new { a.Order.ConfirmationCode }), CreatedAt = DateTime.UtcNow });
+        db.OutboxEvents.Add(new OutboxEvent { Type = "ScholarshipDenied", Target = "HubSpot", AggregateId = a.Order.ConfirmationCode, PayloadJson = JsonSerializer.Serialize(new { a.Order.ConfirmationCode }), CreatedAt = clock.UtcNow() });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok();
@@ -348,9 +349,9 @@ public sealed class ScholarshipEndpoints : IEndpointModule
         }
     }
 
-    static async Task<bool> Decide(CampDbContext db, int id, ScholarshipStatus status, int award, string actor, string? note, CancellationToken ct)
+    static async Task<bool> Decide(CampDbContext db, int id, ScholarshipStatus status, int award, string actor, string? note, TimeProvider clock, CancellationToken ct)
     {
-        var now = (DateTime?)DateTime.UtcNow;
+        var now = (DateTime?)clock.UtcNow();
         return await db.Set<ScholarshipApplication>().Where(a => a.Id == id && a.Status == ScholarshipStatus.Submitted)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(a => a.Status, status)

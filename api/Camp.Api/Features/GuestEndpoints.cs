@@ -1,6 +1,8 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Forms;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -20,8 +22,10 @@ public static class GuestEndpoints
         var family = api.MapGroup("").RequireAuthorization(Policies.Family);
 
         // FR-15: every program from one entry point.
-        api.MapGet("/programs", async (CampDbContext db) =>
+        // Sessions that ended before the demo clock's today are history: families can't book them.
+        api.MapGet("/programs", async (CampDbContext db, TimeProvider clock) =>
         {
+            var today = clock.Today();
             var programs = await db.Programs.Where(p => p.IsPublished)
                 .Include(p => p.Ministry).Include(p => p.Sessions).ThenInclude(s => s.Pools)
                 .AsNoTracking().ToListAsync();
@@ -35,7 +39,7 @@ public static class GuestEndpoints
                 p.HostOrganization,
                 Ministry = p.Ministry.Name,
                 Type = p.Type.ToString(),
-                Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new
+                Sessions = p.Sessions.Where(s => s.EndDate >= today).OrderBy(s => s.StartDate).Select(s => new
                 {
                     s.Id,
                     s.Name,
@@ -52,7 +56,7 @@ public static class GuestEndpoints
         });
 
         // P1 · Program detail (FR-13, FR-14)
-        api.MapGet("/programs/{slug}", async (string slug, CampDbContext db) =>
+        api.MapGet("/programs/{slug}", async (string slug, CampDbContext db, TimeProvider clock) =>
         {
             var p = await db.Programs.Include(x => x.Ministry).Include(x => x.Waivers)
                 .Include(x => x.Sessions).ThenInclude(s => s.Pools)
@@ -77,7 +81,7 @@ public static class GuestEndpoints
                     HealthMechanism.ThirdParty => "Health form (external)",
                     _ => "Health form (completed during registration)",
                 }),
-                Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new
+                Sessions = p.Sessions.Where(s => s.EndDate >= clock.Today()).OrderBy(s => s.StartDate).Select(s => new
                 {
                     s.Id,
                     s.Name,
@@ -88,16 +92,16 @@ public static class GuestEndpoints
                     s.PlanInstallments,
                     Pools = s.Pools.OrderBy(x => x.SortOrder).Select(x => ToAvailability(x, waitlist)),
                 }),
-                AsOf = DateTime.UtcNow,
+                AsOf = clock.UtcNow(),
             });
         });
 
         // P2 · Live availability, polled by the UI (NFR-1: seconds, not a daily snapshot).
-        api.MapGet("/sessions/{id:int}/availability", async (int id, CampDbContext db) =>
+        api.MapGet("/sessions/{id:int}/availability", async (int id, CampDbContext db, TimeProvider clock) =>
         {
             var pools = await db.CapacityPools.Where(x => x.SessionId == id).OrderBy(x => x.SortOrder).AsNoTracking().ToListAsync();
             var waitlist = await WaitlistCounts(db, [id]);
-            return new { AsOf = DateTime.UtcNow, Pools = pools.Select(x => ToAvailability(x, waitlist)) };
+            return new { AsOf = clock.UtcNow(), Pools = pools.Select(x => ToAvailability(x, waitlist)) };
         });
 
         family.MapGet("/me", async (CampDbContext db, CurrentUser me) =>
@@ -117,6 +121,8 @@ public static class GuestEndpoints
             var active = await db.Registrations.Where(r => r.SessionId == id && r.HouseholdId == h.Id && r.Status != RegistrationStatus.Cancelled).Select(r => r.PersonId).ToListAsync();
             var waiting = await db.WaitlistEntries.Where(w => w.Pool.SessionId == id && w.HouseholdId == h.Id && (w.Status == WaitlistStatus.Waiting || w.Status == WaitlistStatus.Offered)).Select(w => w.PersonId).ToListAsync();
             var waitlist = await WaitlistCounts(db, [id]);
+            // K6: the program's live form version, when it has one; otherwise its original questions.
+            var form = await FormRules.LiveAsync(db, s.ProgramId);
 
             return Results.Ok(new
             {
@@ -143,14 +149,16 @@ public static class GuestEndpoints
                         BasicHealth = new { m.Dietary, m.Allergies, m.AdaNeeds },
                     };
                 }),
-                Questions = s.Program.Questions.OrderBy(q => q.SortOrder).Select(q => new
+                Form = form is null ? null : new { form.Id, form.Version },
+                Questions = form is not null ? form.Questions.Select(FormViews.Question) : s.Program.Questions.OrderBy(q => q.SortOrder).Select(q => new
                 {
                     q.Key,
                     q.Label,
+                    HelpText = (string?)null,
                     Type = q.Type.ToString(),
                     Scope = q.Scope.ToString(),
                     q.Required,
-                    Options = q.Options?.Split('|') ?? [],
+                    Options = (IReadOnlyList<string>)(q.Options?.Split('|') ?? []),
                     q.ShowWhenKey,
                     q.ShowWhenValue,
                 }),
@@ -159,14 +167,14 @@ public static class GuestEndpoints
         });
 
         // R9 · price the cart server-side; the UI never does money math on its own.
-        family.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me) =>
+        family.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
             var s = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Program.IsPublished); // K2: approved programs only
             if (s is null) return Results.NotFound();
             var people = await db.People.Where(p => req.PersonIds.Contains(p.Id) && p.HouseholdId == me.HouseholdId).AsNoTracking().ToListAsync();
             var code = req.DiscountCode?.Trim().ToUpper();
             var discount = string.IsNullOrEmpty(code) ? null : await db.DiscountCodes.AsNoTracking().FirstOrDefaultAsync(d => d.Code == code);
-            discount = await DiscountRuleGate.UsableAsync(db, discount, s); // K5 scope, dates and cap
+            discount = await DiscountRuleGate.UsableAsync(db, discount, s, clock); // K5 scope, dates and cap
             return Results.Ok(Pricing.Build(s, people.OrderBy(p => req.PersonIds.IndexOf(p.Id)).ToList(), req.PaymentOption, discount, code));
         });
 

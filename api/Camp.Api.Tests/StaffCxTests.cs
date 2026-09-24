@@ -5,6 +5,7 @@ using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.StaffCx;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -432,9 +433,9 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 Name = "June week only",
                 SessionId = weekOne,
                 CreatedBy = "test",
-                CreatedAt = DateTime.UtcNow,
-                ValidFrom = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1),
-                ValidTo = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30),
+                CreatedAt = factory.Clock.UtcNow(),
+                ValidFrom = factory.Clock.Today().AddDays(-1),
+                ValidTo = factory.Clock.Today().AddDays(30),
             });
             return await db.SaveChangesAsync();
         });
@@ -449,7 +450,7 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 HouseholdId = householdId,
                 OrderId = reg.OrderId!.Value,
                 SubmittedBy = "test",
-                SubmittedAt = DateTime.UtcNow,
+                SubmittedAt = factory.Clock.UtcNow(),
                 RequestedCents = 5000,
                 IncomeBand = "test",
                 Reason = "test",

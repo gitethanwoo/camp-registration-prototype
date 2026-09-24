@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Features;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,9 @@ builder.Services.AddDbContext<CampDbContext>(o => o.UseSqlServer(builder.Configu
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddProblemDetails();
 
-// The one clock. Inject TimeProvider instead of reading DateTime.UtcNow (wave 3 adds a demo clock here).
-builder.Services.AddSingleton(TimeProvider.System);
+// The one clock. Inject TimeProvider instead of reading DateTime.UtcNow. The demo clock starts at Demo:Now
+// (default 2028-03-02 15:00 UTC, registration season for the seeded 2028 camps) and runs forward in real time.
+builder.Services.AddSingleton<TimeProvider>(DemoClock.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<IPaymentGateway, FakeFiservGateway>();
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddCampAuth(builder.Configuration);
@@ -36,7 +38,7 @@ using (var scope = app.Services.CreateScope())
         try { await db.Database.MigrateAsync(); break; }
         catch (Exception) when (attempt < 20) { await Task.Delay(3000); } // SQL Server still starting
     }
-    await Seed.RunAsync(db);
+    await Seed.RunAsync(db, scope.ServiceProvider.GetRequiredService<TimeProvider>());
     await scope.ServiceProvider.RunSeedModulesAsync(db, CancellationToken.None);
 }
 

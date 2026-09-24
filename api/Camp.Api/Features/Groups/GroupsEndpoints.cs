@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -55,7 +56,7 @@ public sealed class GroupsEndpoints : IEndpointModule
             });
         });
 
-        leader.MapPost("", async (CreateGroupRequest req, CampDbContext db, CurrentUser me, IAuditLog audit) =>
+        leader.MapPost("", async (CreateGroupRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, TimeProvider clock) =>
         {
             var s = await db.Sessions.Include(x => x.Program).FirstOrDefaultAsync(x => x.Id == req.SessionId && x.Program.Type == ProgramType.Cohort && x.Program.IsPublished);
             if (s is null) return Results.NotFound();
@@ -69,7 +70,7 @@ public sealed class GroupsEndpoints : IEndpointModule
                     LeaderName = me.Name,
                     Name = GroupName(req.Name, me.Name),
                     Status = GroupStatus.Draft,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = clock.UtcNow(),
                 };
                 GroupService.ReplaceRoster(group, roster);
                 db.Add(group);
@@ -81,10 +82,10 @@ public sealed class GroupsEndpoints : IEndpointModule
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        leader.MapGet("/{id:int}", async (int id, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
+        leader.MapGet("/{id:int}", async (int id, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct, TimeProvider clock) =>
         {
             // Settles a payment that was interrupted and then finished by the reconciler.
-            await new GroupService(db, gateway, audit).ReconcileAsync(me.HouseholdId, id, ct);
+            await new GroupService(db, gateway, audit, clock).ReconcileAsync(me.HouseholdId, id, ct);
             var g = await Groups(db).Include(x => x.Order).ThenInclude(o => o!.Operations)
                 .AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.LeaderHouseholdId == me.HouseholdId, ct);
             return g is null ? Results.NotFound() : Results.Ok(Detail(g));
@@ -109,11 +110,11 @@ public sealed class GroupsEndpoints : IEndpointModule
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        leader.MapPost("/{id:int}/checkout", async (int id, GroupCheckoutRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
+        leader.MapPost("/{id:int}/checkout", async (int id, GroupCheckoutRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct, TimeProvider clock) =>
         {
             try
             {
-                var result = await new GroupService(db, gateway, audit).CheckoutAsync(me.HouseholdId, id, req, ct);
+                var result = await new GroupService(db, gateway, audit, clock).CheckoutAsync(me.HouseholdId, id, req, ct);
                 return result.Status == "Declined"
                     ? Results.Json(result, statusCode: StatusCodes.Status402PaymentRequired)
                     : Results.Ok(result);
@@ -122,12 +123,12 @@ public sealed class GroupsEndpoints : IEndpointModule
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        leader.MapPost("/{id:int}/resend", async (int id, ResendRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me) =>
+        leader.MapPost("/{id:int}/resend", async (int id, ResendRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, TimeProvider clock) =>
         {
             var g = await LeaderGroup(db, id, me);
             if (g is null) return Results.NotFound();
             if (g.Status != GroupStatus.Confirmed) return Results.Conflict(new { error = "Links go out once the group is paid for." });
-            var service = new GroupService(db, gateway, audit);
+            var service = new GroupService(db, gateway, audit, clock);
             var sent = new List<SentLink>();
             var skipped = new List<string>();
             foreach (var a in g.Attendees.Where(a => req.AttendeeIds.Contains(a.Id)).OrderBy(a => a.SortOrder))
@@ -142,7 +143,7 @@ public sealed class GroupsEndpoints : IEndpointModule
             return Results.Ok(new ResendResult(sent, skipped));
         });
 
-        leader.MapPut("/{id:int}/attendees/{aid:int}/email", async (int id, int aid, EmailRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me) =>
+        leader.MapPut("/{id:int}/attendees/{aid:int}/email", async (int id, int aid, EmailRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, TimeProvider clock) =>
         {
             var g = await LeaderGroup(db, id, me);
             var a = g?.Attendees.FirstOrDefault(x => x.Id == aid);
@@ -154,32 +155,32 @@ public sealed class GroupsEndpoints : IEndpointModule
             a.Email = email;
             audit.Record("group.attendee_email_set", "GroupAttendee", a.Id, $"Email for {a.Name} set by {g.LeaderName}.");
             // Once the group is paid for, a new email means a new link right away.
-            var link = g.Status == GroupStatus.Confirmed && a.FormStatus != FormStatus.Complete ? new GroupService(db, gateway, audit).IssueLink(g, a) : null;
+            var link = g.Status == GroupStatus.Confirmed && a.FormStatus != FormStatus.Complete ? new GroupService(db, gateway, audit, clock).IssueLink(g, a) : null;
             await db.SaveChangesAsync();
             return Results.Ok(new { a.Id, a.Email, Link = link });
         });
 
-        leader.MapPost("/{id:int}/attendees/{aid:int}/withdrawal/approve", async (int id, int aid, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
+        leader.MapPost("/{id:int}/attendees/{aid:int}/withdrawal/approve", async (int id, int aid, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct, TimeProvider clock) =>
         {
             var g = await LeaderGroup(db, id, me);
             var a = g?.Attendees.FirstOrDefault(x => x.Id == aid);
             if (g is null || a is null) return Results.NotFound();
             try
             {
-                await new GroupService(db, gateway, audit).ApproveWithdrawalAsync(g, a, ct);
+                await new GroupService(db, gateway, audit, clock).ApproveWithdrawalAsync(g, a, ct);
                 return Results.NoContent();
             }
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        leader.MapPost("/{id:int}/attendees/{aid:int}/withdrawal/decline", async (int id, int aid, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
+        leader.MapPost("/{id:int}/attendees/{aid:int}/withdrawal/decline", async (int id, int aid, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct, TimeProvider clock) =>
         {
             var g = await LeaderGroup(db, id, me);
             var a = g?.Attendees.FirstOrDefault(x => x.Id == aid);
             if (g is null || a is null) return Results.NotFound();
             try
             {
-                await new GroupService(db, gateway, audit).DeclineWithdrawalAsync(g, a, ct);
+                await new GroupService(db, gateway, audit, clock).DeclineWithdrawalAsync(g, a, ct);
                 return Results.NoContent();
             }
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
@@ -188,15 +189,15 @@ public sealed class GroupsEndpoints : IEndpointModule
         // ── G1 · secure link. No account; the token identifies one attendee and nothing else. ──
         var link = app.MapGroup("/api/group-links/{token}").AllowAnonymous();
 
-        link.MapGet("", async (string token, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct) =>
+        link.MapGet("", async (string token, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
         {
-            var a = await new GroupService(db, gateway, audit).FindByTokenAsync(token, ct);
+            var a = await new GroupService(db, gateway, audit, clock).FindByTokenAsync(token, ct);
             return a is null ? LinkNotFound() : Results.Ok(LinkDto(a));
         });
 
-        link.MapPost("/forms", async (string token, FormsRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct) =>
+        link.MapPost("/forms", async (string token, FormsRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
         {
-            var service = new GroupService(db, gateway, audit);
+            var service = new GroupService(db, gateway, audit, clock);
             var a = await service.FindByTokenAsync(token, ct);
             if (a is null) return LinkNotFound();
             try
@@ -208,9 +209,9 @@ public sealed class GroupsEndpoints : IEndpointModule
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        link.MapPost("/withdrawal", async (string token, WithdrawalRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct) =>
+        link.MapPost("/withdrawal", async (string token, WithdrawalRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
         {
-            var service = new GroupService(db, gateway, audit);
+            var service = new GroupService(db, gateway, audit, clock);
             var a = await service.FindByTokenAsync(token, ct);
             if (a is null) return LinkNotFound();
             try

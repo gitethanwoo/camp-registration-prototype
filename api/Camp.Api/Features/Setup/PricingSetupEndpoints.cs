@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,7 +23,7 @@ public sealed class PricingSetupEndpoints : IEndpointModule
     {
         var setup = app.MapGroup("/api/admin/setup").RequireAuthorization(Policies.Admin);
 
-        setup.MapGet("/sessions/{id:int}/pricing", async (int id, CampDbContext db, CancellationToken ct) =>
+        setup.MapGet("/sessions/{id:int}/pricing", async (int id, CampDbContext db, CancellationToken ct, TimeProvider clock) =>
         {
             var s = await db.Sessions.AsNoTracking().Include(x => x.Program).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
@@ -35,22 +36,22 @@ public sealed class PricingSetupEndpoints : IEndpointModule
                 Session = new { s.Id, s.Name, s.StartDate, s.EndDate, Program = s.Program.Name, ProgramType = s.Program.Type.ToString() },
                 Saved = input,
                 Registrations = orders,
-                Preview = Preview(s, input),
+                Preview = Preview(s, input, clock),
             });
         });
 
         // Live preview of unsaved edits: the page never does money or date math itself.
-        setup.MapPost("/sessions/{id:int}/pricing/preview", async (int id, PricingInput req, CampDbContext db, CancellationToken ct) =>
+        setup.MapPost("/sessions/{id:int}/pricing/preview", async (int id, PricingInput req, CampDbContext db, CancellationToken ct, TimeProvider clock) =>
         {
             var s = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
-            return s is null ? Results.NotFound() : Results.Ok(Preview(s, req));
+            return s is null ? Results.NotFound() : Results.Ok(Preview(s, req, clock));
         });
 
-        setup.MapPut("/sessions/{id:int}/pricing", async (int id, PricingInput req, CampDbContext db, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPut("/sessions/{id:int}/pricing", async (int id, PricingInput req, CampDbContext db, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
         {
             var s = await db.Sessions.Include(x => x.Program).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
-            var errors = Validate(s, req);
+            var errors = Validate(s, req, clock);
             if (errors.Count > 0) return SetupResults.Invalid(errors);
 
             var oldTiers = await db.Set<RefundTier>().AsNoTracking().Where(t => t.SessionId == id).ToListAsync(ct);
@@ -74,11 +75,11 @@ public sealed class PricingSetupEndpoints : IEndpointModule
                 ("Cancellation policy", before.Policy, PolicyLabel(newTiers)));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
-            return Results.Ok(Preview(s, req));
+            return Results.Ok(Preview(s, req, clock));
         });
     }
 
-    static Dictionary<string, string[]> Validate(Session s, PricingInput req)
+    static Dictionary<string, string[]> Validate(Session s, PricingInput req, TimeProvider clock)
     {
         var errors = new Dictionary<string, string[]>();
         if (req.PriceCents is <= 0 or > 10_000_000) errors["priceCents"] = ["Enter a price between $1 and $100,000."];
@@ -87,7 +88,7 @@ public sealed class PricingSetupEndpoints : IEndpointModule
         if (req.BalanceDueDate >= s.StartDate) errors["balanceDueDate"] = [$"The balance has to be due before the session starts on {SetupResults.Date(s.StartDate)}."];
         if (req.PlanInstallments > 0 && req.DepositCents == req.PriceCents) errors["planInstallments"] = ["The deposit already covers the price, so there's nothing left to split into installments."];
         // A changed plan can't schedule a payment in the past for a session that's still ahead.
-        var today = SetupResults.Today;
+        var today = clock.Today();
         var planChanged = req.PlanInstallments != s.PlanInstallments || req.BalanceDueDate != s.BalanceDueDate;
         if (planChanged && s.StartDate > today && !errors.ContainsKey("balanceDueDate") && req.PlanInstallments is >= 0 and <= MaxInstallments)
         {
@@ -116,9 +117,9 @@ public sealed class PricingSetupEndpoints : IEndpointModule
     }
 
     /// <summary>What a family sees for one camper, plus the policy table with its date windows.</summary>
-    static object Preview(Session s, PricingInput req)
+    static object Preview(Session s, PricingInput req, TimeProvider clock)
     {
-        var errors = Validate(s, req);
+        var errors = Validate(s, req, clock);
         var draft = new Session
         {
             Id = s.Id,

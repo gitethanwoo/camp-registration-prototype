@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -85,7 +86,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
         }).RequireAuthorization(Policies.Staff);
 
         // Bulk remind: one HubSpot email per family listing each camper's open items. Ready campers are skipped.
-        ops.MapPost("/sessions/{id:int}/reminders", async (int id, ReminderRequest req, CampDbContext db, IAuditLog audit, CancellationToken ct) =>
+        ops.MapPost("/sessions/{id:int}/reminders", async (int id, ReminderRequest req, CampDbContext db, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             if (req.RegistrationIds is not { Count: > 0 }) return OpsResults.Invalid("registrationIds", "Choose at least one camper to remind.");
             if (req.RegistrationIds.Count > 1000) return OpsResults.Invalid("registrationIds", "Send reminders to at most 1,000 campers at a time.");
@@ -98,7 +99,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
             if (needsIt.Count == 0) return OpsResults.Conflict("Everyone you picked is ready for camp, so there's nothing to remind them about.");
             // A family reminded in the last day isn't emailed again, so a double click or a second
             // staff member working the same list doesn't send duplicate emails.
-            var now = DateTime.UtcNow;
+            var now = clock.UtcNow();
             var since = now - RemindAgainAfter;
             var open = needsIt.Where(c => c.Placement?.RemindedAt is not { } at || at < since).ToList();
             var recent = needsIt.Count - open.Count;

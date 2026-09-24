@@ -3,19 +3,46 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { useSession } from '@/lib/session'
+import { roleLabels, useSession } from '@/lib/session'
 
 const route = useRoute()
-const { session, signOut } = useSession()
-const needsStaff = computed(() => route.query.need === 'staff')
+const { session, roleLabel, signOut } = useSession()
+const need = computed(() => String(route.query.need ?? ''))
+// The same page renders in the staff console (/admin/no-access) and in the public shell (/no-access).
+const inConsole = computed(() => route.path.startsWith('/admin'))
+// A staff page that needs a role the signed-in person doesn't have (router guard on meta.roles).
+const neededRoles = computed(() =>
+  String(route.query.roles ?? '')
+    .split(',')
+    .map((r) => roleLabels[r])
+    .filter(Boolean),
+)
+const neededLabel = computed(() => {
+  const r = neededRoles.value
+  return r.length <= 1 ? (r[0] ?? 'another') : `${r.slice(0, -1).join(', ')} or ${r[r.length - 1]}`
+})
 </script>
 
 <template>
-  <div class="mx-auto max-w-md px-4 py-16">
-    <Card>
+  <div :class="inConsole ? 'max-w-md py-4' : 'mx-auto max-w-md px-4 py-16'">
+    <Card v-if="need === 'role'">
       <CardHeader>
-        <CardTitle>{{ needsStaff ? 'Staff only' : 'This page is for families' }}</CardTitle>
-        <CardDescription v-if="needsStaff">
+        <CardTitle>You don't have access to this page</CardTitle>
+        <CardDescription>
+          This page needs the {{ neededLabel }} role. You're signed in as {{ session?.name
+          }}<template v-if="roleLabel"> ({{ roleLabel }})</template>. Ask an administrator if you need it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent />
+      <CardFooter class="gap-2">
+        <Button as-child><RouterLink to="/admin">Go to the staff console</RouterLink></Button>
+        <Button variant="ghost" @click="signOut">Sign out</Button>
+      </CardFooter>
+    </Card>
+    <Card v-else>
+      <CardHeader>
+        <CardTitle>{{ need === 'staff' ? 'Staff only' : 'This page is for families' }}</CardTitle>
+        <CardDescription v-if="need === 'staff'">
           You're signed in as {{ session?.name }}, which isn't a WinShape staff account. Sign out and sign in with your
           staff account to open the console.
         </CardDescription>
@@ -28,8 +55,8 @@ const needsStaff = computed(() => route.query.need === 'staff')
       <CardFooter class="gap-2">
         <Button @click="signOut">Sign out</Button>
         <Button variant="ghost" as-child>
-          <RouterLink :to="needsStaff ? '/programs' : '/admin'">{{
-            needsStaff ? 'Back to programs' : 'Go to the staff console'
+          <RouterLink :to="need === 'staff' ? '/programs' : '/admin'">{{
+            need === 'staff' ? 'Back to programs' : 'Go to the staff console'
           }}</RouterLink>
         </Button>
       </CardFooter>

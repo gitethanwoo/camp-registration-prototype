@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,7 +25,7 @@ public sealed class SessionSetupEndpoints : IEndpointModule
     {
         var setup = app.MapGroup("/api/admin/setup").RequireAuthorization(Policies.Admin);
 
-        setup.MapGet("/sessions/{id:int}", async (int id, CampDbContext db, CancellationToken ct) =>
+        setup.MapGet("/sessions/{id:int}", async (int id, CampDbContext db, CancellationToken ct, TimeProvider clock) =>
         {
             var s = await db.Sessions.AsNoTracking().Include(x => x.Program).ThenInclude(p => p.Ministry).Include(x => x.Pools).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
@@ -61,7 +62,7 @@ public sealed class SessionSetupEndpoints : IEndpointModule
                     State = programState.ToString(),
                     StateLabel = ProgramSetupEndpoints.StateLabel(programState),
                 },
-                Status = RegistrationWindow(s, programState),
+                Status = RegistrationWindow(s, programState, clock),
                 Pools = pools.Select(p => new
                 {
                     p.Id,
@@ -242,10 +243,10 @@ public sealed class SessionSetupEndpoints : IEndpointModule
     /// What families can do today. Checkout doesn't read the open and priority dates yet, so the badge
     /// doesn't claim a window checkout wouldn't honour: a published session that hasn't ended is open.
     /// </summary>
-    static string RegistrationWindow(Session s, PublishState programState)
+    static string RegistrationWindow(Session s, PublishState programState, TimeProvider clock)
     {
         if (programState != PublishState.Published) return "Not published";
-        if (DateOnly.FromDateTime(DateTime.UtcNow) > s.EndDate) return "Ended";
+        if (clock.Today() > s.EndDate) return "Ended";
         return "Registration open";
     }
 

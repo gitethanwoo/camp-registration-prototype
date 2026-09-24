@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,7 +59,7 @@ public sealed class DuplicateEndpoints : IEndpointModule
             });
         });
 
-        admin.MapPost("/{a:int}/{b:int}/merge", async (int a, int b, MergeRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        admin.MapPost("/{a:int}/{b:int}/merge", async (int a, int b, MergeRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             if (req.Survivor is not ("a" or "b")) return StaffCx.Invalid("survivor", "Choose which account survives.");
             foreach (var k in FieldKeys)
@@ -135,7 +136,7 @@ public sealed class DuplicateEndpoints : IEndpointModule
                 MergedHouseholdId = other.Id,
                 DetailJson = JsonSerializer.Serialize(new { req.Survivor, req.Fields, Resolutions = resolved, Before = before }),
                 Actor = staff.Actor,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
             var fieldSummary = string.Join(", ", FieldKeys.Select(k => $"{FieldLabel(k).ToLowerInvariant()} from {(req.Fields[k] == req.Survivor ? "this account" : $"#{other.Id}")}"));
             audit.Record("household.merged", "Household", survivor.Id,
@@ -148,7 +149,7 @@ public sealed class DuplicateEndpoints : IEndpointModule
                 Target = "Salesforce",
                 AggregateId = survivor.Id.ToString(CultureInfo.InvariantCulture),
                 PayloadJson = JsonSerializer.Serialize(new { survivor = survivor.SalesforceId, merged = other.SalesforceId, survivorHouseholdId = survivor.Id, mergedHouseholdId = other.Id }),
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);

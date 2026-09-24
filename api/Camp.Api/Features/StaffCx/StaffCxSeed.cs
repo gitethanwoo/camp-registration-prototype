@@ -1,5 +1,6 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,7 @@ namespace Camp.Api.Features.StaffCx;
 /// from hosts and partners, household notes, and open transfer requests. Nothing here touches the
 /// canonical ON Session 3 or Day Camp June 12–16 counts.
 /// </summary>
-public sealed class StaffCxSeed : ISeedModule
+public sealed class StaffCxSeed(TimeProvider clock) : ISeedModule
 {
     public const string WeekTwoName = "June week 2";
     public const string JordanEmailA = "jlee@example.com";
@@ -29,7 +30,7 @@ public sealed class StaffCxSeed : ISeedModule
         if (day is null || day.Sessions.Any(s => s.Name == WeekTwoName)) return;
         var weekOne = day.Sessions.OrderBy(s => s.StartDate).First();
         var rng = new Random(4219);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
 
         // ── Day Camp · Atlanta, second week ──
         var weekTwo = new Session

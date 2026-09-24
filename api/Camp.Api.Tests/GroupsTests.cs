@@ -5,6 +5,7 @@ using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features.Groups;
+using Camp.Api.Features.Polish;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -319,9 +320,9 @@ public class GroupsTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 TotalCents = 90000,
                 DueTodayCents = 90000,
                 Status = paid ? OrderStatus.Paid : OrderStatus.Declined,
-                CreatedAt = DateTime.UtcNow.AddMinutes(-3),
+                CreatedAt = factory.Clock.UtcNow().AddMinutes(-3),
             };
-            order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Charge, AmountCents = 90000, Succeeded = paid, ProcessorRef = "fsv_test", CardLast4 = "4242", CreatedAt = DateTime.UtcNow });
+            order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Charge, AmountCents = 90000, Succeeded = paid, ProcessorRef = "fsv_test", CardLast4 = "4242", CreatedAt = factory.Clock.UtcNow() });
             db.Orders.Add(order);
             await db.SaveChangesAsync();
             g.OrderId = order.Id;

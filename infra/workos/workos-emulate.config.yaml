@@ -2,6 +2,7 @@
 # Guests have no organization. Staff belong to "WinShape Staff" with one role each.
 users:
   - { email: maria.johnson@example.com, first_name: Maria, last_name: Johnson, email_verified: true }
+  - { email: david.johnson@example.com, first_name: David, last_name: Johnson, email_verified: true }
   - { email: sam.rivera@example.com, first_name: Sam, last_name: Rivera, email_verified: true }
   - { email: pastor.dave@example.com, first_name: Dave, last_name: Kim, email_verified: true }
   - { email: diane.carter@winshape.example, first_name: Diane, last_name: Carter, email_verified: true }

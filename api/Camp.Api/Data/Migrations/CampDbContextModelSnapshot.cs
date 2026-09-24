@@ -820,6 +820,143 @@ namespace Camp.Api.Data.Migrations
                     b.ToTable("WaiverTemplates");
                 });
 
+            modelBuilder.Entity("Camp.Api.Features.Access.ProgramHealthSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ProgramId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ThirdPartyFormUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ViewerRoles")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProgramId")
+                        .IsUnique();
+
+                    b.ToTable("ProgramHealthSettings", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Access.StaffMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("HealthAccess")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("LastSignInAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("MinistryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("SyncedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("WorkOsUserId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("MinistryId");
+
+                    b.HasIndex("WorkOsUserId")
+                        .IsUnique()
+                        .HasFilter("[WorkOsUserId] IS NOT NULL");
+
+                    b.ToTable("StaffMembers", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Access.StaffSyncRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Added")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Members")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("RanAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Revoked")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Updated")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("StaffSyncRuns", (string)null);
+                });
+
             modelBuilder.Entity("Camp.Api.Features.Admittance.AdmittanceApplication", b =>
                 {
                     b.Property<int>("Id")
@@ -943,6 +1080,17 @@ namespace Camp.Api.Data.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("WaiverSignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("WaiverSignerName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("WaiversAccepted")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.HasKey("Id");
 
@@ -1454,6 +1602,201 @@ namespace Camp.Api.Data.Migrations
                     b.HasIndex("BatchId", "Status");
 
                     b.ToTable("SettlementLines", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormAnswer", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("FormQuestionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FormVersionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RegistrationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FormQuestionId");
+
+                    b.HasIndex("FormVersionId");
+
+                    b.HasIndex("RegistrationId");
+
+                    b.HasIndex("OrderId", "RegistrationId");
+
+                    b.ToTable("FormAnswers", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormQuestion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("FormVersionId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Health")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("HelpText")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Options")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<bool>("Required")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ShowWhenKey")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("ShowWhenValue")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FormVersionId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("FormQuestions", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("ChangeNote")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("CreatedByEmail")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("EditedBy")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("EditedByEmails")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ProgramId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReturnNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SubmittedBy")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("SubmittedByEmail")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProgramId", "Version")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "ProgramId" }, "IX_FormVersions_OneLive")
+                        .IsUnique()
+                        .HasFilter("[Status] = 'Published'");
+
+                    b.HasIndex(new[] { "ProgramId" }, "IX_FormVersions_OneOpen")
+                        .IsUnique()
+                        .HasFilter("[Status] IN ('Draft', 'PendingApproval')");
+
+                    b.ToTable("FormVersions", (string)null);
                 });
 
             modelBuilder.Entity("Camp.Api.Features.Groups.GroupAttendee", b =>
@@ -2968,6 +3311,25 @@ namespace Camp.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Camp.Api.Features.Access.ProgramHealthSetting", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.CampProgram", null)
+                        .WithOne()
+                        .HasForeignKey("Camp.Api.Features.Access.ProgramHealthSetting", "ProgramId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Access.StaffMember", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.Ministry", "Ministry")
+                        .WithMany()
+                        .HasForeignKey("MinistryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Ministry");
+                });
+
             modelBuilder.Entity("Camp.Api.Features.Admittance.AdmittanceApplication", b =>
                 {
                     b.HasOne("Camp.Api.Domain.Person", "Applicant")
@@ -3140,6 +3502,52 @@ namespace Camp.Api.Data.Migrations
                     b.Navigation("Batch");
 
                     b.Navigation("PaymentOperation");
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormAnswer", b =>
+                {
+                    b.HasOne("Camp.Api.Features.Forms.FormQuestion", "Question")
+                        .WithMany()
+                        .HasForeignKey("FormQuestionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Camp.Api.Features.Forms.FormVersion", null)
+                        .WithMany()
+                        .HasForeignKey("FormVersionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Camp.Api.Domain.PaymentOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Camp.Api.Domain.Registration", null)
+                        .WithMany()
+                        .HasForeignKey("RegistrationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormQuestion", b =>
+                {
+                    b.HasOne("Camp.Api.Features.Forms.FormVersion", null)
+                        .WithMany("Questions")
+                        .HasForeignKey("FormVersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormVersion", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.CampProgram", null)
+                        .WithMany()
+                        .HasForeignKey("ProgramId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Camp.Api.Features.Groups.GroupAttendee", b =>
@@ -3560,6 +3968,11 @@ namespace Camp.Api.Data.Migrations
             modelBuilder.Entity("Camp.Api.Features.Finance.SettlementBatch", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Forms.FormVersion", b =>
+                {
+                    b.Navigation("Questions");
                 });
 
             modelBuilder.Entity("Camp.Api.Features.Groups.GroupAttendee", b =>

@@ -75,6 +75,13 @@ watch(
   },
   { immediate: true },
 )
+// The sheet can open before the ministries load; default a new program's ministry once they arrive.
+watch(
+  () => props.ministries,
+  (list) => {
+    if (!form.ministryId && list[0]) form.ministryId = String(list[0].id)
+  },
+)
 const dirty = computed(() => {
   const p = props.program
   if (!p) return !!form.name
@@ -151,6 +158,12 @@ async function sendBack() {
     returnNote.value = ''
   }
 }
+// Polish: a program can't be submitted or published without a waiver, so a draft can take the standard release.
+function addWaiver() {
+  const p = props.program
+  if (!p) return
+  return run(() => api.post(`/admin/setup/programs/${p.id}/waivers`), `Standard release added to ${p.name}.`, p.id)
+}
 const addingSession = ref(false)
 const err = (k: string) => fieldErrors.value[k]?.[0]
 </script>
@@ -212,12 +225,21 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
             </div>
             <div class="space-y-2">
               <Label for="p-health">Health information</Label>
-              <Select v-model="form.healthMechanism" :disabled="!editable">
-                <SelectTrigger id="p-health" class="w-full"><SelectValue /></SelectTrigger>
+              <Select v-model="form.healthMechanism" :disabled="!editable || !isNew">
+                <SelectTrigger id="p-health" class="w-full" :aria-invalid="!!err('healthMechanism') || undefined"
+                  ><SelectValue
+                /></SelectTrigger>
                 <SelectContent>
                   <SelectItem v-for="h in health" :key="h.value" :value="h.value">{{ h.label }}</SelectItem>
                 </SelectContent>
               </Select>
+              <p v-if="err('healthMechanism')" class="text-sm text-destructive">{{ err('healthMechanism') }}</p>
+              <p v-else-if="!isNew" class="text-xs text-muted-foreground">
+                Change this under
+                <RouterLink to="/admin/setup/health" class="text-primary underline-offset-4 hover:underline"
+                  >Setup › Health settings</RouterLink
+                >, which also sets who can view health details.
+              </p>
             </div>
             <div class="space-y-2">
               <Label for="p-location">Location</Label>
@@ -250,9 +272,23 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
                   : 'no waivers'
               }}
             </p>
-            <RouterLink to="/admin/setup/waivers" class="text-primary underline-offset-4 hover:underline"
-              >Manage waiver versions</RouterLink
-            >
+            <p v-if="!program.waivers.length" class="mt-1 text-amber-800">
+              Families sign a waiver at checkout, so a program can't be published without one.
+            </p>
+            <p v-if="err('waivers')" class="mt-1 text-destructive">{{ err('waivers') }}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <Button
+                v-if="editable && !program.waivers.length"
+                size="sm"
+                variant="outline"
+                :disabled="busy"
+                @click="addWaiver"
+                ><Plus />Add the standard release</Button
+              >
+              <RouterLink to="/admin/setup/waivers" class="text-primary underline-offset-4 hover:underline"
+                >Manage waiver versions</RouterLink
+              >
+            </div>
           </div>
         </TabsContent>
 

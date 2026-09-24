@@ -6,6 +6,7 @@ using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
 using Camp.Api.Features.Family;
+using Camp.Api.Features.Polish;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -83,7 +84,7 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(problem.GetProperty("errors").TryGetProperty("dateOfBirth", out _));
         Assert.True(problem.GetProperty("errors").TryGetProperty("gender", out _));
 
-        using var future = await family.PostAsJsonAsync("/api/family/members", Child("Kit", DateOnly.FromDateTime(DateTime.UtcNow).AddDays(3), Gender.Male));
+        using var future = await family.PostAsJsonAsync("/api/family/members", Child("Kit", factory.Clock.Today().AddDays(3), Gender.Male));
         Assert.Equal(HttpStatusCode.BadRequest, future.StatusCode);
     }
 
@@ -378,7 +379,7 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 AmountCents = owed,
                 Kind = BalancePaymentKind.Balance,
                 Status = BalancePaymentStatus.Pending,
-                CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+                CreatedAt = factory.Clock.UtcNow().AddMinutes(-5),
             });
             return await db.SaveChangesAsync();
         });
@@ -432,7 +433,7 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.All(installments, i => Assert.Equal("Paid", i.GetProperty("status").GetString()));
         // Installment 1 was charged on its own; 2 and 3 were covered by the balance payment.
         Assert.Equal(JsonValueKind.Null, installments[0].GetProperty("coveredOn").ValueKind);
-        Assert.All(installments.Skip(1), i => Assert.Equal(DateTime.UtcNow.Date, i.GetProperty("coveredOn").GetDateTime().Date));
+        Assert.All(installments.Skip(1), i => Assert.Equal(factory.Clock.UtcNow().Date, i.GetProperty("coveredOn").GetDateTime().Date));
     }
 
     [Fact]
@@ -464,11 +465,11 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var kid = await AddChild(family, "Ola", new DateOnly(2018, 4, 4), Gender.Female);
         var householdId = await HouseholdIdOf(family);
         var code = await RegisterOnPlan(householdId, [kid]);
-        var expires = DateTime.UtcNow.AddHours(20);
+        var expires = factory.Clock.UtcNow().AddHours(20);
         await factory.WithDb(async db =>
         {
             var pool = await db.CapacityPools.FirstAsync(p => p.Session.Program.Slug == "overnight-camp");
-            db.WaitlistEntries.Add(new WaitlistEntry { PoolId = pool.Id, PersonId = kid, HouseholdId = householdId, Position = 1, Status = WaitlistStatus.Offered, OfferExpiresAt = expires, CreatedAt = DateTime.UtcNow });
+            db.WaitlistEntries.Add(new WaitlistEntry { PoolId = pool.Id, PersonId = kid, HouseholdId = householdId, Position = 1, Status = WaitlistStatus.Offered, OfferExpiresAt = expires, CreatedAt = factory.Clock.UtcNow() });
             // An embedded health form can't be finished after registration, so it must not offer a button.
             await db.Registrations.Where(r => r.Order!.ConfirmationCode == code).ExecuteUpdateAsync(s => s.SetProperty(r => r.HealthStatus, FormStatus.Incomplete));
             return await db.SaveChangesAsync();
