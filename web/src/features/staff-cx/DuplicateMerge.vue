@@ -285,7 +285,7 @@ async function merge() {
 
       <Alert>
         <CloudUpload />
-        <AlertTitle>Downstream merge to Salesforce</AlertTitle>
+        <AlertTitle class="line-clamp-none">Downstream merge to Salesforce</AlertTitle>
         <AlertDescription>
           After you confirm, Salesforce merges {{ d.salesforce.a ?? 'A' }} and {{ d.salesforce.b ?? 'B' }}. The
           surviving record keeps the fields you chose, all registrations and payments.

@@ -41,7 +41,7 @@ watch(() => props.id, load)
 
 type Reg = HouseholdDetail['registrations'][number]
 const regColumns: ColumnDef<Reg>[] = [
-  { id: 'camp', header: 'Camp', meta: { cellClass: 'align-top' } },
+  { id: 'camp', header: 'Camp', meta: { cellClass: 'align-top whitespace-normal' } },
   {
     accessorKey: 'participant',
     header: 'Camper',
@@ -74,6 +74,10 @@ const waitColumns: ColumnDef<Wait>[] = [
   { accessorKey: 'status', header: 'Status' },
 ]
 type History = HouseholdDetail['history'][number]
+function salesforceLine(sf: { id: string | null; status: string; lastSyncAt: string | null }) {
+  const status = sf.lastSyncAt ? `${sf.status} ${dateTime(sf.lastSyncAt)}` : sf.status
+  return sf.id ? `${sf.id} · ${status}` : status
+}
 const historyColumns: ColumnDef<History>[] = [
   {
     accessorKey: 'createdAt',
@@ -81,7 +85,7 @@ const historyColumns: ColumnDef<History>[] = [
     cell: ({ row }) => dateTime(row.original.createdAt),
     meta: { cellClass: 'whitespace-nowrap align-top text-muted-foreground' },
   },
-  { accessorKey: 'detail', header: 'What happened', meta: { cellClass: 'align-top' } },
+  { accessorKey: 'detail', header: 'What happened', meta: { cellClass: 'align-top whitespace-normal' } },
   {
     accessorKey: 'actor',
     header: 'By',
@@ -155,17 +159,13 @@ const primary = computed(() => h.value?.adults.find((a) => a.role === 'Primary')
               ><AlertTriangle />Possible duplicate</RouterLink
             >
           </Button>
-          <span class="text-sm text-muted-foreground">
-            Salesforce:
-            <template v-if="h.salesforce.id">{{ h.salesforce.id }} · </template>{{ h.salesforce.status
-            }}<template v-if="h.salesforce.lastSyncAt"> {{ dateTime(h.salesforce.lastSyncAt) }}</template>
-          </span>
+          <span class="text-sm text-muted-foreground"> Salesforce: {{ salesforceLine(h.salesforce) }} </span>
         </div>
       </header>
 
       <Alert v-if="h.mergedIntoHouseholdId">
         <AlertTriangle />
-        <AlertTitle>This account was merged</AlertTitle>
+        <AlertTitle class="line-clamp-none">This account was merged</AlertTitle>
         <AlertDescription>
           <p>
             Everything moved to

@@ -238,7 +238,7 @@ async function decide(kind: 'approve' | 'reject') {
           <template v-else>
             <Alert v-if="needsFinance">
               <AlertTriangle />
-              <AlertTitle>Finance approves this one</AlertTitle>
+              <AlertTitle class="line-clamp-none">Finance approves this one</AlertTitle>
               <AlertDescription
                 >{{ selected.code }} is over the {{ queue?.thresholdPercent }}% threshold. You can reject it, or leave
                 it for Finance to approve.</AlertDescription

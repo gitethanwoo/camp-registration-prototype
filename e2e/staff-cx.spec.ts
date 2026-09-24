@@ -92,7 +92,15 @@ test('Diane merges the duplicate Lee accounts only after resolving the Jordan co
 })
 
 test('Maria registers Avery for June 12–16, then asks to move to June 19–23', async ({ page }) => {
-  await signInAs(page, 'maria', '/family')
+  await signInAs(page, 'maria', '/family/transfers')
+  await expect(page.getByRole('heading', { name: 'Session transfers' })).toBeVisible()
+  // Already asked on an earlier run (and maybe already moved): check the request is listed and stop,
+  // so a rerun never registers Avery for week 1 a second time.
+  const mine = await getJson<{ requests: { participant: string }[] }>(page, '/api/transfers')
+  if (mine.requests.some((r) => r.participant.startsWith('Avery'))) {
+    await expect(page.getByText(/Avery Johnson: June 12–16, 2028 → June 19–23, 2028/)).toBeVisible()
+    return
+  }
 
   // Setup through the real checkout API: the registration wizard belongs to another slice.
   const programs = (await (await page.request.get('/api/programs')).json()) as {
@@ -141,12 +149,6 @@ test('Maria registers Avery for June 12–16, then asks to move to June 19–23'
   }
 
   await page.goto('/family/transfers')
-  await expect(page.getByRole('heading', { name: 'Session transfers' })).toBeVisible()
-  const mine = await getJson<{ requests: { participant: string }[] }>(page, '/api/transfers')
-  if (mine.requests.some((r) => r.participant.startsWith('Avery'))) {
-    await expect(page.getByText(/Avery Johnson: June 12–16, 2028 → June 19–23, 2028/)).toBeVisible()
-    return
-  }
   await page.getByRole('link', { name: 'Request transfer' }).first().click()
 
   await expect(page.getByRole('heading', { name: 'Request a session transfer' })).toBeVisible()

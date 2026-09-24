@@ -239,7 +239,7 @@ async function decide(kind: 'approve' | 'deny') {
 
           <Alert v-if="detail.check && !detail.check.canMove" variant="destructive">
             <XCircle />
-            <AlertTitle>Can't approve this request</AlertTitle>
+            <AlertTitle class="line-clamp-none">Can't approve this request</AlertTitle>
             <AlertDescription>
               <p v-for="b in detail.check.blockers" :key="b">{{ b }}</p>
               <p>Deny it with a reason, or wait for a seat to open.</p>

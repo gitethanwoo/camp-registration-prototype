@@ -20,7 +20,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 
 const columns: ColumnDef<SearchRow>[] = [
-  { accessorKey: 'name', header: 'Household', meta: { cellClass: 'align-top' } },
+  { accessorKey: 'name', header: 'Household', meta: { cellClass: 'align-top whitespace-normal' } },
   { id: 'members', header: 'Members', meta: { class: 'hidden md:table-cell', cellClass: 'align-top' } },
   { id: 'ministries', header: 'Ministry activity', meta: { class: 'hidden lg:table-cell', cellClass: 'align-top' } },
   { id: 'activity', header: 'Recent activity', meta: { class: 'hidden sm:table-cell', cellClass: 'align-top' } },
@@ -93,7 +93,7 @@ const children = (r: SearchRow) => r.members.filter((m) => !m.isAdult)
 
     <Alert v-else-if="!result && !loading">
       <Search />
-      <AlertTitle>Search by any detail the caller gives you</AlertTitle>
+      <AlertTitle class="line-clamp-none">Search by any detail the caller gives you</AlertTitle>
       <AlertDescription
         >A last name, a child's name, an email, the last 4 digits of a phone number, or a confirmation code like
         WS-7A3L0E.</AlertDescription

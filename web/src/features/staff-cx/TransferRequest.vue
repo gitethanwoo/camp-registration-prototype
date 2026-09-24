@@ -105,7 +105,7 @@ async function submit() {
     <template v-else>
       <Alert v-if="data.pendingRequest" role="status">
         <CircleCheck />
-        <AlertTitle>{{ submitted ? 'Request sent' : 'Request waiting for review' }}</AlertTitle>
+        <AlertTitle class="line-clamp-none">{{ submitted ? 'Request sent' : 'Request waiting for review' }}</AlertTitle>
         <AlertDescription>
           <p>
             You asked to move {{ data.registration.firstName }} from {{ data.pendingRequest.from }} to
@@ -120,7 +120,7 @@ async function submit() {
         <CardContent class="space-y-6">
           <Alert class="border-amber-200 bg-amber-50 text-amber-900">
             <Info />
-            <AlertTitle>This is a request, not an immediate transfer</AlertTitle>
+            <AlertTitle class="line-clamp-none">This is a request, not an immediate transfer</AlertTitle>
             <AlertDescription class="text-amber-900/90"
               >Staff will review it. Your current registration stays confirmed until approval.</AlertDescription
             >
