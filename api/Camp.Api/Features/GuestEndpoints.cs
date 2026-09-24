@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -52,7 +53,7 @@ public static class GuestEndpoints
         });
 
         // P1 · Program detail (FR-13, FR-14)
-        api.MapGet("/programs/{slug}", async (string slug, CampDbContext db) =>
+        api.MapGet("/programs/{slug}", async (string slug, CampDbContext db, TimeProvider clock) =>
         {
             var p = await db.Programs.Include(x => x.Ministry).Include(x => x.Waivers)
                 .Include(x => x.Sessions).ThenInclude(s => s.Pools)
@@ -88,16 +89,16 @@ public static class GuestEndpoints
                     s.PlanInstallments,
                     Pools = s.Pools.OrderBy(x => x.SortOrder).Select(x => ToAvailability(x, waitlist)),
                 }),
-                AsOf = DateTime.UtcNow,
+                AsOf = clock.UtcNow(),
             });
         });
 
         // P2 · Live availability, polled by the UI (NFR-1: seconds, not a daily snapshot).
-        api.MapGet("/sessions/{id:int}/availability", async (int id, CampDbContext db) =>
+        api.MapGet("/sessions/{id:int}/availability", async (int id, CampDbContext db, TimeProvider clock) =>
         {
             var pools = await db.CapacityPools.Where(x => x.SessionId == id).OrderBy(x => x.SortOrder).AsNoTracking().ToListAsync();
             var waitlist = await WaitlistCounts(db, [id]);
-            return new { AsOf = DateTime.UtcNow, Pools = pools.Select(x => ToAvailability(x, waitlist)) };
+            return new { AsOf = clock.UtcNow(), Pools = pools.Select(x => ToAvailability(x, waitlist)) };
         });
 
         family.MapGet("/me", async (CampDbContext db, CurrentUser me) =>
@@ -159,14 +160,14 @@ public static class GuestEndpoints
         });
 
         // R9 · price the cart server-side; the UI never does money math on its own.
-        family.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me) =>
+        family.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
             var s = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Program.IsPublished); // K2: approved programs only
             if (s is null) return Results.NotFound();
             var people = await db.People.Where(p => req.PersonIds.Contains(p.Id) && p.HouseholdId == me.HouseholdId).AsNoTracking().ToListAsync();
             var code = req.DiscountCode?.Trim().ToUpper();
             var discount = string.IsNullOrEmpty(code) ? null : await db.DiscountCodes.AsNoTracking().FirstOrDefaultAsync(d => d.Code == code);
-            discount = await DiscountRuleGate.UsableAsync(db, discount, s); // K5 scope, dates and cap
+            discount = await DiscountRuleGate.UsableAsync(db, discount, s, clock); // K5 scope, dates and cap
             return Results.Ok(Pricing.Build(s, people.OrderBy(p => req.PersonIds.IndexOf(p.Id)).ToList(), req.PaymentOption, discount, code));
         });
 

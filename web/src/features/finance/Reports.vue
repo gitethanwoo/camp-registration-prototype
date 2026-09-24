@@ -17,6 +17,7 @@ import { api, ApiError } from '@/lib/api'
 import { date, money } from '@/lib/format'
 import StatTile from './StatTile.vue'
 import type { Report, ReportRow } from './types'
+import { now } from '@/lib/clock'
 
 // FN1 · Registration, revenue and attendance reporting. Settled revenue is the certified metric: it is summed from
 // the same Fiserv settlement lines Reconciliation (FN2) shows, so the two screens agree to the cent (FR-107).
@@ -35,7 +36,7 @@ const customTo = ref('')
 const iso = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const range = computed(() => {
-  const today = new Date()
+  const today = now()
   if (preset.value === 'custom') return { from: customFrom.value, to: customTo.value }
   if (preset.value === 'ytd') return { from: `${today.getFullYear()}-01-01`, to: iso(today) }
   const days = preset.value === '30' ? 29 : 89

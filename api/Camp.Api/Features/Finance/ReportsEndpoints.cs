@@ -2,6 +2,7 @@ using System.Text;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,18 +21,18 @@ public sealed class ReportsEndpoints : IEndpointModule
     {
         var g = app.MapGroup("/api/admin/finance/reports").RequireAuthorization(Policies.Finance);
 
-        g.MapGet("", async (CampDbContext db, int? ministryId, int? programId, int? sessionId, DateOnly? from, DateOnly? to, CancellationToken ct) =>
+        g.MapGet("", async (CampDbContext db, int? ministryId, int? programId, int? sessionId, DateOnly? from, DateOnly? to, CancellationToken ct, TimeProvider clock) =>
         {
-            var scope = Scope.From(ministryId, programId, sessionId, from, to);
+            var scope = Scope.From(ministryId, programId, sessionId, from, to, clock);
             if (scope.Error is { } error) return Fin.Invalid("to", error);
-            return Results.Ok(await Build(db, scope, ct));
+            return Results.Ok(await Build(db, scope, clock, ct));
         });
 
-        g.MapGet("/export", async (CampDbContext db, IAuditLog audit, int? ministryId, int? programId, int? sessionId, DateOnly? from, DateOnly? to, CancellationToken ct) =>
+        g.MapGet("/export", async (CampDbContext db, IAuditLog audit, int? ministryId, int? programId, int? sessionId, DateOnly? from, DateOnly? to, CancellationToken ct, TimeProvider clock) =>
         {
-            var scope = Scope.From(ministryId, programId, sessionId, from, to);
+            var scope = Scope.From(ministryId, programId, sessionId, from, to, clock);
             if (scope.Error is { } error) return Fin.Invalid("to", error);
-            var report = await Build(db, scope, ct);
+            var report = await Build(db, scope, clock, ct);
             var csv = new StringBuilder("Program,Session,Registrations,Attended,Settled revenue,Contracted tuition\n");
             foreach (var r in report.Rows)
                 csv.Append(CultureInfo.InvariantCulture, $"{Csv(r.Program)},{Csv(r.Session)},{r.Registrations},{r.Attended},{Dollars(r.SettledRevenueCents)},{Dollars(r.ContractedCents)}\n");
@@ -50,9 +51,9 @@ public sealed class ReportsEndpoints : IEndpointModule
     {
         public bool Filtered => MinistryId is not null || ProgramId is not null || SessionId is not null;
 
-        public static Scope From(int? ministryId, int? programId, int? sessionId, DateOnly? from, DateOnly? to)
+        public static Scope From(int? ministryId, int? programId, int? sessionId, DateOnly? from, DateOnly? to, TimeProvider clock)
         {
-            var end = to ?? Fin.Today;
+            var end = to ?? clock.Today();
             var start = from ?? end.AddDays(-89);
             var error = start > end ? "The start date is after the end date."
                 : end.DayNumber - start.DayNumber > MaxRangeDays ? "Choose a range of two years or less." : null;
@@ -80,11 +81,11 @@ public sealed class ReportsEndpoints : IEndpointModule
         Sessions = await db.Sessions.AsNoTracking().OrderBy(s => s.StartDate).Select(s => new { s.Id, s.ProgramId, s.Name, s.StartDate, s.EndDate }).ToListAsync(ct),
     };
 
-    static async Task<Report> Build(CampDbContext db, Scope scope, CancellationToken ct)
+    static async Task<Report> Build(CampDbContext db, Scope scope, TimeProvider clock, CancellationToken ct)
     {
         var fromTime = scope.Start.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var toTime = scope.To.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var today = Fin.Today;
+        var today = clock.Today();
 
         // Settlement lines in batches settled within the range: the certified revenue measure.
         var (firstDay, lastDay) = (scope.Start, scope.To);

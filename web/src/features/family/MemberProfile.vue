@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ApiError, api } from '@/lib/api'
 import { dateTime } from '@/lib/format'
 import type { Gender, MemberProfile, MemberRequest, Overview } from './types'
+import { now } from '@/lib/clock'
 
 const props = defineProps<{ id: number | null; adult: boolean }>()
 const router = useRouter()
@@ -39,7 +40,7 @@ const savedAt = ref<string | null>(null)
 const saveFailed = ref<string | null>(null)
 const isNew = computed(() => props.id == null)
 const locked = computed(() => !form.isAdult && (profile.value?.registeredFor.length ?? 0) > 0)
-const today = new Date().toISOString().slice(0, 10)
+const today = now().toISOString().slice(0, 10)
 
 function fill(p: MemberProfile) {
   profile.value = p
@@ -129,7 +130,7 @@ async function save() {
     profile.value = p
     saved = JSON.stringify(body)
     errors.value = {}
-    savedAt.value = new Date().toISOString()
+    savedAt.value = now().toISOString()
   } catch (e) {
     errors.value = e instanceof ApiError ? e.errors : {}
     saveFailed.value = e instanceof Error ? e.message : 'Not saved.'

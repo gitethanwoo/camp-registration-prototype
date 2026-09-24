@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,7 +14,7 @@ namespace Camp.Api.Features.Admittance;
 /// one whose card hold lapsed), and 3 declined. The Johnsons have no application, so the demo
 /// starts clean.
 /// </summary>
-public sealed class AdmittanceSeed : ISeedModule
+public sealed class AdmittanceSeed(TimeProvider clock) : ISeedModule
 {
     public int Order => 100;
 
@@ -45,7 +46,7 @@ public sealed class AdmittanceSeed : ISeedModule
         var pool = session.Pools.OrderBy(p => p.SortOrder).First();
 
         var rng = new Random(1006);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var used = new HashSet<string>();
         var n = 0;
 

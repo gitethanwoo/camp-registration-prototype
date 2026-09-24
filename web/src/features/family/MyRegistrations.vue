@@ -102,6 +102,9 @@ const isAdultProgram = (c: RegistrationCard) => c.participants.every((p) => !p.g
                     <ul class="mt-1 text-sm text-muted-foreground">
                       <li v-for="p in c.participants" :key="p.id">
                         {{ p.name }}<template v-if="p.gradeLabel"> · {{ p.gradeLabel }}</template>
+                        <span v-if="p.movedTo" class="block text-foreground">
+                          Moved to {{ p.movedTo.name }} · {{ dateRange(p.movedTo.startDate, p.movedTo.endDate) }}
+                        </span>
                         <template v-if="p.status !== c.status && p.status !== 'Confirmed'">
                           ·
                           <StatusBadge

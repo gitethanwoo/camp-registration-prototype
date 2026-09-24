@@ -2,6 +2,7 @@ import { CalendarCog, ClipboardList, Gauge, ListOrdered } from '@lucide/vue'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import GuestLayout from '@/layouts/GuestLayout.vue'
+import type { StaffRole } from '@/lib/nav'
 import { loadSession, signIn } from '@/lib/session'
 
 // Feature slices register pages from src/features/<slice>/routes.ts; see src/features/README.md.
@@ -111,6 +112,10 @@ router.beforeEach(async (to) => {
   }
   if (needs === 'staff' && session.role === 'host') return { path: '/host' }
   if (needs !== session.kind) return { path: '/no-access', query: { need: needs } }
+  // A staff page that needs a role (meta.roles) sends other roles to a page that names it, instead of a 403 mid-page.
+  const roles = to.matched.findLast((r) => r.meta.roles)?.meta.roles
+  if (needs === 'staff' && roles && !roles.includes(session.role as StaffRole))
+    return { path: '/no-access', query: { need: 'role', roles: roles.join(',') } }
   return true
 })
 

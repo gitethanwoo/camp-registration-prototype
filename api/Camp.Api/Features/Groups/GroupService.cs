@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +36,7 @@ public sealed class GroupValidationException(Dictionary<string, string[]> errors
 /// Group registration rules: roster validation, seat claiming and payment, secure links, attendee
 /// forms and withdrawals. Endpoints stay thin; every money and capacity change happens here.
 /// </summary>
-public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit)
+public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock)
 {
     public const int MaxAttendees = 60;
 
@@ -122,7 +123,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
             TotalCents = price * count,
             DueTodayCents = price * count,
             Status = OrderStatus.Pending,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         };
 
         // Step 1: one transaction claims all seats with a conditional UPDATE, so a group can never
@@ -188,14 +189,14 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
                 ProcessorRef = result.ProcessorRef,
                 CardLast4 = result.CardLast4,
                 Reason = result.DeclineReason,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
             if (result.Succeeded)
             {
                 order.Status = OrderStatus.Paid;
                 group.OrderId = order.Id;
                 group.Status = GroupStatus.Confirmed;
-                group.ConfirmedAt = DateTime.UtcNow;
+                group.ConfirmedAt = clock.UtcNow();
                 var sent = 0;
                 foreach (var a in group.Attendees.Where(a => a.Email is not null))
                 {
@@ -239,7 +240,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
         if (stuck is null) return;
 
         var none = CancellationToken.None;
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         await using var tx = await db.Database.BeginTransactionAsync(none);
         var groups = db.Set<GroupRegistration>().Where(g => g.Id == groupId && g.Status == GroupStatus.Draft && g.OrderId == stuck.OrderId);
         var won = stuck.Status == OrderStatus.Paid
@@ -289,7 +290,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
     {
         var token = Base64Url(RandomNumberGenerator.GetBytes(32));
         a.TokenHash = Hash(token);
-        a.LinkSentAt = DateTime.UtcNow;
+        a.LinkSentAt = clock.UtcNow();
         var link = $"/g/{token}";
         // The emailed link has to travel to HubSpot; this payload is the only place the raw token lives.
         Outbox("GroupFormLink", $"group-{group.Id}", new { to = a.Email, attendee = a.Name, leader = group.LeaderName, link });
@@ -340,7 +341,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
             if (!req.Waivers.Any(s => s.WaiverId == w.Id && s.Accepted)) errors[$"waivers.{w.Id}"] = [$"Accept the {w.Title} to continue."];
         if (errors.Count > 0) throw new GroupValidationException(errors);
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         a.Email = email.ToLowerInvariant();
         a.Phone = string.IsNullOrEmpty(phone) ? null : phone;
         a.AnswersJson = JsonSerializer.Serialize(answers);
@@ -361,7 +362,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
         if (reason is { Length: > 1000 }) throw GroupValidationException.One("reason", "Keep the reason under 1,000 characters.");
         a.Withdrawal = WithdrawalStatus.Requested;
         a.WithdrawalReason = string.IsNullOrEmpty(reason) ? null : reason;
-        a.WithdrawalRequestedAt = DateTime.UtcNow;
+        a.WithdrawalRequestedAt = clock.UtcNow();
         a.WithdrawalResolvedAt = null;
         audit.Record("group.withdrawal_requested", "GroupAttendee", a.Id, $"{a.Name} asked to withdraw from {a.Group.Name}.");
         Outbox("GroupWithdrawalRequested", $"group-{a.GroupId}", new { attendee = a.Name, group = a.Group.Name });
@@ -414,7 +415,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
             ProcessorRef = result.ProcessorRef,
             CardLast4 = charge.CardLast4,
             Reason = $"Withdrawal: {a.Name}",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         });
         if (!result.Succeeded)
         {
@@ -428,7 +429,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
         // refund again; staff finish it from the processor record.
         a.IsActive = false;
         a.Withdrawal = WithdrawalStatus.Approved;
-        a.WithdrawalResolvedAt = DateTime.UtcNow;
+        a.WithdrawalResolvedAt = clock.UtcNow();
         var pool = await db.CapacityPools.Where(p => p.SessionId == group.SessionId).OrderBy(p => p.SortOrder).Select(p => p.Id).FirstAsync(none);
         await db.CapacityPools.Where(p => p.Id == pool && p.Reserved > 0)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1), none);
@@ -445,7 +446,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
     /// <summary>Keeps the attendee on the group. Conditional, so it can't race an approve that's refunding.</summary>
     public async Task DeclineWithdrawalAsync(GroupRegistration group, GroupAttendee a, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var declined = await db.Set<GroupAttendee>()
             .Where(x => x.Id == a.Id && x.GroupId == group.Id && x.IsActive && x.Withdrawal == WithdrawalStatus.Requested)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Withdrawal, WithdrawalStatus.Declined).SetProperty(x => x.WithdrawalResolvedAt, now), ct);
@@ -468,5 +469,5 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
     static string Money(int cents) => (cents / 100m).ToString("C0", CultureInfo.GetCultureInfo("en-US"));
 
     void Outbox(string type, string aggregateId, object payload) =>
-        db.OutboxEvents.Add(new OutboxEvent { Type = type, Target = "HubSpot", AggregateId = aggregateId, PayloadJson = JsonSerializer.Serialize(payload), CreatedAt = DateTime.UtcNow });
+        db.OutboxEvents.Add(new OutboxEvent { Type = type, Target = "HubSpot", AggregateId = aggregateId, PayloadJson = JsonSerializer.Serialize(payload), CreatedAt = clock.UtcNow() });
 }

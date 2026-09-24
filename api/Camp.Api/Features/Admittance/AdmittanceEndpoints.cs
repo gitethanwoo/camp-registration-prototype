@@ -28,11 +28,11 @@ public sealed class AdmittanceEndpoints : IEndpointModule
         family.MapPost("/applications/{id:int}/submit", (int id, CardRequest req, [AsParameters] Deps svc, CurrentUser me, CancellationToken ct) =>
             Run(async () => { await svc.Service.SubmitAsync(me.HouseholdId, id, req, ct); return Results.Ok(); }));
 
-        family.MapGet("/applications", async (CampDbContext db, CurrentUser me) => Results.Ok(await AdmittanceViews.FamilyList(db, me.HouseholdId)));
+        family.MapGet("/applications", async (CampDbContext db, CurrentUser me, TimeProvider clock) => Results.Ok(await AdmittanceViews.FamilyList(db, me.HouseholdId, clock)));
 
         // Another household's application is a 404, not a 403, so ids don't leak.
-        family.MapGet("/applications/{id:int}", async (int id, CampDbContext db, CurrentUser me) =>
-            await AdmittanceViews.FamilyStatus(db, me.HouseholdId, id) is { } view ? Results.Ok(view) : Results.NotFound());
+        family.MapGet("/applications/{id:int}", async (int id, CampDbContext db, CurrentUser me, TimeProvider clock) =>
+            await AdmittanceViews.FamilyStatus(db, me.HouseholdId, id, clock) is { } view ? Results.Ok(view) : Results.NotFound());
 
         family.MapPost("/applications/{id:int}/reply", (int id, MessageRequest req, [AsParameters] Deps svc, CurrentUser me, CancellationToken ct) =>
             Run(async () => { await svc.Service.ReplyAsync(me.HouseholdId, id, req.Message, ct); return Results.Ok(); }));
@@ -44,13 +44,13 @@ public sealed class AdmittanceEndpoints : IEndpointModule
         var staff = app.MapGroup("/api/admin/admittance").RequireAuthorization(Policies.Staff);
         var cet = app.MapGroup("/api/admin/admittance").RequireAuthorization(Policies.Cet);
 
-        staff.MapGet("/sessions", async (CampDbContext db) => Results.Ok(await AdmittanceViews.StaffSessions(db)));
+        staff.MapGet("/sessions", async (CampDbContext db, TimeProvider clock) => Results.Ok(await AdmittanceViews.StaffSessions(db, clock)));
 
-        staff.MapGet("/sessions/{sessionId:int}/applications", async (int sessionId, CampDbContext db) =>
-            await AdmittanceViews.Queue(db, sessionId) is { } queue ? Results.Ok(queue) : Results.NotFound());
+        staff.MapGet("/sessions/{sessionId:int}/applications", async (int sessionId, CampDbContext db, TimeProvider clock) =>
+            await AdmittanceViews.Queue(db, sessionId, clock) is { } queue ? Results.Ok(queue) : Results.NotFound());
 
-        staff.MapGet("/applications/{id:int}", async (int id, CampDbContext db) =>
-            await AdmittanceViews.StaffDetail(db, id) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        staff.MapGet("/applications/{id:int}", async (int id, CampDbContext db, TimeProvider clock) =>
+            await AdmittanceViews.StaffDetail(db, id, clock) is { } detail ? Results.Ok(detail) : Results.NotFound());
 
         cet.MapPost("/applications/{id:int}/start-review", (int id, [AsParameters] Deps svc, StaffUser who, CancellationToken ct) =>
             Run(async () => { await svc.Service.StartReviewAsync(id, who.Actor, ct); return Results.Ok(); }));
@@ -80,7 +80,7 @@ public sealed class AdmittanceEndpoints : IEndpointModule
 /// The service's dependencies, bound per request. Building the service here keeps the slice out of
 /// Program.cs, which is where DI registrations would otherwise go.
 /// </summary>
-internal readonly record struct Deps(CampDbContext Db, IPaymentGateway Gateway, IAuditLog Audit)
+internal readonly record struct Deps(CampDbContext Db, IPaymentGateway Gateway, IAuditLog Audit, TimeProvider Clock)
 {
-    public AdmittanceService Service => new(Db, Gateway, Audit);
+    public AdmittanceService Service => new(Db, Gateway, Audit, Clock);
 }

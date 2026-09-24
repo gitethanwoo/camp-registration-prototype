@@ -1,5 +1,6 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +13,7 @@ namespace Camp.Api.Features.Setup;
 /// Family Weekend, a returning Mount Berry program waiting on its second approval, with a new waiver
 /// version waiting too. Runs after every other slice's seed.
 /// </summary>
-public sealed class SetupSeed : ISeedModule
+public sealed class SetupSeed(TimeProvider clock) : ISeedModule
 {
     public const string FamilyWeekendSlug = "family-weekend";
     public const string FamilyWaiverTitle = "Family Weekend Release and Waiver";
@@ -31,14 +32,14 @@ public sealed class SetupSeed : ISeedModule
     }
 
     /// <summary>Setup rows for anything that doesn't have them yet. Safe to run on every start.</summary>
-    static async Task Backfill(CampDbContext db, CancellationToken ct)
+    async Task Backfill(CampDbContext db, CancellationToken ct)
     {
         var programs = await db.Programs.AsNoTracking().Include(p => p.Sessions).Include(p => p.Waivers).ToListAsync(ct);
         var withSetup = await db.Set<ProgramSetup>().Select(s => s.ProgramId).ToHashSetAsync(ct);
         var sessionsWithSetup = await db.Set<SessionSetup>().Select(s => s.SessionId).ToHashSetAsync(ct);
         var sessionsWithTiers = await db.Set<RefundTier>().Select(t => t.SessionId).Distinct().ToHashSetAsync(ct);
         var templatesWithVersions = await db.Set<WaiverVersion>().Select(v => v.WaiverTemplateId).Distinct().ToHashSetAsync(ct);
-        var migrated = new DateTime(2026, 8, 1, 14, 0, 0, DateTimeKind.Utc);
+        var migrated = new DateTime(2027, 8, 1, 14, 0, 0, DateTimeKind.Utc);
 
         foreach (var p in programs)
         {
@@ -68,8 +69,8 @@ public sealed class SetupSeed : ISeedModule
                     {
                         SessionId = s.Id,
                         Location = p.Location,
-                        RegistrationOpensAt = priority ? new DateTime(2026, 9, 1, 14, 0, 0, DateTimeKind.Utc) : null,
-                        PriorityOpensAt = priority ? new DateTime(2026, 8, 15, 14, 0, 0, DateTimeKind.Utc) : null,
+                        RegistrationOpensAt = priority ? new DateTime(2027, 9, 1, 14, 0, 0, DateTimeKind.Utc) : null,
+                        PriorityOpensAt = priority ? new DateTime(2027, 8, 15, 14, 0, 0, DateTimeKind.Utc) : null,
                     });
                 }
                 if (!sessionsWithTiers.Contains(s.Id))
@@ -92,17 +93,17 @@ public sealed class SetupSeed : ISeedModule
         }
         await db.SaveChangesAsync(ct);
 
-        // The core seed dates live waivers Nov 2027, but families sign them today on the real clock.
+        // The core seed dates live waivers Nov 2027, but families sign them on the app clock's today.
         // A live version can't be effective in the future, so it reads as live since the WIN import.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today();
         await db.WaiverTemplates.Where(w => w.EffectiveDate > today)
             .ExecuteUpdateAsync(s => s.SetProperty(w => w.EffectiveDate, ImportedOn), ct);
     }
 
-    static readonly DateOnly ImportedOn = new(2026, 8, 1);
+    static readonly DateOnly ImportedOn = new(2027, 8, 1);
 
     /// <summary>A live version's effective date: a future date becomes the WIN import date.</summary>
-    static DateOnly LiveSince(DateOnly effective) => effective > DateOnly.FromDateTime(DateTime.UtcNow) ? ImportedOn : effective;
+    DateOnly LiveSince(DateOnly effective) => effective > clock.Today() ? ImportedOn : effective;
 
     static async Task SeedFamilyWeekend(CampDbContext db, CancellationToken ct)
     {
@@ -165,7 +166,7 @@ public sealed class SetupSeed : ISeedModule
         await db.SaveChangesAsync(ct);
         await db.Database.ExecuteSqlAsync($"UPDATE r SET HouseholdId = p.HouseholdId FROM Registrations r JOIN People p ON p.Id = r.PersonId WHERE r.SessionId = {past.Id}", ct);
 
-        var submitted = new DateTime(2026, 9, 18, 15, 12, 0, DateTimeKind.Utc);
+        var submitted = new DateTime(2028, 2, 24, 15, 12, 0, DateTimeKind.Utc);
         var setup = new ProgramSetup { ProgramId = program.Id, State = PublishState.PendingApproval, SubmittedBy = Submitter, SubmittedByEmail = SubmitterEmail, SubmittedAt = submitted };
         var seq = 1;
         foreach (var (role, description) in ProgramSetupEndpoints.Chain)
@@ -179,7 +180,7 @@ public sealed class SetupSeed : ISeedModule
             {
                 SessionId = s.Id,
                 Location = SessionSetupEndpoints.MountBerry,
-                RegistrationOpensAt = s == next ? new DateTime(2026, 9, 1, 14, 0, 0, DateTimeKind.Utc) : new DateTime(2026, 1, 15, 14, 0, 0, DateTimeKind.Utc),
+                RegistrationOpensAt = s == next ? new DateTime(2027, 9, 1, 14, 0, 0, DateTimeKind.Utc) : new DateTime(2026, 1, 15, 14, 0, 0, DateTimeKind.Utc),
             });
 
         db.Set<WaiverVersion>().AddRange(
@@ -283,7 +284,7 @@ public sealed class SetupSeed : ISeedModule
         var day = await db.Programs.AsNoTracking().Include(p => p.Sessions).FirstOrDefaultAsync(p => p.Slug == "day-camp-atlanta", ct);
         if (day is null) return;
         var june = day.Sessions.OrderBy(s => s.StartDate).First();
-        var created = new DateTime(2026, 8, 20, 16, 0, 0, DateTimeKind.Utc);
+        var created = new DateTime(2027, 8, 20, 16, 0, 0, DateTimeKind.Utc);
         // Uses tie to real orders: K5's "used N of cap" is a count of orders carrying the code, never a made-up number.
         var ordersByCode = await db.Orders.Where(o => o.DiscountCode != null && (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Pending))
             .GroupBy(o => o.DiscountCode!).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
@@ -303,8 +304,8 @@ public sealed class SetupSeed : ISeedModule
             CreatedAt = created,
         };
         db.Set<DiscountRule>().AddRange(
-            Rule("SIBLING10", DiscountKind.Percent, 10, "Sibling discount", day.Id, june.Id, new(2026, 9, 1), new(2028, 6, 12), 200, stack: false),
-            Rule("EARLY50", DiscountKind.Flat, 5000, "Early registration", day.Id, null, new(2026, 9, 1), new(2028, 3, 1), 500, stack: true),
+            Rule("SIBLING10", DiscountKind.Percent, 10, "Sibling discount", day.Id, june.Id, new(2027, 9, 1), new(2028, 6, 12), 200, stack: false),
+            Rule("EARLY50", DiscountKind.Flat, 5000, "Early registration", day.Id, null, new(2027, 9, 1), new(2028, 3, 31), 500, stack: true),
             Rule("SPRING25", DiscountKind.Percent, 25, "Spring promotion", day.Id, null, new(2026, 3, 1), new(2026, 5, 31), 100, stack: false, active: false));
         await db.SaveChangesAsync(ct);
     }
@@ -317,14 +318,14 @@ public sealed class SetupSeed : ISeedModule
         var waiver = await db.WaiverTemplates.AsNoTracking().FirstOrDefaultAsync(w => w.Title == FamilyWaiverTitle, ct);
         var sibling = await db.DiscountCodes.AsNoTracking().FirstOrDefaultAsync(d => d.Code == "SIBLING10", ct);
         if (family is null || waiver is null || sibling is null) return;
-        var t = new DateTime(2026, 8, 20, 16, 0, 0, DateTimeKind.Utc);
-        var created = new AuditEvent { Actor = "Alex Morgan (ADMIN)", Action = "discount.rule_created", EntityType = "DiscountCode", EntityId = $"{sibling.Id}", Detail = "Created discount rule SIBLING10 (10% off). Live at checkout from Sep 1, 2026.", CreatedAt = t };
+        var t = new DateTime(2027, 8, 20, 16, 0, 0, DateTimeKind.Utc);
+        var created = new AuditEvent { Actor = "Alex Morgan (ADMIN)", Action = "discount.rule_created", EntityType = "DiscountCode", EntityId = $"{sibling.Id}", Detail = "Created discount rule SIBLING10 (10% off). Live at checkout from Sep 1, 2027.", CreatedAt = t };
         var events = new[]
         {
             created,
-            new AuditEvent { Actor = Submitter, Action = "waiver.submitted", EntityType = "WaiverTemplate", EntityId = $"{waiver.Id}", Detail = $"Sent version 3 of {FamilyWaiverTitle} for approval: Adds the lake and waterfront section.", CreatedAt = new(2026, 9, 18, 15, 10, 0, DateTimeKind.Utc) },
-            new AuditEvent { Actor = Submitter, Action = "program.submitted", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Submitted Family Weekend for approval.", CreatedAt = new(2026, 9, 18, 15, 12, 0, DateTimeKind.Utc) },
-            new AuditEvent { Actor = "Jamie Dalton (Camp director)", Action = "program.step_approved", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Approved the camp director step for Family Weekend.", CreatedAt = new(2026, 9, 20, 18, 12, 0, DateTimeKind.Utc) },
+            new AuditEvent { Actor = Submitter, Action = "waiver.submitted", EntityType = "WaiverTemplate", EntityId = $"{waiver.Id}", Detail = $"Sent version 3 of {FamilyWaiverTitle} for approval: Adds the lake and waterfront section.", CreatedAt = new(2028, 2, 24, 15, 10, 0, DateTimeKind.Utc) },
+            new AuditEvent { Actor = Submitter, Action = "program.submitted", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Submitted Family Weekend for approval.", CreatedAt = new(2028, 2, 24, 15, 12, 0, DateTimeKind.Utc) },
+            new AuditEvent { Actor = "Jamie Dalton (Camp director)", Action = "program.step_approved", EntityType = "Program", EntityId = $"{family.Id}", Detail = "Approved the camp director step for Family Weekend.", CreatedAt = new(2028, 2, 26, 18, 12, 0, DateTimeKind.Utc) },
         };
         db.AuditEvents.AddRange(events);
         db.Set<AuditChange>().AddRange(

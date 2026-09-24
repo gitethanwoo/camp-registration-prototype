@@ -2,6 +2,7 @@ using System.Reflection;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 
 namespace Camp.Api.Infrastructure;
 
@@ -35,7 +36,7 @@ public interface IAuditLog
     void Record(string action, string entityType, object entityId, string detail);
 }
 
-internal sealed class AuditLog(CampDbContext db, IHttpContextAccessor http) : IAuditLog
+internal sealed class AuditLog(CampDbContext db, IHttpContextAccessor http, TimeProvider clock) : IAuditLog
 {
     public void Record(string action, string entityType, object entityId, string detail)
     {
@@ -49,7 +50,7 @@ internal sealed class AuditLog(CampDbContext db, IHttpContextAccessor http) : IA
             EntityType = entityType,
             EntityId = Convert.ToString(entityId, CultureInfo.InvariantCulture) ?? "",
             Detail = detail,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         });
     }
 }

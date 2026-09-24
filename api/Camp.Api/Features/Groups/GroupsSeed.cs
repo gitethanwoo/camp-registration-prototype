@@ -73,7 +73,7 @@ public sealed class GroupsSeed : ISeedModule
             await db.SaveChangesAsync(ct);
         }
 
-        var paidAt = new DateTime(2026, 9, 2, 15, 12, 0, DateTimeKind.Utc);
+        var paidAt = new DateTime(2028, 2, 2, 15, 12, 0, DateTimeKind.Utc);
         var total = session.PriceCents * Roster.Length;
         var order = new PaymentOrder
         {

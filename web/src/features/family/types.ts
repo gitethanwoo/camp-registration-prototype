@@ -46,6 +46,8 @@ export interface Overview {
     startDate: string
     endDate: string
     participants: string
+    /** Campers a transfer moved to another session of this order's program. */
+    moved: { firstName: string; session: string; startDate: string; endDate: string }[]
     count: number
     plan: { installments: number; eachCents: number; nextDueDate: string | null; nextAmountCents: number | null } | null
   })[]
@@ -124,6 +126,13 @@ export interface HouseholdAccess {
   dependents: { id: number; firstName: string; lastName: string; gradeLabel: string }[]
 }
 
+/** Where a camper moved by a staff-approved transfer now goes. */
+export interface MovedSession {
+  name: string
+  startDate: string
+  endDate: string
+}
+
 export interface RegistrationCard extends Money {
   group: 'upcoming' | 'past' | 'cancelled'
   confirmationCode: string
@@ -133,7 +142,14 @@ export interface RegistrationCard extends Money {
   startDate: string
   endDate: string
   status: string
-  participants: { id: number; name: string; gradeLabel: string | null; status: string; position: number | null }[]
+  participants: {
+    id: number
+    name: string
+    gradeLabel: string | null
+    status: string
+    position: number | null
+    movedTo: MovedSession | null
+  }[]
   planInstallments: number
   planEachCents: number | null
 }
@@ -164,7 +180,7 @@ export interface RegistrationDetail {
     lastName: string
     gradeLabel: string | null
     pool: string
-    movedTo: { name: string; startDate: string; endDate: string } | null
+    movedTo: MovedSession | null
     status: string
     healthStatus: string
     waivers: {

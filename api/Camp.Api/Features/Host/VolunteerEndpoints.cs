@@ -3,6 +3,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -56,17 +57,17 @@ public sealed class VolunteerEndpoints : IEndpointModule
             Results.File(Encoding.UTF8.GetBytes(VolunteerCsv.Template), "text/csv", "volunteer-template.csv"));
 
         // Add one volunteer by hand. Same checks as a CSV row; sent to vetting straight away.
-        host.MapPost("/volunteers", async (VolunteerRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        host.MapPost("/volunteers", async (VolunteerRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
         {
             var member = await HostScope.MemberAsync(db, staff, ct);
             if (member is null) return HostScope.NotLinkedResult();
             var orgId = member.HostOrganizationId;
             var fields = Fields(req);
             var taken = await TakenEmails(db, orgId, ct);
-            var problem = VolunteerCsv.Validate(fields, taken, new Dictionary<string, int>(), await EventStart(db, orgId, ct));
+            var problem = VolunteerCsv.Validate(fields, taken, new Dictionary<string, int>(), await EventStart(db, orgId, clock, ct));
             if (problem is not null) return HostScope.Invalid(problem.Field, $"{problem.Issue}. {problem.Detail}");
 
-            var volunteer = ToVolunteer(orgId, fields, null);
+            var volunteer = ToVolunteer(orgId, fields, null, clock);
             db.Add(volunteer);
             audit.Record("host.volunteer_added", "HostVolunteer", fields.Email, $"Added {fields.FirstName} {fields.LastName} ({fields.Email}) and sent them to vetting.");
             try { await db.SaveChangesAsync(ct); }
@@ -74,7 +75,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
             {
                 return HostScope.Invalid("email", "Duplicate email. This email already exists in your volunteer list.");
             }
-            db.OutboxEvents.Add(VettingEvent(volunteer, member.HostOrganization.Name));
+            db.OutboxEvents.Add(VettingEvent(volunteer, member.HostOrganization.Name, clock));
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/host/volunteers/{volunteer.Id}", new { volunteer.Id });
         });
@@ -90,7 +91,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
             return upload is null ? Results.NoContent() : Results.Ok(View(upload));
         });
 
-        host.MapPost("/uploads", async (UploadRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        host.MapPost("/uploads", async (UploadRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var member = await HostScope.MemberAsync(db, staff, ct);
             if (member is null) return HostScope.NotLinkedResult();
@@ -107,7 +108,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
             if (open > 0)
                 return HostScope.Conflict($"Finish your open upload first: {open} {(open == 1 ? "row still needs" : "rows still need")} a fix, a skip, or Submit.");
 
-            var upload = new VolunteerUpload { HostOrganizationId = orgId, FileName = fileName, UploadedBy = staff.Actor, CreatedAt = DateTime.UtcNow };
+            var upload = new VolunteerUpload { HostOrganizationId = orgId, FileName = fileName, UploadedBy = staff.Actor, CreatedAt = clock.UtcNow() };
             upload.Rows.AddRange(parsed.Select((f, i) => new VolunteerUploadRow
             {
                 RowNumber = i + 1,
@@ -118,7 +119,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
                 DateOfBirth = f.DateOfBirth,
                 Role = f.Role,
             }));
-            Revalidate(upload.Rows, await TakenEmails(db, orgId, ct), await EventStart(db, orgId, ct));
+            Revalidate(upload.Rows, await TakenEmails(db, orgId, ct), await EventStart(db, orgId, clock, ct));
             db.Add(upload);
             var valid = upload.Rows.Count(r => r.Status == UploadRowStatus.Valid);
             audit.Record("host.volunteers_uploaded", "VolunteerUpload", fileName,
@@ -130,7 +131,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
 
         // Fix a row in place. The whole upload is checked again, since a changed email can
         // create or clear a duplicate elsewhere in the file.
-        host.MapPut("/uploads/{id:int}/rows/{rowId:int}", async (int id, int rowId, VolunteerRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        host.MapPut("/uploads/{id:int}/rows/{rowId:int}", async (int id, int rowId, VolunteerRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
             await ChangeRow(db, staff, id, rowId, (upload, row) =>
             {
                 if (row.Status is not (UploadRowStatus.Error or UploadRowStatus.Valid)) return Decided(row);
@@ -138,9 +139,9 @@ public sealed class VolunteerEndpoints : IEndpointModule
                 (row.FirstName, row.LastName, row.Email, row.Phone, row.DateOfBirth, row.Role) = (f.FirstName, f.LastName, f.Email, f.Phone, f.DateOfBirth, f.Role);
                 audit.Record("host.upload_row_fixed", "VolunteerUpload", upload.Id, $"Edited row {row.RowNumber} of {upload.FileName} ({f.FirstName} {f.LastName}).");
                 return null;
-            }, ct));
+            }, clock, ct));
 
-        host.MapPost("/uploads/{id:int}/rows/{rowId:int}/skip", async (int id, int rowId, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        host.MapPost("/uploads/{id:int}/rows/{rowId:int}/skip", async (int id, int rowId, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
             await ChangeRow(db, staff, id, rowId, (upload, row) =>
             {
                 if (row.Status is not (UploadRowStatus.Error or UploadRowStatus.Valid)) return Decided(row);
@@ -148,19 +149,19 @@ public sealed class VolunteerEndpoints : IEndpointModule
                 audit.Record("host.upload_row_skipped", "VolunteerUpload", upload.Id,
                     $"Skipped row {row.RowNumber} of {upload.FileName} ({Name(row)}){(row.Issue is null ? "" : $": {row.Issue}")}. Not sent to vetting.");
                 return null;
-            }, ct));
+            }, clock, ct));
 
-        host.MapPost("/uploads/{id:int}/rows/{rowId:int}/restore", async (int id, int rowId, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        host.MapPost("/uploads/{id:int}/rows/{rowId:int}/restore", async (int id, int rowId, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
             await ChangeRow(db, staff, id, rowId, (upload, row) =>
             {
                 if (row.Status != UploadRowStatus.Skipped) return HostScope.Conflict($"Row {row.RowNumber} isn't skipped.");
                 row.Status = UploadRowStatus.Error; // checked again below
                 audit.Record("host.upload_row_restored", "VolunteerUpload", upload.Id, $"Brought back row {row.RowNumber} of {upload.FileName} ({Name(row)}).");
                 return null;
-            }, ct));
+            }, clock, ct));
 
         // Valid rows become volunteers and go to vetting. Rows with errors stay held back and fixable.
-        host.MapPost("/uploads/{id:int}/submit", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        host.MapPost("/uploads/{id:int}/submit", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var member = await HostScope.MemberAsync(db, staff, ct);
             if (member is null) return HostScope.NotLinkedResult();
@@ -172,7 +173,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
                 .FirstOrDefaultAsync(u => u.Id == id && u.HostOrganizationId == orgId, ct);
             if (upload is null) return Results.NotFound();
             // Checked again under the lock: a volunteer added by hand since the preview may now clash.
-            Revalidate(upload.Rows, await TakenEmails(db, orgId, ct), await EventStart(db, orgId, ct));
+            Revalidate(upload.Rows, await TakenEmails(db, orgId, ct), await EventStart(db, orgId, clock, ct));
             var ready = upload.Rows.Where(r => r.Status == UploadRowStatus.Valid).OrderBy(r => r.RowNumber).ToList();
             var heldBack = upload.Rows.Count(r => r.Status == UploadRowStatus.Error);
             if (ready.Count == 0)
@@ -187,21 +188,21 @@ public sealed class VolunteerEndpoints : IEndpointModule
             var volunteers = ready.Select(r =>
             {
                 r.Status = UploadRowStatus.Submitted;
-                return ToVolunteer(orgId, new VolunteerFields(r.FirstName, r.LastName, r.Email, r.Phone, r.DateOfBirth, r.Role), r.Id);
+                return ToVolunteer(orgId, new VolunteerFields(r.FirstName, r.LastName, r.Email, r.Phone, r.DateOfBirth, r.Role), r.Id, clock);
             }).ToList();
             db.AddRange(volunteers);
-            upload.LastSubmittedAt = DateTime.UtcNow;
+            upload.LastSubmittedAt = clock.UtcNow();
             audit.Record("host.volunteers_submitted", "VolunteerUpload", upload.Id,
                 $"Sent {volunteers.Count} volunteers from {upload.FileName} to vetting.{(heldBack > 0 ? $" {heldBack} {(heldBack == 1 ? "row" : "rows")} with errors held back." : "")}");
             await db.SaveChangesAsync(ct);
-            db.OutboxEvents.AddRange(volunteers.Select(v => VettingEvent(v, member.HostOrganization.Name)));
+            db.OutboxEvents.AddRange(volunteers.Select(v => VettingEvent(v, member.HostOrganization.Name, clock)));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(new { Submitted = volunteers.Count, HeldBack = heldBack, Upload = View(upload) });
         });
     }
 
-    static async Task<IResult> ChangeRow(CampDbContext db, StaffUser staff, int id, int rowId, Func<VolunteerUpload, VolunteerUploadRow, IResult?> change, CancellationToken ct)
+    static async Task<IResult> ChangeRow(CampDbContext db, StaffUser staff, int id, int rowId, Func<VolunteerUpload, VolunteerUploadRow, IResult?> change, TimeProvider clock, CancellationToken ct)
     {
         var member = await HostScope.MemberAsync(db, staff, ct);
         if (member is null) return HostScope.NotLinkedResult();
@@ -213,7 +214,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
         var row = upload?.Rows.FirstOrDefault(r => r.Id == rowId);
         if (upload is null || row is null) return Results.NotFound();
         if (change(upload, row) is { } refused) return refused;
-        Revalidate(upload.Rows, await TakenEmails(db, orgId, ct), await EventStart(db, orgId, ct));
+        Revalidate(upload.Rows, await TakenEmails(db, orgId, ct), await EventStart(db, orgId, clock, ct));
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(View(upload));
@@ -271,7 +272,7 @@ public sealed class VolunteerEndpoints : IEndpointModule
         VolunteerCsv.Clamp(r.FirstName), VolunteerCsv.Clamp(r.LastName), VolunteerCsv.Clamp(r.Email),
         VolunteerCsv.Clamp(r.Phone), VolunteerCsv.Clamp(r.DateOfBirth), VolunteerCsv.Clamp(r.Role));
 
-    static HostVolunteer ToVolunteer(int orgId, VolunteerFields f, int? rowId) => new()
+    static HostVolunteer ToVolunteer(int orgId, VolunteerFields f, int? rowId, TimeProvider clock) => new()
     {
         HostOrganizationId = orgId,
         FirstName = f.FirstName,
@@ -282,16 +283,16 @@ public sealed class VolunteerEndpoints : IEndpointModule
         Role = VolunteerCsv.RoleName(f.Role) ?? VolunteerCsv.DefaultRole,
         VettingStatus = VettingStatus.NotStarted,
         UploadRowId = rowId,
-        CreatedAt = DateTime.UtcNow,
+        CreatedAt = clock.UtcNow(),
     };
 
-    static OutboxEvent VettingEvent(HostVolunteer v, string organization) => new()
+    static OutboxEvent VettingEvent(HostVolunteer v, string organization, TimeProvider clock) => new()
     {
         Type = "VolunteerVettingRequested",
         Target = "Vetting",
         AggregateId = $"volunteer-{v.Id}",
         PayloadJson = JsonSerializer.Serialize(new { v.Id, v.FirstName, v.LastName, v.Email, Organization = organization }),
-        CreatedAt = DateTime.UtcNow,
+        CreatedAt = clock.UtcNow(),
     };
 
     static string Name(VolunteerUploadRow r) => $"{r.FirstName} {r.LastName}".Trim() is { Length: > 0 } n ? n : "no name";
@@ -300,8 +301,8 @@ public sealed class VolunteerEndpoints : IEndpointModule
         (await db.Set<HostVolunteer>().Where(v => v.HostOrganizationId == orgId).Select(v => v.Email).ToListAsync(ct))
             .Select(VolunteerCsv.EmailKey).ToHashSet();
 
-    static async Task<DateOnly> EventStart(CampDbContext db, int orgId, CancellationToken ct) =>
-        (await HostScope.EventAsync(db, orgId, ct))?.Session.StartDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+    static async Task<DateOnly> EventStart(CampDbContext db, int orgId, TimeProvider clock, CancellationToken ct) =>
+        (await HostScope.EventAsync(db, orgId, ct))?.Session.StartDate ?? clock.Today();
 
     static Task<int> OpenRows(CampDbContext db, int orgId, CancellationToken ct) =>
         db.Set<VolunteerUploadRow>()

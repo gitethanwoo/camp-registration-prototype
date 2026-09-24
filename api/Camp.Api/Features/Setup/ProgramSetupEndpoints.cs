@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -99,19 +100,20 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
             return Results.Ok();
         });
 
-        setup.MapPost("/programs/{id:int}/submit", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPost("/programs/{id:int}/submit", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
-            var program = await db.Programs.Include(p => p.Sessions).ThenInclude(s => s.Pools).FirstOrDefaultAsync(p => p.Id == id, ct);
+            var program = await db.Programs.Include(p => p.Sessions).ThenInclude(s => s.Pools).Include(p => p.Waivers).FirstOrDefaultAsync(p => p.Id == id, ct);
             if (program is null) return Results.NotFound();
             var setup = await StateOf(db, program, ct);
             if (setup.State != PublishState.Draft) return SetupResults.Conflict($"{program.Name} is already {StateLabel(setup.State).ToLowerInvariant()}.");
             if (!program.Sessions.Any(s => s.Pools.Count > 0))
                 return SetupResults.Invalid("sessions", "Add at least one session with a capacity pool before submitting.");
+            if (program.Waivers.Count == 0) return SetupResults.Invalid("waivers", NoWaiver);
 
             setup.State = PublishState.PendingApproval;
             setup.SubmittedBy = staff.Actor;
             setup.SubmittedByEmail = staff.Email;
-            setup.SubmittedAt = DateTime.UtcNow;
+            setup.SubmittedAt = clock.UtcNow();
             setup.ReturnNote = null;
             ResetSteps(db, setup);
             audit.Record(db, "program.submitted", "Program", id, $"Submitted {program.Name} for approval.", ("State", "Draft", "Pending approval"));
@@ -119,9 +121,9 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
             return Results.Ok();
         });
 
-        setup.MapPost("/programs/{id:int}/approve", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPost("/programs/{id:int}/approve", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
-            var program = await db.Programs.FirstOrDefaultAsync(p => p.Id == id, ct);
+            var program = await db.Programs.Include(p => p.Waivers).FirstOrDefaultAsync(p => p.Id == id, ct);
             if (program is null) return Results.NotFound();
             var setup = await StateOf(db, program, ct);
             if (setup.State != PublishState.PendingApproval) return SetupResults.Conflict($"{program.Name} isn't waiting for approval.");
@@ -129,10 +131,13 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
             if (step is null) return SetupResults.Conflict($"Every step for {program.Name} is already approved.");
             var blocked = ApprovalBlock(setup, staff);
             if (blocked is not null) return SetupResults.Forbidden(blocked);
+            // Checked again here: a program submitted before this guard existed may still have no waiver.
+            if (program.Waivers.Count == 0 && setup.Steps.All(s => s.Id == step.Id || s.ApprovedAt is not null))
+                return SetupResults.Invalid("waivers", NoWaiver);
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             // Conditional update: of two people approving the same step at once, only one counts.
-            var now = (DateTime?)DateTime.UtcNow;
+            var now = (DateTime?)clock.UtcNow();
             var won = await db.Set<ProgramApprovalStep>().Where(s => s.Id == step.Id && s.ApprovedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.ApprovedAt, now).SetProperty(x => x.ApprovedBy, staff.Actor).SetProperty(x => x.ApprovedByEmail, staff.Email), ct);
             if (won == 0) return SetupResults.Conflict($"The {step.Role.ToLowerInvariant()} step was just approved by someone else. Reload to see it.");
@@ -174,6 +179,9 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
             return Results.Ok();
         });
     }
+
+    /// <summary>K2's publish guard: families sign a program's waivers at checkout, so a program with none can't go live.</summary>
+    public const string NoWaiver = "Add a waiver before publishing. Families sign it at checkout, so a program can't be published without one.";
 
     internal static IQueryable<Registration> ActiveRegistrations(CampDbContext db) =>
         db.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled && r.Order!.Status != OrderStatus.Declined);

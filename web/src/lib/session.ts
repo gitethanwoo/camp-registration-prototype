@@ -33,7 +33,7 @@ export async function signOut() {
   location.assign('/programs')
 }
 
-const roleLabels: Record<string, string> = {
+export const roleLabels: Record<string, string> = {
   cet: 'Customer Experience',
   finance: 'Finance',
   host: 'Host coordinator',

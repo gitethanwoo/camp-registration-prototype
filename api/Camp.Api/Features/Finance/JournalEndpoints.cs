@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -85,7 +86,7 @@ public sealed class JournalEndpoints : IEndpointModule
             });
         });
 
-        g.MapPost("/{id:int}/retry", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        g.MapPost("/{id:int}/retry", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             var j = await db.Set<JournalBatch>().Include(x => x.SettlementBatch).FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -95,7 +96,7 @@ public sealed class JournalEndpoints : IEndpointModule
             var claimed = await db.Set<JournalBatch>().Where(x => x.Id == id && x.Status == JournalStatus.Failed)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, JournalStatus.Pending).SetProperty(x => x.ErrorDetail, (string?)null), ct);
             if (claimed == 0) return Fin.Conflict($"{j.Reference} was just retried by someone else.");
-            var now = DateTime.UtcNow;
+            var now = clock.UtcNow();
             db.Add(new JournalEvent { JournalBatchId = j.Id, Status = JournalStatus.Pending, Detail = "Export resent to Oracle Fusion.", Actor = staff.Actor, At = now });
             var entries = Ledger.Journal(await Ledger.BatchLines(db, j.SettlementBatchId, ct));
             db.OutboxEvents.Add(new OutboxEvent { Type = "JournalExport", Target = "OracleFusion", AggregateId = j.Reference, PayloadJson = JsonSerializer.Serialize(new { j.Reference, batch = j.SettlementBatch.Reference, lines = entries }), CreatedAt = now });

@@ -75,6 +75,13 @@ watch(
   },
   { immediate: true },
 )
+// The sheet can open before the ministries load; default a new program's ministry once they arrive.
+watch(
+  () => props.ministries,
+  (list) => {
+    if (!form.ministryId && list[0]) form.ministryId = String(list[0].id)
+  },
+)
 const dirty = computed(() => {
   const p = props.program
   if (!p) return !!form.name
@@ -150,6 +157,12 @@ async function sendBack() {
     returning.value = false
     returnNote.value = ''
   }
+}
+// Polish: a program can't be submitted or published without a waiver, so a draft can take the standard release.
+function addWaiver() {
+  const p = props.program
+  if (!p) return
+  return run(() => api.post(`/admin/setup/programs/${p.id}/waivers`), `Standard release added to ${p.name}.`, p.id)
 }
 const addingSession = ref(false)
 const err = (k: string) => fieldErrors.value[k]?.[0]
@@ -250,9 +263,23 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
                   : 'no waivers'
               }}
             </p>
-            <RouterLink to="/admin/setup/waivers" class="text-primary underline-offset-4 hover:underline"
-              >Manage waiver versions</RouterLink
-            >
+            <p v-if="!program.waivers.length" class="mt-1 text-amber-800">
+              Families sign a waiver at checkout, so a program can't be published without one.
+            </p>
+            <p v-if="err('waivers')" class="mt-1 text-destructive">{{ err('waivers') }}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <Button
+                v-if="editable && !program.waivers.length"
+                size="sm"
+                variant="outline"
+                :disabled="busy"
+                @click="addWaiver"
+                ><Plus />Add the standard release</Button
+              >
+              <RouterLink to="/admin/setup/waivers" class="text-primary underline-offset-4 hover:underline"
+                >Manage waiver versions</RouterLink
+              >
+            </div>
           </div>
         </TabsContent>
 

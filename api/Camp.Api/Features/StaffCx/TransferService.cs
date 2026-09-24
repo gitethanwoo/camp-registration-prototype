@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,7 @@ public sealed record TransferOutcome(bool Ok, int StatusCode, string? Error, int
 /// Moves a registration between two sessions of the same program (FR-42). The seat claim, the seat
 /// release, any refund and the installment rebalance happen in one SQL transaction: all or nothing.
 /// </summary>
-public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit)
+public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock)
 {
     /// <summary>Evaluates a destination for a registration against live capacity. Never writes.</summary>
     public static async Task<TransferCheck> CheckAsync(CampDbContext db, Registration reg, Session to, CancellationToken ct)
@@ -186,7 +187,7 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
 
         req.Status = TransferStatus.Approved;
         req.DecidedBy = actor;
-        req.DecidedAt = DateTime.UtcNow;
+        req.DecidedAt = clock.UtcNow();
         req.DecisionNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         req.PriceDifferenceCents = check.PriceDifferenceCents;
         req.RefundCents = refunded;
@@ -204,7 +205,7 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
             Target = "HubSpot",
             AggregateId = "reg-" + reg.Id,
             PayloadJson = JsonSerializer.Serialize(new { registrationId = reg.Id, fromSessionId = from.Id, toSessionId = to.Id, priceDifferenceCents = check.PriceDifferenceCents, refundedCents = refunded }),
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -234,7 +235,7 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
                 ProcessorRef = result.ProcessorRef,
                 CardLast4 = charge.CardLast4,
                 Reason = reason,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
             remaining -= amount;
             if (remaining == 0) break;

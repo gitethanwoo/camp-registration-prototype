@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -49,7 +50,7 @@ public sealed class DiscountEndpoints : IEndpointModule
             });
         });
 
-        admin.MapPost("/{id:int}/approve", async (int id, DiscountDecisionRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        admin.MapPost("/{id:int}/approve", async (int id, DiscountDecisionRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var r = await db.Set<DiscountRequest>().Include(x => x.DiscountCode).Include(x => x.Program).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
@@ -65,17 +66,17 @@ public sealed class DiscountEndpoints : IEndpointModule
             if (note?.Length > 1000) return StaffCx.Invalid("note", "Notes are limited to 1,000 characters.");
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            if (!await Decide(db, id, ReviewDecision.Approved, staff.Actor, note, ct)) return await AlreadyDecided(db, id, ct);
+            if (!await Decide(db, id, ReviewDecision.Approved, staff.Actor, note, clock, ct)) return await AlreadyDecided(db, id, ct);
             r.DiscountCode.Status = DiscountStatus.Approved; // live at checkout from now on
             audit.Record("discount.approved", "DiscountCode", r.DiscountCodeId,
                 $"Approved {r.DiscountCode.Code} ({Describe(r.DiscountCode)}) for {r.Organization}.{(note is null ? "" : $" Note: {note}")}");
-            db.OutboxEvents.Add(new OutboxEvent { Type = "DiscountApproved", Target = "HubSpot", AggregateId = "discount-" + r.DiscountCodeId, PayloadJson = JsonSerializer.Serialize(new { r.DiscountCode.Code, r.RequestedBy, r.Organization }), CreatedAt = DateTime.UtcNow });
+            db.OutboxEvents.Add(new OutboxEvent { Type = "DiscountApproved", Target = "HubSpot", AggregateId = "discount-" + r.DiscountCodeId, PayloadJson = JsonSerializer.Serialize(new { r.DiscountCode.Code, r.RequestedBy, r.Organization }), CreatedAt = clock.UtcNow() });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok();
         });
 
-        admin.MapPost("/{id:int}/reject", async (int id, DiscountDecisionRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        admin.MapPost("/{id:int}/reject", async (int id, DiscountDecisionRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var r = await db.Set<DiscountRequest>().Include(x => x.DiscountCode).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
@@ -86,9 +87,9 @@ public sealed class DiscountEndpoints : IEndpointModule
 
             // The code keeps its PendingApproval status: inert, and indistinguishable from an invalid code to guests.
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            if (!await Decide(db, id, ReviewDecision.Rejected, staff.Actor, note, ct)) return await AlreadyDecided(db, id, ct);
+            if (!await Decide(db, id, ReviewDecision.Rejected, staff.Actor, note, clock, ct)) return await AlreadyDecided(db, id, ct);
             audit.Record("discount.rejected", "DiscountCode", r.DiscountCodeId, $"Rejected {r.DiscountCode.Code} for {r.Organization}. Note: {note}");
-            db.OutboxEvents.Add(new OutboxEvent { Type = "DiscountRejected", Target = "HubSpot", AggregateId = "discount-" + r.DiscountCodeId, PayloadJson = JsonSerializer.Serialize(new { r.DiscountCode.Code, r.RequestedBy, note }), CreatedAt = DateTime.UtcNow });
+            db.OutboxEvents.Add(new OutboxEvent { Type = "DiscountRejected", Target = "HubSpot", AggregateId = "discount-" + r.DiscountCodeId, PayloadJson = JsonSerializer.Serialize(new { r.DiscountCode.Code, r.RequestedBy, note }), CreatedAt = clock.UtcNow() });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok();
@@ -100,9 +101,9 @@ public sealed class DiscountEndpoints : IEndpointModule
     /// decisions racing, the second blocks on the row lock and then changes nothing, so it writes no audit
     /// row or outbox event. Returns false when the request was no longer pending.
     /// </summary>
-    static async Task<bool> Decide(CampDbContext db, int id, ReviewDecision decision, string actor, string? note, CancellationToken ct)
+    static async Task<bool> Decide(CampDbContext db, int id, ReviewDecision decision, string actor, string? note, TimeProvider clock, CancellationToken ct)
     {
-        var now = (DateTime?)DateTime.UtcNow;
+        var now = (DateTime?)clock.UtcNow();
         return await db.Set<DiscountRequest>().Where(x => x.Id == id && x.Decision == ReviewDecision.Pending)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Decision, decision)

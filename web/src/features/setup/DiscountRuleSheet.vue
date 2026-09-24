@@ -14,11 +14,12 @@ import { money } from '@/lib/format'
 import PublishBadge from './PublishBadge.vue'
 import type { DiscountKind, DiscountPreview, DiscountRuleRow, DiscountRules } from './types'
 import { saveError, toCents, toDollars } from './useSetupLoad'
+import { now } from '@/lib/clock'
 
 const props = defineProps<{ open: boolean; rule: DiscountRuleRow | null; scopes: DiscountRules['scopes'] }>()
 const emit = defineEmits<{ close: []; saved: [id?: number] }>()
 
-const today = new Date().toISOString().slice(0, 10)
+const today = now().toISOString().slice(0, 10)
 const form = reactive({
   code: '',
   name: '',

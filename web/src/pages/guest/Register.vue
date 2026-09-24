@@ -24,6 +24,7 @@ import { api, ApiError } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
 import type { Participant, Question, Quote, RegisterContext } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { now } from '@/lib/clock'
 
 const props = defineProps<{ sessionId: number }>()
 const router = useRouter()
@@ -635,7 +636,7 @@ const paymentOptions = computed(() => {
                   :aria-invalid="(attempted && !draft.signer.trim()) || undefined"
                 />
                 <p class="text-xs text-muted-foreground">
-                  Signed {{ date(new Date().toISOString()) }} · {{ ctx.household.email }}
+                  Signed {{ date(now().toISOString()) }} · {{ ctx.household.email }}
                 </p>
               </CardContent>
             </Card>

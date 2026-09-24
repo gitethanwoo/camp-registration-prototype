@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -85,7 +86,7 @@ public sealed class TransferEndpoints : IEndpointModule
             });
         });
 
-        family.MapPost("", async (NewTransferRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, CancellationToken ct) =>
+        family.MapPost("", async (NewTransferRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var reason = req.Reason?.Trim();
             if (string.IsNullOrEmpty(reason)) return StaffCx.Invalid("reason", "Tell us why you'd like to switch sessions.");
@@ -108,7 +109,7 @@ public sealed class TransferEndpoints : IEndpointModule
                 ToSessionId = to.Id,
                 Reason = reason,
                 RequestedBy = me.Name,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
                 Status = TransferStatus.Pending,
                 PriceDifferenceCents = check.PriceDifferenceCents,
             };
@@ -184,10 +185,10 @@ public sealed class TransferEndpoints : IEndpointModule
             });
         });
 
-        admin.MapPost("/{id:int}/approve", async (int id, TransferDecision req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, StaffUser staff, CancellationToken ct) =>
+        admin.MapPost("/{id:int}/approve", async (int id, TransferDecision req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, StaffUser staff, CancellationToken ct, TimeProvider clock) =>
         {
             if (req.Note?.Length > 500) return StaffCx.Invalid("note", "Notes are limited to 500 characters.");
-            var outcome = await new TransferService(db, gateway, audit).ApproveAsync(id, staff.Actor, req.Note, ct);
+            var outcome = await new TransferService(db, gateway, audit, clock).ApproveAsync(id, staff.Actor, req.Note, ct);
             return outcome.StatusCode switch
             {
                 200 => Results.Ok(new { outcome.RefundCents }),
@@ -197,14 +198,14 @@ public sealed class TransferEndpoints : IEndpointModule
             };
         });
 
-        admin.MapPost("/{id:int}/deny", async (int id, TransferDecision req, CampDbContext db, IAuditLog audit, StaffUser staff, CancellationToken ct) =>
+        admin.MapPost("/{id:int}/deny", async (int id, TransferDecision req, CampDbContext db, IAuditLog audit, StaffUser staff, TimeProvider clock, CancellationToken ct) =>
         {
             var note = req.Note?.Trim();
             if (string.IsNullOrEmpty(note)) return StaffCx.Invalid("note", "Give the family a reason. They'll see it on their request.");
             if (note.Length > 500) return StaffCx.Invalid("note", "Notes are limited to 500 characters.");
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             // The decision is a conditional update: of two decisions racing, only one changes the row.
-            var now = (DateTime?)DateTime.UtcNow;
+            var now = (DateTime?)clock.UtcNow();
             var won = await db.Set<TransferRequest>().Where(x => x.Id == id && x.Status == TransferStatus.Pending)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(x => x.Status, TransferStatus.Denied)
