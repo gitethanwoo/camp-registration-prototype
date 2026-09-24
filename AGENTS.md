@@ -13,7 +13,7 @@ A WinShape camp registration prototype: a .NET 10 minimal API, Vue 3 with shadcn
    - Web routes: add `web/src/features/<slice>/routes.ts` exporting `routes: RouteRecordRaw[]`. Admin pages set `meta.nav` to appear in the sidebar.
    - Audit: inject `IAuditLog` and call `audit.Record(...)` for every staff mutation, before `SaveChanges`.
 4. **Migrations:**
-   - A slice that adds entities also adds one migration named `<Slice>` (`scripts/dotnet.sh ef migrations add <Slice> --project api/Camp.Api --output-dir Data/Migrations`), so the app and the tests run on your branch.
+   - A slice that adds entities also adds one migration named `<Slice>` (`scripts/dotnet.sh tool restore` once, then `scripts/dotnet.sh ef migrations add <Slice> --project api/Camp.Api --output-dir Data/Migrations`), so the app and the tests run on your branch.
    - At merge the integrator deletes the wave's slice migrations and generates a single combined migration. That's how parallel snapshot edits get resolved, so don't hand-merge `CampDbContextModelSnapshot.cs`.
 5. **Auth:**
    - Guests sign in through WorkOS AuthKit. Locally that's the emulator; personas are in `infra/workos/workos-emulate.config.yaml` and `e2e/fixtures.ts`.
