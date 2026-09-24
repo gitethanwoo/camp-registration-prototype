@@ -20,9 +20,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import FormAnswers from '@/features/forms/FormAnswers.vue'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, dateTime, money } from '@/lib/format'
 
@@ -158,15 +160,6 @@ async function load() {
   r.value = await api.get<Detail>(`/admin/registrations/${props.id}`)
 }
 onMounted(load)
-
-const answerLabels: Record<string, string> = {
-  tshirt: 'T-shirt size',
-  swim: 'Swim level',
-  church: 'Attends church',
-  churchName: 'Church',
-  cabinmate: 'Cabin-mate request',
-  bus: 'Bus from Atlanta',
-}
 
 // ── Cancel + refund, on this screen (FR-40/49) ──
 const cancelOpen = ref(false)
@@ -327,12 +320,11 @@ async function cancel() {
             </Card>
             <Card>
               <CardHeader><CardTitle>Answers</CardTitle></CardHeader>
-              <CardContent>
+              <CardContent class="space-y-4">
+                <!-- K6: the questions this registration answered, labelled with the form version (forms slice). -->
+                <FormAnswers :registration-id="id" />
+                <Separator />
                 <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                  <div v-for="(v, k) in r.answers" :key="k">
-                    <dt class="text-muted-foreground">{{ answerLabels[k] ?? k }}</dt>
-                    <dd>{{ v || '—' }}</dd>
-                  </div>
                   <div>
                     <dt class="text-muted-foreground">Allergies</dt>
                     <dd>{{ r.participant.allergies || 'None' }}</dd>

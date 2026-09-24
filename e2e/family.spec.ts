@@ -22,7 +22,12 @@ async function registerForDayCamp(page: Page, kids: string[], option: 'Pay depos
     await card.getByRole('combobox', { name: /Swimming ability/ }).click()
     await page.getByRole('option', { name: 'Beginner' }).click()
   }
-  await page.getByRole('radio', { name: 'No' }).click()
+  // Each camper card now has its own yes/no (the forms slice's medication question), so answer the family's.
+  await page
+    .locator('[data-slot="card"]')
+    .filter({ hasText: 'About your family' })
+    .getByRole('radio', { name: 'No' })
+    .click()
   await page.getByRole('button', { name: 'Continue' }).click()
 
   const physicians = page.getByLabel(/Physician name/)

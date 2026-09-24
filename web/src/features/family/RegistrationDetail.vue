@@ -23,6 +23,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ApiError, api } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
+import FormAnswers from '@/features/forms/FormAnswers.vue'
 import PaymentBadge from './PaymentBadge.vue'
 import type { RegistrationDetail } from './types'
 
@@ -294,6 +295,12 @@ async function sign() {
             </li>
           </ul>
         </CardContent>
+      </Card>
+
+      <!-- K6: the questions this family answered at registration (forms slice). -->
+      <Card class="mt-6">
+        <CardHeader><CardTitle>Your answers</CardTitle></CardHeader>
+        <CardContent><FormAnswers :confirmation-code="data.confirmationCode" /></CardContent>
       </Card>
     </template>
 
