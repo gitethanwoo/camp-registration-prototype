@@ -270,6 +270,9 @@ public sealed class GroupsEndpoints : IEndpointModule
             Program = new { g.Session.Program.Name, g.Session.Program.Slug },
             Session = SessionDto(g.Session),
             Counts = Counts(g),
+            // Draft: what paying now would cost. Confirmed: what was charged, per attendee.
+            PricePerAttendeeCents = g.Order is { Status: OrderStatus.Paid } paid ? paid.TotalCents / Math.Max(1, g.Attendees.Count) : g.Session.PriceCents,
+            TotalCents = g.Order is { Status: OrderStatus.Paid } o ? o.TotalCents : g.Session.PriceCents * g.Attendees.Count,
             Payment = g.Status != GroupStatus.Confirmed || g.Order is null ? null : new
             {
                 g.Order.ConfirmationCode,
