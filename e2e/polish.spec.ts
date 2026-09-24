@@ -34,6 +34,10 @@ test('a CET user who opens a setup page is told it needs the Administrator role'
   await expect(page).toHaveURL(/\/no-access\?need=role/)
   await expect(page.getByText("You don't have access to this page")).toBeVisible()
   await expect(page.getByText(/needs the Administrator role/)).toBeVisible()
+  // It renders inside the staff console, not the public site's header.
+  await expect(page).toHaveURL(/\/admin\/no-access/)
+  await expect(page.getByRole('link', { name: 'Session overview' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'My family' })).toHaveCount(0)
   await page.getByRole('link', { name: 'Go to the staff console' }).click()
   await expect(page).toHaveURL(/\/admin$/)
 })

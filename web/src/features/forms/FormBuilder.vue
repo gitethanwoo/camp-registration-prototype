@@ -143,6 +143,7 @@ const describe = (q: FormQuestion) =>
     typeLabels[q.type as FormQuestionType] ?? q.type,
     q.scope === 'Household' ? 'once per family' : 'each camper',
     q.required ? 'required' : 'optional',
+    ...(q.health ? ['health'] : []),
   ].join(' · ')
 const conditionText = (q: FormQuestion) => {
   if (!q.showWhenKey) return null
@@ -162,6 +163,7 @@ function addQuestion() {
     options: [],
     showWhenKey: null,
     showWhenValue: null,
+    health: false,
   })
   selected.value = questions.value.length - 1
 }
@@ -336,6 +338,9 @@ const programRow = computed(() => programs.data.value?.find((p) => p.programId =
                   >Sent by {{ open.submittedBy }}, {{ dateTime(open.submittedAt) }}</template
                 >
                 <template v-else>Last edited {{ dateTime(open.updatedAt) }} · started by {{ open.createdBy }}</template>
+              </p>
+              <p v-if="open.editedBy?.length" class="text-muted-foreground">
+                Edited by {{ open.editedBy.join(', ') }}. Anyone who worked on it can't approve it.
               </p>
             </template>
             <template v-else>

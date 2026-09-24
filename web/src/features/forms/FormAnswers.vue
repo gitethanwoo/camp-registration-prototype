@@ -17,12 +17,14 @@ interface Group {
 const version = ref<number | null>(null)
 const groups = ref<Group[] | null>(null)
 const failed = ref(false)
+const withheld = ref<string | null>(null)
 
 onMounted(async () => {
   try {
     if (props.registrationId !== undefined) {
       const a = await api.get<StaffAnswers>(`/admin/forms/registrations/${props.registrationId}/answers`)
       version.value = a.formVersion
+      withheld.value = a.healthWithheld ?? null
       groups.value = [
         { title: 'Camper', answers: a.participant },
         { title: 'Family', answers: a.household },
@@ -53,6 +55,9 @@ const shown = computed(() => groups.value?.filter((g) => g.answers.length) ?? []
         <template v-else>Answered before registration forms had versions.</template>
       </p>
       <p v-if="!shown.length" class="text-muted-foreground">No answers were given.</p>
+      <p v-if="withheld" class="rounded-md border bg-muted/40 p-3 text-muted-foreground" data-testid="health-withheld">
+        Health answers (medication) are hidden. {{ withheld }}
+      </p>
       <section v-for="g in shown" :key="g.title" :aria-label="`${g.title} answers`" class="space-y-2">
         <h3 v-if="shown.length > 1" class="font-medium">{{ g.title }}</h3>
         <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-2">

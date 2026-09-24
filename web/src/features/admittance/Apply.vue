@@ -7,15 +7,17 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { api, ApiError } from '@/lib/api'
-import { dateRange, money } from '@/lib/format'
+import { date, dateRange, money } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { cardComplete, emptyCard, newKey, tokenize } from './card'
 import CardFields from './CardFields.vue'
@@ -169,6 +171,19 @@ function next() {
   go(step.value + 1)
 }
 
+// ── Waivers (signed here; approval records them on the registration) ────────
+const agreed = reactive<Record<number, boolean>>({})
+const signer = ref('')
+watch(
+  () => ctx.value?.applicant,
+  (a) => {
+    if (a && !signer.value) signer.value = `${a.firstName} ${a.lastName}`
+  },
+)
+const waiversDone = computed(
+  () => (ctx.value?.waivers ?? []).every((w) => agreed[w.id]) && (!ctx.value?.waivers.length || !!signer.value.trim()),
+)
+
 // ── Submit ───────────────────────────────────────────────────────────────
 const card = ref(emptyCard())
 let key = newKey()
@@ -190,7 +205,12 @@ async function submit() {
     await save()
     if (!appId.value) throw new Error("We couldn't save your application. Check your connection and try again.")
     const token = await tokenize(card.value)
-    await api.post(`/admittance/applications/${appId.value}/submit`, { cardToken: token, idempotencyKey: key })
+    await api.post(`/admittance/applications/${appId.value}/submit`, {
+      cardToken: token,
+      idempotencyKey: key,
+      acceptedWaiverIds: ctx.value.waivers.filter((w) => agreed[w.id]).map((w) => w.id),
+      signerName: signer.value.trim(),
+    })
     toast.success('Application submitted. Your card is authorized, not charged.')
     router.replace(`/applications/${appId.value}`)
   } catch (e) {
@@ -198,7 +218,11 @@ async function submit() {
       decline.value = e.message
       key = newKey()
     } else if (e instanceof ApiError && e.status === 400 && Object.keys(e.errors).length) {
-      const labels = Object.fromEntries(ctx.value.questions.map((q) => [`answers.${q.key}`, q.label]))
+      const labels: Record<string, string> = Object.fromEntries(
+        ctx.value.questions.map((q) => [`answers.${q.key}`, q.label]),
+      )
+      for (const w of ctx.value.waivers) labels[`waivers.${w.id}`] = `Accept the ${w.title}`
+      labels.signerName = 'Type your full name to sign the waiver'
       serverErrors.value = Object.entries(e.errors).map(([k, v]) => labels[k] ?? v[0] ?? k)
     } else if (e instanceof ApiError && e.status === 409) {
       const fresh = await api.get<ApplyContext>(`/admittance/sessions/${props.sessionId}/apply`).catch(() => null)
@@ -446,6 +470,35 @@ const answerFor = (q: FormQuestion) => form.answers[q.key]?.trim() || '—'
               </CardContent>
             </Card>
 
+            <Card v-for="w in ctx.waivers" :key="w.id">
+              <CardHeader>
+                <CardTitle>{{ w.title }}</CardTitle>
+                <CardDescription>Version {{ w.version }} · effective {{ date(w.effectiveDate) }}</CardDescription>
+              </CardHeader>
+              <CardContent class="space-y-4">
+                <ScrollArea class="h-40 rounded-md border bg-muted/30 p-4">
+                  <p class="text-sm leading-relaxed whitespace-pre-line">{{ w.body }}</p>
+                </ScrollArea>
+                <Label class="flex items-center gap-3 font-normal">
+                  <Checkbox v-model="agreed[w.id]" :aria-label="`${w.title}: I agree for us both`" />
+                  I agree for us both
+                </Label>
+              </CardContent>
+            </Card>
+            <Card v-if="ctx.waivers.length">
+              <CardHeader>
+                <CardTitle>Sign</CardTitle>
+                <CardDescription
+                  >Typing your name is your electronic signature. It's recorded on your registration if you're
+                  approved.</CardDescription
+                >
+              </CardHeader>
+              <CardContent class="max-w-sm space-y-2">
+                <Label for="signer">Full name</Label>
+                <Input id="signer" v-model="signer" autocomplete="name" />
+              </CardContent>
+            </Card>
+
             <Alert v-if="decline" variant="destructive">
               <CircleAlert class="size-4" />
               <AlertTitle>Card declined</AlertTitle>
@@ -475,12 +528,19 @@ const answerFor = (q: FormQuestion) => form.answers[q.key]?.trim() || '—'
                   </AlertDescription>
                 </Alert>
                 <CardFields v-model="card" :disabled="submitting" />
+                <p v-if="!waiversDone" class="text-sm text-muted-foreground">
+                  Accept the waiver above and sign with your full name to submit.
+                </p>
               </CardContent>
               <CardFooter class="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-between">
                 <Button variant="outline" class="w-full sm:w-auto" :disabled="submitting" @click="go(step - 1)"
                   >Back</Button
                 >
-                <Button class="w-full sm:w-auto" :disabled="submitting || !cardComplete(card)" @click="submit">
+                <Button
+                  class="w-full sm:w-auto"
+                  :disabled="submitting || !cardComplete(card) || !waiversDone"
+                  @click="submit"
+                >
                   <Loader2 v-if="submitting" class="size-4 animate-spin" />
                   {{ submitting ? 'Authorizing…' : `Authorize ${price} and submit` }}
                 </Button>

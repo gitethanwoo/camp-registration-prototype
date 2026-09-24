@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Access;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,9 +20,11 @@ public sealed class FormAnswersEndpoints : IEndpointModule
 {
     public void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/admin/forms/registrations/{id:int}/answers", async (int id, CampDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/admin/forms/registrations/{id:int}/answers", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
         {
-            var r = await db.Registrations.AsNoTracking().Include(x => x.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Questions)
+            var r = await db.Registrations.Include(x => x.Person)
+                .Include(x => x.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Questions)
+                .Include(x => x.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Ministry)
                 .FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
             var answers = r.OrderId is { } orderId
@@ -30,11 +33,30 @@ public sealed class FormAnswersEndpoints : IEndpointModule
                 : [];
             if (answers.Count == 0) return Results.Ok(Legacy(r));
             var version = await VersionNumber(db, answers[0].FormVersionId, ct);
+
+            // Health answers (K6 questions marked Health) follow the same rule as the health form (K9/K11):
+            // withheld unless this person passes HealthAccessRules, and audited as health.viewed when shown.
+            string? withheld = null;
+            if (answers.Any(a => a.Question.Health))
+            {
+                var program = r.Session.Program;
+                var setting = await db.Set<ProgramHealthSetting>().AsNoTracking().FirstOrDefaultAsync(s => s.ProgramId == program.Id, ct);
+                var member = await db.Set<StaffMember>().AsNoTracking().Include(m => m.Ministry).FirstOrDefaultAsync(m => m.WorkOsUserId == staff.UserId, ct)
+                    ?? await db.Set<StaffMember>().AsNoTracking().Include(m => m.Ministry).FirstOrDefaultAsync(m => m.Email == staff.Email, ct);
+                withheld = HealthAccessRules.Refusal(member, program, setting);
+                if (withheld is null)
+                {
+                    audit.Record("health.viewed", "Registration", r.Id, $"Viewed {r.Person.FullName}'s health answers on the registration form ({program.Name}).");
+                    await db.SaveChangesAsync(ct);
+                }
+                else answers = [.. answers.Where(a => !a.Question.Health)];
+            }
             return Results.Ok(new
             {
                 FormVersion = version,
                 Household = Views(answers.Where(a => a.RegistrationId is null)),
                 Participant = Views(answers.Where(a => a.RegistrationId == id)),
+                HealthWithheld = withheld,
             });
         }).RequireAuthorization(Policies.Staff);
 

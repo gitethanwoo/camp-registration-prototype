@@ -71,6 +71,10 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(90000, reg.PaidCents);
         Assert.Equal(reg.PriceCents, reg.PaidCents); // nothing left owing
         Assert.Equal(OrderStatus.Paid, reg.Order!.Status);
+        // The waiver signed at submit is on the registration, so F5 shows nothing left to sign.
+        var waiver = await factory.WithDb(db => db.WaiverTemplates.SingleAsync(w => db.Programs.Any(p => p.Id == w.ProgramId && p.Slug == "fall-marriage-retreat")));
+        var signed = await factory.WithDb(db => db.Set<WaiverAcceptance>().AsNoTracking().SingleAsync(a => a.RegistrationId == reg.Id));
+        Assert.Equal((waiver.Id, waiver.Version, "Pat Couple"), (signed.WaiverTemplateId, signed.Version, signed.SignerName));
 
         var status = await family.GetFromJsonAsync<JsonElement>($"/api/admittance/applications/{id}");
         Assert.Equal("Confirmed", status.GetProperty("status").GetString());
@@ -266,7 +270,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (family, _) = await NewCouple("Card");
         var id = await SaveDraft(family, sessionId, GoodAnswers);
 
-        var res = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4000000000000002"), idempotencyKey = "k1" });
+        var res = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", await Submission(sessionId, "4000000000000002", "k1"));
 
         Assert.Equal(HttpStatusCode.PaymentRequired, res.StatusCode);
         Assert.Contains("declined", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
@@ -281,12 +285,21 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var partial = new Dictionary<string, string>(GoodAnswers) { ["attendedBefore"] = "Yes" }; // now "which event" is required
         var id = await SaveDraft(family, sessionId, partial);
 
-        var missing = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = "k1" });
+        var missing = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", await Submission(sessionId, "4242424242424242", "k1"));
         Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
         Assert.True((await missing.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors").TryGetProperty("answers.attendedWhich", out _));
 
+        // The retreat's waiver is signed at submit: unaccepted or unsigned is refused, and nothing is authorized.
         await SaveDraft(family, sessionId, GoodAnswers);
-        (await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = "k2" })).EnsureSuccessStatusCode();
+        var authorizations = _gateway.AuthorizeCount;
+        var unsigned = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = "k1" });
+        Assert.Equal(HttpStatusCode.BadRequest, unsigned.StatusCode);
+        var waiverErrors = (await unsigned.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors");
+        Assert.Contains(waiverErrors.EnumerateObject(), e => e.Name.StartsWith("waivers.", StringComparison.Ordinal));
+        Assert.True(waiverErrors.TryGetProperty("signerName", out _));
+        Assert.Equal(authorizations, _gateway.AuthorizeCount);
+
+        (await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", await Submission(sessionId, "4242424242424242", "k2"))).EnsureSuccessStatusCode();
         var edit = await family.PutAsJsonAsync($"/api/admittance/sessions/{sessionId}/draft", Draft(GoodAnswers));
         Assert.Equal(HttpStatusCode.Conflict, edit.StatusCode);
     }
@@ -328,7 +341,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Empty((await other.GetFromJsonAsync<JsonElement>("/api/admittance/applications")).EnumerateArray());
         var reauth = await other.PostAsJsonAsync($"/api/admittance/applications/{id}/reauthorize", new { cardToken = Card("4242424242424242"), idempotencyKey = "x" });
         Assert.Equal(HttpStatusCode.NotFound, reauth.StatusCode);
-        var submit = await other.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = "x" });
+        var submit = await other.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", await Submission(sessionId, "4242424242424242", "x"));
         Assert.Equal(HttpStatusCode.NotFound, submit.StatusCode);
         // Their own apply page starts empty rather than showing the owner's draft.
         var ctx = await other.GetFromJsonAsync<JsonElement>($"/api/admittance/sessions/{sessionId}/apply");
@@ -387,7 +400,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         // K2 "Return to draft" after the family saved a draft: submitting authorizes nothing.
         await factory.WithDb(db => db.Programs.Where(p => p.Id == programId).ExecuteUpdateAsync(s => s.SetProperty(p => p.IsPublished, false)));
-        var submit = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = Guid.NewGuid().ToString() });
+        var submit = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", await Submission(sessionId, "4242424242424242", Guid.NewGuid().ToString()));
         Assert.Equal(HttpStatusCode.Conflict, submit.StatusCode);
         Assert.Equal(authorizations, _gateway.AuthorizeCount);
 
@@ -437,9 +450,16 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
     async Task<int> Apply(HttpClient family, int sessionId)
     {
         var id = await SaveDraft(family, sessionId, GoodAnswers);
-        var res = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = Guid.NewGuid().ToString() });
+        var res = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", await Submission(sessionId, "4242424242424242", Guid.NewGuid().ToString()));
         res.EnsureSuccessStatusCode();
         return id;
+    }
+
+    /// <summary>A submit body: the card, plus every waiver on the session's program accepted and signed.</summary>
+    async Task<object> Submission(int sessionId, string cardNumber, string key)
+    {
+        var waivers = await factory.WithDb(db => db.WaiverTemplates.Where(w => db.Sessions.Any(s => s.Id == sessionId && s.ProgramId == w.ProgramId)).Select(w => w.Id).ToListAsync());
+        return new { cardToken = Card(cardNumber), idempotencyKey = key, acceptedWaiverIds = waivers, signerName = "Pat Couple" };
     }
 
     Task<int> Reserved(int sessionId) => factory.WithDb(db => db.CapacityPools.Where(p => p.SessionId == sessionId).SumAsync(p => p.Reserved));

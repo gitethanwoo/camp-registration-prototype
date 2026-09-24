@@ -4,6 +4,7 @@ using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
+using Camp.Api.Features.Access;
 using Camp.Api.Features.Forms;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -40,7 +41,7 @@ public class FormsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Seeded_forms_are_live_for_Day_Camp_and_Overnight_with_the_medication_follow_up()
     {
         var list = await Json(await (await Alex()).GetAsync(Forms));
-        foreach (var name in new[] { "Day Camp · Atlanta", "Overnight Camp", "Day Camp · Rome" })
+        foreach (var name in new[] { "Day Camp · Atlanta", "Overnight Camp", "Rome Day Camp" })
             Assert.Equal(JsonValueKind.Object, list.EnumerateArray().Single(p => p.GetProperty("program").GetString() == name).GetProperty("live").ValueKind);
 
         var atlanta = await factory.WithDb(db => FormRules.LiveAsync(db, db.Programs.Single(p => p.Slug == "day-camp-atlanta").Id));
@@ -194,7 +195,7 @@ public class FormsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var url = $"{Forms}/registrations/{regId}/answers";
         var c3 = await Json(await (await factory.SignInAsStaff("cet", "Diane Carter")).GetAsync(url));
         Assert.Equal(live.Version, c3.GetProperty("formVersion").GetInt32());
-        Assert.Contains(c3.GetProperty("participant").EnumerateArray(), a => a.GetProperty("label").GetString() == "Does your camper need medication at camp?");
+        Assert.Contains(c3.GetProperty("participant").EnumerateArray(), a => a.GetProperty("label").GetString() == "T-shirt size");
         Assert.Equal(HttpStatusCode.Forbidden, (await family.GetAsync(url)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await (await factory.SignInAsStaff("host", "Pastor Dave")).GetAsync(url)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync(url)).StatusCode);
@@ -208,6 +209,110 @@ public class FormsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var view = await Json(await (await factory.SignInAsStaff("cet", "Diane Carter")).GetAsync($"{Forms}/registrations/{reg.Id}/answers"));
         Assert.Equal(JsonValueKind.Null, view.GetProperty("formVersion").ValueKind);
         Assert.Contains(view.GetProperty("participant").EnumerateArray(), a => a.GetProperty("label").GetString() == "T-shirt size");
+    }
+
+    [Fact]
+    public async Task An_admin_who_edited_someone_elses_draft_cannot_approve_it()
+    {
+        // Jamie starts a draft; this admin edits it; Jamie sends it. Four eyes means the editor can't approve.
+        var alex = await Alex();
+        var day = await ProgramId("day-camp-atlanta");
+        var live = (await factory.WithDb(db => FormRules.LiveAsync(db, day)))!;
+        var draftId = await factory.WithDb(async db =>
+        {
+            var v = new FormVersion
+            {
+                ProgramId = day,
+                Version = await db.Set<FormVersion>().Where(x => x.ProgramId == day).MaxAsync(x => x.Version) + 1,
+                Status = FormVersionStatus.Draft,
+                CreatedBy = FormsSeed.Jamie,
+                CreatedByEmail = FormsSeed.JamieEmail,
+                CreatedAt = ApiFactory.Now.UtcDateTime,
+                UpdatedAt = ApiFactory.Now.UtcDateTime,
+                Questions = [.. live.Questions.Select(q => new FormQuestion
+                {
+                    Key = q.Key, Label = q.Label, HelpText = q.HelpText, Type = q.Type, Scope = q.Scope, Required = q.Required, Options = q.Options,
+                    ShowWhenKey = q.ShowWhenKey, ShowWhenValue = q.ShowWhenValue, SortOrder = q.SortOrder, Health = q.Health,
+                })],
+            };
+            db.Add(v);
+            await db.SaveChangesAsync();
+            return v.Id;
+        });
+        try
+        {
+            var questions = (await Versions(alex, day)).Single(v => v.GetProperty("id").GetInt32() == draftId)
+                .GetProperty("questions").EnumerateArray().Select(Input).ToList();
+            questions.Add(new("busStop", "Which bus stop will your camper use?", null, FormQuestionType.ShortText, QuestionScope.Participant, false, null, null, null));
+            Assert.Equal(HttpStatusCode.OK, (await alex.PutAsJsonAsync($"{Forms}/versions/{draftId}", new FormDraftInput("Adds bus stops.", questions))).StatusCode);
+            await factory.WithDb(db => db.Set<FormVersion>().Where(v => v.Id == draftId).ExecuteUpdateAsync(x => x
+                .SetProperty(v => v.Status, FormVersionStatus.PendingApproval)
+                .SetProperty(v => v.SubmittedBy, FormsSeed.Jamie).SetProperty(v => v.SubmittedByEmail, FormsSeed.JamieEmail)
+                .SetProperty(v => v.SubmittedAt, ApiFactory.Now.UtcDateTime)));
+
+            var pending = (await Versions(alex, day)).Single(v => v.GetProperty("id").GetInt32() == draftId);
+            Assert.Equal("Alex Morgan (ADMIN)", pending.GetProperty("editedBy")[0].GetString());
+            Assert.False(pending.GetProperty("canApprove").GetBoolean());
+            Assert.Contains("different admin", pending.GetProperty("approvalBlock").GetString());
+            Assert.Equal(HttpStatusCode.Forbidden, (await alex.PostAsync($"{Forms}/versions/{draftId}/approve", null)).StatusCode);
+            Assert.Equal(live.Id, (await factory.WithDb(db => FormRules.LiveAsync(db, day)))!.Id);
+        }
+        finally
+        {
+            await factory.WithDb(db => db.Set<FormVersion>().Where(v => v.Id == draftId).ExecuteDeleteAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Health_answers_on_C3_follow_the_health_access_rules_and_each_view_is_audited()
+    {
+        var (_, kid, household) = await NewFamily();
+        var session = await RomeSession();
+        var rome = await ProgramId(FormsSeed.RomeSlug);
+        var live = (await factory.WithDb(db => FormRules.LiveAsync(db, rome)))!;
+        Assert.True(live.Questions.Single(q => q.Key == "medicationDetails").Health);
+        var code = await Checkout(household, kid, session,
+            new() { ["tshirt"] = "Youth S", ["swim"] = "Beginner", ["medication"] = "Yes", ["medicationDetails"] = "EpiPen, as needed" },
+            new() { ["church"] = "No" }, live.Id);
+        var regId = await factory.WithDb(db => db.Registrations.Where(r => r.Order!.ConfirmationCode == code).Select(r => r.Id).SingleAsync());
+        var url = $"{Forms}/registrations/{regId}/answers";
+        Task<int> Viewed() => factory.WithDb(db => db.AuditEvents.CountAsync(e => e.Action == "health.viewed" && e.EntityId == $"{regId}"));
+        static bool HasHealth(JsonElement view) => view.GetProperty("participant").EnumerateArray()
+            .Any(a => a.GetProperty("key").GetString() is "medication" or "medicationDetails");
+
+        // Diane (Customer Experience) has no health-data access: the medication answers are withheld, with the reason, and nothing is audited.
+        var diane = await factory.SignInAsStaff("cet", "Diane Carter");
+        var refused = await Json(await diane.GetAsync(url));
+        Assert.False(HasHealth(refused));
+        Assert.Contains(refused.GetProperty("participant").EnumerateArray(), a => a.GetProperty("key").GetString() == "tshirt");
+        Assert.Contains("health-data access", refused.GetProperty("healthWithheld").GetString());
+        Assert.Equal(0, await Viewed());
+
+        // Health access on, but Rome's settings open health details to administrators only.
+        await factory.WithDb(db => db.Set<StaffMember>().Where(m => m.Email == "cet@winshape.example").ExecuteUpdateAsync(x => x.SetProperty(m => m.HealthAccess, true)));
+        Assert.Contains("Administrator only", (await Json(await diane.GetAsync(url))).GetProperty("healthWithheld").GetString());
+
+        // A ministry-scoped admin outside Rome's ministry is refused too.
+        var alex = await Alex();
+        var otherMinistry = await factory.WithDb(db => db.Programs.Where(p => p.Id == rome).Select(p => db.Ministries.First(m => m.Id != p.MinistryId).Id).SingleAsync());
+        await factory.WithDb(db => db.Set<StaffMember>().Where(m => m.Email == "admin@winshape.example")
+            .ExecuteUpdateAsync(x => x.SetProperty(m => m.HealthAccess, true).SetProperty(m => m.MinistryId, otherMinistry)));
+        Assert.False(HasHealth(await Json(await alex.GetAsync(url))));
+        Assert.Equal(0, await Viewed());
+
+        // In scope with health access: the answers are shown and the view is audited.
+        await factory.WithDb(db => db.Set<StaffMember>().Where(m => m.Email == "admin@winshape.example").ExecuteUpdateAsync(x => x.SetProperty(m => m.MinistryId, (int?)null)));
+        var shown = await Json(await alex.GetAsync(url));
+        Assert.True(HasHealth(shown));
+        Assert.Equal(JsonValueKind.Null, shown.GetProperty("healthWithheld").ValueKind);
+        Assert.Contains(shown.GetProperty("participant").EnumerateArray(), a => a.GetProperty("value").GetString() == "EpiPen, as needed");
+        Assert.Equal(1, await Viewed());
+
+        // The raw registration detail no longer carries answers at all.
+        var detail = await Json(await diane.GetAsync($"/api/admin/registrations/{regId}"));
+        Assert.False(detail.TryGetProperty("answers", out _));
+        await factory.WithDb(db => db.Set<StaffMember>().Where(m => m.Email == "cet@winshape.example" || m.Email == "admin@winshape.example")
+            .ExecuteUpdateAsync(x => x.SetProperty(m => m.HealthAccess, false)));
     }
 
     // ── answer rules ─────────────────────────────────────────────────────────
@@ -250,7 +355,7 @@ public class FormsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         q.GetProperty("key").GetString(), q.GetProperty("label").GetString(), q.GetProperty("helpText").GetString(),
         Enum.Parse<FormQuestionType>(q.GetProperty("type").GetString()!), Enum.Parse<QuestionScope>(q.GetProperty("scope").GetString()!),
         q.GetProperty("required").GetBoolean(), [.. q.GetProperty("options").EnumerateArray().Select(o => o.GetString()!)],
-        q.GetProperty("showWhenKey").GetString(), q.GetProperty("showWhenValue").GetString());
+        q.GetProperty("showWhenKey").GetString(), q.GetProperty("showWhenValue").GetString(), q.GetProperty("health").GetBoolean());
 
     async Task<(HttpClient Client, int KidId, int HouseholdId)> NewFamily()
     {

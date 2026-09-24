@@ -11,6 +11,26 @@ namespace Camp.Api.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<DateTime>(
+                name: "WaiverSignedAt",
+                table: "AdmittanceApplications",
+                type: "datetime2",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "WaiverSignerName",
+                table: "AdmittanceApplications",
+                type: "nvarchar(120)",
+                maxLength: 120,
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "WaiversAccepted",
+                table: "AdmittanceApplications",
+                type: "nvarchar(500)",
+                maxLength: 500,
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "FormVersions",
                 columns: table => new
@@ -28,6 +48,8 @@ namespace Camp.Api.Data.Migrations
                     SubmittedBy = table.Column<string>(type: "nvarchar(400)", maxLength: 400, nullable: true),
                     SubmittedByEmail = table.Column<string>(type: "nvarchar(400)", maxLength: 400, nullable: true),
                     SubmittedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    EditedByEmails = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: false),
+                    EditedBy = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: false),
                     ReturnNote = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     ApprovedBy = table.Column<string>(type: "nvarchar(400)", maxLength: 400, nullable: true),
                     ApprovedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -132,7 +154,8 @@ namespace Camp.Api.Data.Migrations
                     Options = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
                     ShowWhenKey = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: true),
                     ShowWhenValue = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    SortOrder = table.Column<int>(type: "int", nullable: false)
+                    SortOrder = table.Column<int>(type: "int", nullable: false),
+                    Health = table.Column<bool>(type: "bit", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -274,6 +297,18 @@ namespace Camp.Api.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "FormVersions");
+
+            migrationBuilder.DropColumn(
+                name: "WaiverSignedAt",
+                table: "AdmittanceApplications");
+
+            migrationBuilder.DropColumn(
+                name: "WaiverSignerName",
+                table: "AdmittanceApplications");
+
+            migrationBuilder.DropColumn(
+                name: "WaiversAccepted",
+                table: "AdmittanceApplications");
         }
     }
 }

@@ -8,7 +8,7 @@ namespace Camp.Api.Features.Forms;
 /// <summary>
 /// K6 demo rows. Day Camp · Atlanta and Overnight Camp get a live v1 that asks their existing
 /// questions plus the medication question and its follow-up. This slice's own program, Day Camp ·
-/// Rome, has a live v1 and a v2 that Jamie Dalton sent for approval, so the demo admin can approve it
+/// Rome ("Rome Day Camp"), has a live v1 and a v2 that Jamie Dalton sent for approval, so the demo admin can approve it
 /// and then register against it. Only this slice's program is registered into by its e2e spec.
 /// </summary>
 public sealed class FormsSeed : ISeedModule
@@ -18,9 +18,9 @@ public sealed class FormsSeed : ISeedModule
     public const string JamieEmail = "jamie.dalton@winshape.example";
     const string Brian = "Brian Hughes (Operations)";
 
-    static readonly DateTime Drafted = new(2026, 8, 3, 15, 0, 0, DateTimeKind.Utc);
-    static readonly DateTime Approved = new(2026, 8, 5, 16, 30, 0, DateTimeKind.Utc);
-    static readonly DateTime Submitted = new(2026, 9, 21, 14, 10, 0, DateTimeKind.Utc);
+    static readonly DateTime Drafted = new(2027, 8, 3, 15, 0, 0, DateTimeKind.Utc);
+    static readonly DateTime Approved = new(2027, 8, 5, 16, 30, 0, DateTimeKind.Utc);
+    static readonly DateTime Submitted = new(2028, 2, 28, 14, 10, 0, DateTimeKind.Utc);
 
     public int Order => 150;
 
@@ -53,7 +53,7 @@ public sealed class FormsSeed : ISeedModule
             {
                 MinistryId = wsc.Id,
                 Slug = RomeSlug,
-                Name = "Day Camp · Rome",
+                Name = "Rome Day Camp",
                 Tagline = "A week of day camp for rising 1st–6th graders in Rome.",
                 Description = "WinShape Day Camp spends a week on the Berry College campus. Campers spend 9 AM–4 PM in grade-based groups with games, Bible time, a pool day, and crafts, and families come back Thursday evening for Family Night.",
                 Type = ProgramType.Standard,
@@ -79,9 +79,9 @@ public sealed class FormsSeed : ISeedModule
             {
                 Title = "Participant Release and Waiver of Liability",
                 Version = 1,
-                EffectiveDate = new(2026, 8, 1),
+                EffectiveDate = new(2027, 8, 1),
                 PerParticipant = true,
-                Body = "I give permission for my child to take part in WinShape Day Camp · Rome, including games, swimming at the Berry College pool, crafts, and walks on campus. I understand these activities carry some risk of injury.\n\nIn an emergency, I authorize camp staff to seek medical care for my child if I can't be reached right away.\n\nI release WinShape Foundation, Berry College, and their staff and volunteers from claims arising from ordinary participation, except for gross negligence.",
+                Body = "I give permission for my child to take part in WinShape Rome Day Camp, including games, swimming at the Berry College pool, crafts, and walks on campus. I understand these activities carry some risk of injury.\n\nIn an emergency, I authorize camp staff to seek medical care for my child if I can't be reached right away.\n\nI release WinShape Foundation, Berry College, and their staff and volunteers from claims arising from ordinary participation, except for gross negligence.",
             });
             db.Programs.Add(rome);
             await db.SaveChangesAsync(ct);
@@ -140,9 +140,9 @@ public sealed class FormsSeed : ISeedModule
 
     static List<FormQuestion> MedicationPair(bool required) =>
     [
-        Q("medication", "Does your camper need medication at camp?", FormQuestionType.YesNo, QuestionScope.Participant, required),
+        Q("medication", "Does your camper need medication at camp?", FormQuestionType.YesNo, QuestionScope.Participant, required, health: true),
         Q("medicationDetails", "Medication name and schedule", FormQuestionType.LongText, QuestionScope.Participant, true, showWhen: ("medication", "Yes"),
-            help: "Name, dose, and times. Send it in the original container; the camp nurse gives it."),
+            help: "Name, dose, and times. Send it in the original container; the camp nurse gives it.", health: true),
     ];
 
     static List<FormQuestion> Ordered(List<FormQuestion> questions)
@@ -152,7 +152,7 @@ public sealed class FormsSeed : ISeedModule
     }
 
     static FormQuestion Q(string key, string label, FormQuestionType type, QuestionScope scope, bool required, string? options = null,
-        (string Key, string Value)? showWhen = null, string? help = null) => new()
+        (string Key, string Value)? showWhen = null, string? help = null, bool health = false) => new()
         {
             Key = key,
             Label = label,
@@ -163,5 +163,6 @@ public sealed class FormsSeed : ISeedModule
             Options = options,
             ShowWhenKey = showWhen?.Key,
             ShowWhenValue = showWhen?.Value,
+            Health = health,
         };
 }

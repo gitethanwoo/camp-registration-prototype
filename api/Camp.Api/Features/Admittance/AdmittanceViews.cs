@@ -65,6 +65,8 @@ public static class AdmittanceViews
         if (s is null) return null;
         var adults = await db.People.Where(p => p.HouseholdId == householdId && p.IsAdult).OrderBy(p => p.Id).AsNoTracking().ToListAsync();
         var app = await db.Set<AdmittanceApplication>().AsNoTracking().FirstOrDefaultAsync(a => a.HouseholdId == householdId && a.SessionId == sessionId);
+        var waivers = await db.WaiverTemplates.AsNoTracking().Where(w => w.ProgramId == s.ProgramId).OrderBy(w => w.Id)
+            .Select(w => new { w.Id, w.Title, w.Version, w.EffectiveDate, w.Body }).ToListAsync();
         var applicant = app is not null ? adults.FirstOrDefault(p => p.Id == app.ApplicantPersonId)
             : adults.FirstOrDefault(p => string.Equals(p.Email, email, StringComparison.OrdinalIgnoreCase)) ?? adults.FirstOrDefault();
         return new
@@ -75,6 +77,7 @@ public static class AdmittanceViews
             OtherAdults = adults.Where(p => p.Id != applicant?.Id).Select(p => new { p.Id, p.FirstName, p.LastName, p.Email }),
             ApplicationForm.Sections,
             ApplicationForm.Questions,
+            Waivers = waivers,
             Application = app is null ? null : new
             {
                 app.Id,

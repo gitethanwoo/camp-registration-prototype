@@ -17,7 +17,8 @@ public sealed class AdmittanceException(int status, string message, Dictionary<s
 }
 
 public sealed record DraftRequest(int? SpousePersonId, string? SpouseFirstName, string? SpouseLastName, string? SpouseEmail, Dictionary<string, string>? Answers, int Step);
-public sealed record CardRequest(string CardToken, string IdempotencyKey);
+/// <summary>A card for the hold. At submit, also the program's waivers the couple accepted and the name they signed with.</summary>
+public sealed record CardRequest(string CardToken, string IdempotencyKey, List<int>? AcceptedWaiverIds = null, string? SignerName = null);
 public sealed record MessageRequest(string Message);
 
 /// <summary>
@@ -103,6 +104,13 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
             throw new AdmittanceException(409, "This program isn't taking applications right now. Nothing was authorized.");
         var answers = Answers(app);
         var errors = ApplicationForm.Validate(answers, app.SpouseFirstName, app.SpouseLastName);
+        // The program's waivers are signed here, like the registration wizard's R7, so approval can confirm a complete registration.
+        var waivers = await db.WaiverTemplates.AsNoTracking().Where(w => w.ProgramId == app.Session.ProgramId).OrderBy(w => w.Id).ToListAsync(ct);
+        var accepted = req.AcceptedWaiverIds ?? [];
+        foreach (var w in waivers.Where(w => !accepted.Contains(w.Id)))
+            errors[$"waivers.{w.Id}"] = [$"Accept the {w.Title} to apply."];
+        var signer = (req.SignerName ?? "").Trim();
+        if (waivers.Count > 0 && signer.Length == 0) errors["signerName"] = ["Type your full name to sign the waiver."];
         if (errors.Count > 0) throw new AdmittanceException(400, "Some answers are missing.", errors);
 
         var hold = await gateway.AuthorizeAsync(req.CardToken, app.AmountCents, $"auth-{app.Id}-{req.IdempotencyKey}", ct);
@@ -110,6 +118,12 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
 
         var now = clock.UtcNow();
         SetHold(app, hold, now);
+        if (waivers.Count > 0)
+        {
+            app.WaiversAccepted = string.Join(';', waivers.Select(w => $"{w.Id}:{w.Version}"));
+            app.WaiverSignerName = Cap(signer, 120);
+            app.WaiverSignedAt = now;
+        }
         app.Stage = ApplicationStage.Submitted;
         app.SubmittedAt = now;
         app.UpdatedAt = now;
@@ -361,6 +375,18 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
             AnswersJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["spouse"] = $"{app.SpouseFirstName} {app.SpouseLastName}".Trim(), ["applicationId"] = app.Id.ToString(CultureInfo.InvariantCulture) }),
             CreatedAt = now,
         };
+        // The waivers the couple signed when they applied (applications from before the program had one sign on F5).
+        foreach (var pair in (app.WaiversAccepted ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split(':');
+            registration.WaiverAcceptances.Add(new WaiverAcceptance
+            {
+                WaiverTemplateId = int.Parse(parts[0], CultureInfo.InvariantCulture),
+                Version = int.Parse(parts[1], CultureInfo.InvariantCulture),
+                SignerName = app.WaiverSignerName ?? app.Applicant.FullName,
+                AcceptedAt = app.WaiverSignedAt ?? now,
+            });
+        }
         db.Registrations.Add(registration);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException)

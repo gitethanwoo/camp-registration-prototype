@@ -8,6 +8,8 @@ import { roleLabels, useSession } from '@/lib/session'
 const route = useRoute()
 const { session, roleLabel, signOut } = useSession()
 const need = computed(() => String(route.query.need ?? ''))
+// The same page renders in the staff console (/admin/no-access) and in the public shell (/no-access).
+const inConsole = computed(() => route.path.startsWith('/admin'))
 // A staff page that needs a role the signed-in person doesn't have (router guard on meta.roles).
 const neededRoles = computed(() =>
   String(route.query.roles ?? '')
@@ -22,7 +24,7 @@ const neededLabel = computed(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-md px-4 py-16">
+  <div :class="inConsole ? 'max-w-md py-4' : 'mx-auto max-w-md px-4 py-16'">
     <Card v-if="need === 'role'">
       <CardHeader>
         <CardTitle>You don't have access to this page</CardTitle>

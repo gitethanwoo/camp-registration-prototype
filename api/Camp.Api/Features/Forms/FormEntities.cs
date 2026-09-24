@@ -28,6 +28,12 @@ public class FormVersion
     public string? SubmittedBy { get; set; }
     public string? SubmittedByEmail { get; set; }
     public DateTime? SubmittedAt { get; set; }
+    /// <summary>
+    /// Everyone who saved this draft, as "; "-joined emails and names. Anyone on either list worked on the
+    /// version and can't approve it, even if someone else started or sent it.
+    /// </summary>
+    public string EditedByEmails { get; set; } = "";
+    public string EditedBy { get; set; } = "";
     public string? ReturnNote { get; set; }
     public string? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
@@ -52,6 +58,11 @@ public class FormQuestion
     public string? ShowWhenKey { get; set; }
     public string? ShowWhenValue { get; set; }
     public int SortOrder { get; set; }
+    /// <summary>
+    /// A health question (medication, conditions). Its answers are shown only to staff who pass the K9/K11
+    /// health rules (<c>HealthAccessRules</c>), and each view is audited as <c>health.viewed</c>.
+    /// </summary>
+    public bool Health { get; set; }
 
     public IReadOnlyList<string> OptionList => string.IsNullOrEmpty(Options) ? [] : Options.Split('|');
 }
@@ -82,6 +93,8 @@ internal sealed class FormVersionConfig : IEntityTypeConfiguration<FormVersion>
         b.HasIndex(x => x.ProgramId, "IX_FormVersions_OneLive").IsUnique().HasFilter("[Status] = 'Published'");
         b.Property(x => x.ChangeNote).HasMaxLength(300);
         b.Property(x => x.ReturnNote).HasMaxLength(500);
+        b.Property(x => x.EditedByEmails).HasMaxLength(1000);
+        b.Property(x => x.EditedBy).HasMaxLength(1000);
         b.HasMany(x => x.Questions).WithOne().HasForeignKey(q => q.FormVersionId).OnDelete(DeleteBehavior.Cascade);
     }
 }

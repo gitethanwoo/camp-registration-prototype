@@ -170,6 +170,19 @@ const id = (field: string) => `qe-${field}`
       />Required</Label
     >
 
+    <div class="space-y-1">
+      <Label class="font-normal"
+        ><Checkbox
+          :model-value="q.health === true"
+          :disabled="readonly"
+          @update:model-value="set({ health: $event === true })"
+        />Health question</Label
+      >
+      <p class="text-sm text-muted-foreground">
+        Staff see the answer only if they have health-data access for this program (Setup › Users and Health settings).
+      </p>
+    </div>
+
     <div class="space-y-2">
       <Label :for="id('when')">Show this question</Label>
       <Select

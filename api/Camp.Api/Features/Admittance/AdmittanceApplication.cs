@@ -37,6 +37,14 @@ public class AdmittanceApplication
     public int CurrentStep { get; set; }
     public string AnswersJson { get; set; } = "{}";
 
+    /// <summary>
+    /// The program's waivers the couple accepted at submit, as "templateId:version" pairs joined by ';', and
+    /// who signed. Approval writes them onto the registration as <see cref="WaiverAcceptance"/> rows.
+    /// </summary>
+    public string? WaiversAccepted { get; set; }
+    public string? WaiverSignerName { get; set; }
+    public DateTime? WaiverSignedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? SubmittedAt { get; set; }
@@ -94,6 +102,8 @@ internal sealed class AdmittanceApplicationConfiguration : IEntityTypeConfigurat
         b.HasOne<PaymentOrder>().WithMany().HasForeignKey(a => a.OrderId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<CapacityPool>().WithMany().HasForeignKey(a => a.PoolId).OnDelete(DeleteBehavior.NoAction);
         b.Property(a => a.AnswersJson).HasMaxLength(8000);
+        b.Property(a => a.WaiversAccepted).HasMaxLength(500);
+        b.Property(a => a.WaiverSignerName).HasMaxLength(120);
         b.Property(a => a.InfoRequest).HasMaxLength(2000);
         b.Property(a => a.InfoResponse).HasMaxLength(2000);
         b.Property(a => a.DecisionNote).HasMaxLength(2000);

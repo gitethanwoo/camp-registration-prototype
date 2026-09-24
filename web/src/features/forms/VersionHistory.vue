@@ -22,6 +22,7 @@ const emit = defineEmits<{ view: [id: number] }>()
         <p v-if="v.changeNote">{{ v.changeNote }}</p>
         <p class="text-muted-foreground">
           Written by {{ v.createdBy }}, {{ dateTime(v.createdAt) }}
+          <template v-if="v.editedBy?.length">· edited by {{ v.editedBy.join(', ') }}</template>
           <template v-if="v.approvedBy">· approved by {{ v.approvedBy }}, {{ dateTime(v.approvedAt!) }}</template>
           <template v-if="v.retiredAt">· replaced {{ date(v.retiredAt) }}</template>
         </p>

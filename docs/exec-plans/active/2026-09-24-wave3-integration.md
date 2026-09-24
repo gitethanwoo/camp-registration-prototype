@@ -20,7 +20,13 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - [x] (2026-09-24) Merged `slice/access`: using-directive conflict in `ProgramSetupEndpoints.cs` (both kept); `web/src/pages/admin/RegistrationDetail.vue` Answers card takes forms' `FormAnswers` and drops the Allergies and Dietary rows, as access's review fix did.
 - [x] (2026-09-24) Deleted the `Forms` and `Access` migrations (polish had none), restored main's snapshot, generated `Wave3` (FormVersions, FormQuestions, FormAnswers, ProgramHealthSettings, StaffMembers, StaffSyncRuns). Neither slice migration had `migrationBuilder.Sql`. A fresh stack applies Initial, Wave1, Wave2, Wave3 and seeds with no exceptions; `/api/clock` reads 2028-03-02T15:00Z.
 - [x] (2026-09-24) Clock sweep: after the merges, no `DateTime.UtcNow/Now/Today`, `DateTimeOffset.UtcNow/Now`, `new Date()` or `Date.now()` remains in `api/` or `web/src` outside the clock files (forms and access already injected `TimeProvider`; polish swept the rest). `scripts/check-slop.mjs` (run by `npm run lint`) now fails on any of them, and on `TimeProvider.System`, outside `web/src/lib/clock.ts`, `Features/Polish/DemoClock.cs` and `Features/Polish/ClockEndpoints.cs`. e2e specs may still use `Date.now()` for unique names; the test project is exempt (its fixed clock is `ApiFactory.Now`).
-- [ ] Cross-slice fixes (health gating on staff answers, form four-eyes, Rome name and family spec, admittance spec locator, admittance waiver, staff No access shell).
+- [x] (2026-09-24) Health gating on C3: K6 questions carry a `Health` flag (the seeded medication pair has it); `GET /api/admin/forms/registrations/{id}/answers` applies `HealthAccessRules.Refusal` and either returns health answers with a `health.viewed` audit row or leaves them out with `healthWithheld` (the reason). The raw `answers` map is gone from `GET /api/admin/registrations/{id}`. Test: `FormsTests.Health_answers_on_C3_follow_the_health_access_rules_and_each_view_is_audited`.
+- [x] (2026-09-24) Form four-eyes: saving a draft records the admin in `FormVersion.EditedBy`/`EditedByEmails`; `FormViews.ApprovalBlock` refuses anyone on those lists. K6 shows "Edited by". Test: `FormsTests.An_admin_who_edited_someone_elses_draft_cannot_approve_it`.
+- [x] (2026-09-24) "Day Camp · Rome" is now "Rome Day Camp" (slug unchanged) and `e2e/family.spec.ts` matches `View details for Day Camp · Atlanta`. Forms' seeded history moved from 2026 to 2027-08..2028-02 like polish's.
+- [x] (2026-09-24) `e2e/admittance.spec.ts` reads the queue subtitle from the heading's own block, not the breadcrumb.
+- [x] (2026-09-24) Admittance waiver: R2's review step shows the program's waivers, an "I agree for us both" box and a signature; submit refuses (400, nothing authorized) without them and stores which versions were accepted; approval writes the `WaiverAcceptance` rows. Test: `AdmittanceTests` (refusal in `Missing_answers_are_refused...`, the acceptance in `Approving_captures_once...`).
+- [x] (2026-09-24) Staff No access: role mismatches (and console staff opening a family page) go to `/admin/no-access`, inside `AdminLayout`; guests and hosts still get `/no-access` in the public shell. `e2e/polish.spec.ts` checks the sidebar is there.
+- [x] (2026-09-24) `npm run test:api` 212/212. With each fix reverted, the three new or extended API tests fail (3 of 3).
 - [ ] Gates, test:api, two full e2e runs on a fresh stack.
 - [ ] Persona click-through at 1440×1000 and 390×844.
 
@@ -30,7 +36,27 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 
 ## Decision Log
 
-(none yet)
+- Decision: Health answers are marked per question (`FormQuestion.Health`, a "Health question" checkbox in K6), not guessed from keys or labels. The seed marks the medication pair on Atlanta, Overnight and Rome.
+  Rationale: admins add questions in K6; only the author knows which ones are health information. A flag copies with every new version, so a draft can't drop it silently (it is part of the version signature too).
+  Date/Author: 2026-09-24 / Claude
+- Decision: On C3, withheld health answers produce no `health.view_denied` row; shown ones write `health.viewed` each time the answers load.
+  Rationale: opening a registration isn't a request for health data, and a denied row on every C3 visit by CET would bury the real denials from "View health form". A view that returns health answers is a view, the same as access's endpoint.
+  Date/Author: 2026-09-24 / Claude
+- Decision: `GET /api/admin/registrations/{id}` no longer returns the raw `answers` map.
+  Rationale: forms keeps writing every answer (medication included) to `Registration.AnswersJson`, so the old map would hand the medication answers to every staff role. The C3 card already reads the gated forms endpoint; nothing else used the map.
+  Date/Author: 2026-09-24 / Claude
+- Decision: Editors are tracked as two "; "-joined columns on `FormVersion` (names and emails), matched like the existing author and sender checks.
+  Rationale: the approval rule compares both email and actor name because dev sign-in shares emails per role; a separate table would be more than a prototype needs.
+  Date/Author: 2026-09-24 / Claude
+- Decision: Rename forms' program to "Rome Day Camp" and also tighten the family spec to `Day Camp · Atlanta`.
+  Rationale: either alone fixes the spec; both keep a future "Day Camp …" program from breaking it again, and "Rome Day Camp" reads naturally on the program list.
+  Date/Author: 2026-09-24 / Claude
+- Decision: The couple signs the waiver on R2's review step (collected at submit), not on F5 after approval. Applications submitted before the retreat had a waiver (the seeded queue) still create a registration with no signature, which F5 shows as "to sign".
+  Rationale: it matches the registration wizard (sign before paying), the card hold already happens on that step, and it is three columns on the application plus one loop at capture. Seeded applications aren't given made-up signatures.
+  Date/Author: 2026-09-24 / Claude
+- Decision: The staff No access page is the same component at `/admin/no-access` inside `AdminLayout`; `/no-access` stays for guests and host coordinators (whose shell is the host portal).
+  Rationale: a staff member keeps the sidebar and account menu, and the page needs no copy changes.
+  Date/Author: 2026-09-24 / Claude
 
 ## Outcomes & Retrospective
 

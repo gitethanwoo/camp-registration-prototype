@@ -1,8 +1,9 @@
 import { expect, signInAs, test } from './fixtures'
 
-// Slice 9 demo on fresh seed data, in this slice's own program (Day Camp · Rome). Alex approves the
+// Slice 9 demo on fresh seed data, in this slice's own program (Rome Day Camp). Alex approves the
 // v2 form Jamie Dalton wrote and can't approve his own v3; Maria registers Avery and Mia against v2,
-// where "Yes" to medication asks for details; Diane reads the answers on Avery's registration.
+// where "Yes" to medication asks for details; Diane reads Avery's answers without the health ones
+// (she has no health-data access), and Alex, who has it, sees the medication answers.
 // Tests run in order and each leaves data the next one uses.
 
 test.describe.configure({ mode: 'serial' })
@@ -16,7 +17,7 @@ test('Alex approves v2 of the Rome form, then sends v3 for approval but cannot a
   await page.getByRole('link', { name: 'Registration forms' }).click()
   await expect(page.getByRole('heading', { name: 'Registration forms' })).toBeVisible()
   await page.getByRole('combobox', { name: 'Program' }).click()
-  await page.getByRole('option', { name: 'Day Camp · Rome' }).click()
+  await page.getByRole('option', { name: 'Rome Day Camp' }).click()
 
   await expect(page.getByText('v2 is waiting for approval')).toBeVisible()
   await expect(page.getByText(/Sent by Jamie Dalton/).first()).toBeVisible()
@@ -59,7 +60,7 @@ test('Alex approves v2 of the Rome form, then sends v3 for approval but cannot a
   await expect(page.getByRole('button', { name: 'Approve and publish' })).toBeHidden()
 })
 
-test('Maria registers Avery and Mia for Day Camp · Rome and answers the medication follow-up', async ({ page }) => {
+test('Maria registers Avery and Mia for Rome Day Camp and answers the medication follow-up', async ({ page }) => {
   await signInAs(page, 'maria', '/programs/day-camp-rome')
   await page.getByRole('button', { name: 'Register', exact: true }).click()
   await expect(page).toHaveURL(/\/register\/\d+/)
@@ -126,19 +127,36 @@ test('Maria registers Avery and Mia for Day Camp · Rome and answers the medicat
   await expect(page.getByRole('region', { name: 'Your family answers' }).getByText('2', { exact: true })).toBeVisible()
 })
 
-test('Diane finds Avery’s Rome registration and reads the answers from form v2', async ({ page }) => {
+test('Diane reads Avery’s Rome answers without the medication ones; Alex, with health access, sees them', async ({
+  page,
+  browser,
+}) => {
   expect(confirmation).not.toBe('')
   await signInAs(page, 'diane', '/admin/registrations?all=1')
   await page.getByRole('textbox', { name: 'Search registrations' }).fill(confirmation)
   await page.getByRole('cell', { name: /Avery/ }).first().click()
   await expect(page).toHaveURL(/\/admin\/registrations\/\d+/)
+  const registration = page.url()
 
   await expect(page.getByText('Answered on registration form v2.')).toBeVisible()
   const camper = page.getByRole('region', { name: 'Camper answers' })
-  await expect(camper.getByText('Does your camper need medication at camp?')).toBeVisible()
-  await expect(camper.getByText('Albuterol inhaler, 2 puffs before swimming')).toBeVisible()
   await expect(camper.getByText('Confident swimmer')).toBeVisible()
   await expect(
     page.getByRole('region', { name: 'Family answers' }).getByText('Does your family attend a church?'),
   ).toBeVisible()
+  // Diane (Customer Experience) has completion status only: the medication answers are withheld.
+  await expect(page.getByTestId('health-withheld')).toContainText('Health answers (medication) are hidden.')
+  await expect(camper.getByText('Does your camper need medication at camp?')).toHaveCount(0)
+  await expect(page.getByText('Albuterol inhaler, 2 puffs before swimming')).toHaveCount(0)
+
+  // Alex has health-data access and Rome opens health details to administrators.
+  const admin = await browser.newContext()
+  const alex = await admin.newPage()
+  await signInAs(alex, 'alex', new URL(registration).pathname)
+  await expect(alex.getByText('Answered on registration form v2.')).toBeVisible()
+  const adminCamper = alex.getByRole('region', { name: 'Camper answers' })
+  await expect(adminCamper.getByText('Does your camper need medication at camp?')).toBeVisible()
+  await expect(adminCamper.getByText('Albuterol inhaler, 2 puffs before swimming')).toBeVisible()
+  await expect(alex.getByTestId('health-withheld')).toHaveCount(0)
+  await admin.close()
 })

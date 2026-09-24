@@ -32,7 +32,11 @@ test('a couple applies with the card held, CET approves, and the charge confirms
   // Review & submit: the card is authorized, not charged.
   await expect(page.getByRole('main').getByText('Maria and David Johnson').first()).toBeVisible()
   await expect(page.getByText('Your card will be authorized, not charged')).toBeVisible()
+  // The retreat's waiver is signed here, so approval confirms a registration with nothing left to sign.
   await page.getByRole('button', { name: '4242 4242 4242 4242' }).click()
+  await expect(page.getByRole('button', { name: 'Authorize $900 and submit' })).toBeDisabled()
+  await page.getByRole('checkbox', { name: /I agree for us both/ }).click()
+  await expect(page.getByLabel('Full name')).toHaveValue('Maria Johnson')
   await page.getByRole('button', { name: 'Authorize $900 and submit' }).click()
 
   // F7: status shows the hold, not a charge.
@@ -47,7 +51,9 @@ test('a couple applies with the card held, CET approves, and the charge confirms
   const desk = await staff.newPage()
   await signInAs(desk, 'diane', '/admin/applications')
   await expect(desk.getByRole('heading', { name: 'Applications' })).toBeVisible()
-  await expect(desk.getByText('Fall Marriage Retreat · Fall 2028')).toBeVisible()
+  // The page's own subtitle, not the console breadcrumb, which names the same session.
+  const queueHeader = desk.getByRole('heading', { name: 'Applications' }).locator('..')
+  await expect(queueHeader.getByText(/Fall Marriage Retreat · Fall 2028/)).toBeVisible()
   await desk.getByRole('textbox', { name: 'Search applications' }).fill('maria.johnson')
   await desk.getByRole('button', { name: 'Review' }).click()
 

@@ -14,7 +14,8 @@ public record FormQuestionInput(
     bool Required,
     List<string>? Options,
     string? ShowWhenKey,
-    string? ShowWhenValue);
+    string? ShowWhenValue,
+    bool Health = false);
 
 public record FormDraftInput(string? ChangeNote, List<FormQuestionInput>? Questions);
 
@@ -113,6 +114,7 @@ public static partial class FormRules
             ShowWhenKey = string.IsNullOrWhiteSpace(q.ShowWhenKey) ? null : q.ShowWhenKey.Trim(),
             ShowWhenValue = string.IsNullOrWhiteSpace(q.ShowWhenKey) ? null : (q.ShowWhenValue ?? "").Trim(),
             SortOrder = i + 1,
+            Health = q.Health,
         }).ToList();
 
     /// <summary>

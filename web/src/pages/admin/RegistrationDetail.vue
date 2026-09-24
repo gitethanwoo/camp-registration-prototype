@@ -54,7 +54,6 @@ interface Detail {
   program: { name: string; slug: string; healthMechanism: string }
   session: { id: number; name: string; startDate: string; endDate: string }
   pool: string
-  answers: Record<string, string>
   healthStatus: string
   healthOnFile: boolean
   waivers: {

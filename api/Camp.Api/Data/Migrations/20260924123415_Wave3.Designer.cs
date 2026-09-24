@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Camp.Api.Data.Migrations
 {
     [DbContext(typeof(CampDbContext))]
-    [Migration("20260924121408_Wave3")]
+    [Migration("20260924123415_Wave3")]
     partial class Wave3
     {
         /// <inheritdoc />
@@ -1084,6 +1084,17 @@ namespace Camp.Api.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("WaiverSignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("WaiverSignerName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("WaiversAccepted")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ApplicantPersonId");
@@ -1645,6 +1656,9 @@ namespace Camp.Api.Data.Migrations
                     b.Property<int>("FormVersionId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("Health")
+                        .HasColumnType("bit");
+
                     b.Property<string>("HelpText")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
@@ -1726,6 +1740,16 @@ namespace Camp.Api.Data.Migrations
                     b.Property<string>("CreatedByEmail")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("EditedBy")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("EditedByEmails")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<int>("ProgramId")
                         .HasColumnType("int");

@@ -83,6 +83,7 @@ public sealed class FormsEndpoints : IEndpointModule
                     v.UpdatedAt,
                     v.SubmittedBy,
                     v.SubmittedAt,
+                    EditedBy = FormViews.Editors(v),
                     v.ReturnNote,
                     v.ApprovedBy,
                     v.ApprovedAt,
@@ -131,7 +132,7 @@ public sealed class FormsEndpoints : IEndpointModule
             return Results.Ok(new { draft.Id, draft.Version });
         });
 
-        forms.MapPut("/versions/{id:int}", async (int id, FormDraftInput req, CampDbContext db, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
+        forms.MapPut("/versions/{id:int}", async (int id, FormDraftInput req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var v = await db.Set<FormVersion>().Include(x => x.Questions).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (v is null) return Results.NotFound();
@@ -148,6 +149,7 @@ public sealed class FormsEndpoints : IEndpointModule
             v.Questions = FormRules.ToQuestions(req);
             v.ChangeNote = (req.ChangeNote ?? "").Trim();
             v.UpdatedAt = clock.GetUtcNow().UtcDateTime;
+            FormViews.RecordEditor(v, staff);
             var name = await ProgramName(db, v.ProgramId, ct);
             audit.Record(db, "form.draft_saved", "Program", v.ProgramId, $"Saved draft form v{v.Version} for {name}: {v.Questions.Count} questions.",
                 ("Questions", before.Outline, FormViews.Outline(v.Questions)), ("Change note", before.ChangeNote, v.ChangeNote));
@@ -162,7 +164,7 @@ public sealed class FormsEndpoints : IEndpointModule
             if (v is null) return Results.NotFound();
             if (v.Status != FormVersionStatus.Draft) return SetupResults.Conflict("Only a draft can be sent for approval.");
             var errors = FormRules.ValidateDraft(new FormDraftInput(v.ChangeNote, v.Questions.OrderBy(q => q.SortOrder).Select(q =>
-                new FormQuestionInput(q.Key, q.Label, q.HelpText, q.Type, q.Scope, q.Required, [.. q.OptionList], q.ShowWhenKey, q.ShowWhenValue)).ToList()));
+                new FormQuestionInput(q.Key, q.Label, q.HelpText, q.Type, q.Scope, q.Required, [.. q.OptionList], q.ShowWhenKey, q.ShowWhenValue, q.Health)).ToList()));
             if (string.IsNullOrWhiteSpace(v.ChangeNote)) errors["changeNote"] = ["Say what changed so the approving admin knows what to check."];
             var live = await FormRules.LiveAsync(db, v.ProgramId, ct);
             if (live is not null && FormViews.Signature(live.Questions) == FormViews.Signature(v.Questions))

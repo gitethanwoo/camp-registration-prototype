@@ -182,7 +182,8 @@ public static class AdminEndpoints
                 Program = new { r.Session.Program.Name, r.Session.Program.Slug, HealthMechanism = r.Session.Program.HealthMechanism.ToString() },
                 Session = new { r.Session.Id, r.Session.Name, r.Session.StartDate, r.Session.EndDate },
                 Pool = r.Pool.Name,
-                Answers = JsonSerializer.Deserialize<Dictionary<string, string>>(r.AnswersJson),
+                // Registration answers come from GET /api/admin/forms/registrations/{id}/answers, which withholds
+                // K6 health questions (medication) from staff without health access and audits the view.
                 // Embedded health data is intentionally not returned to CET by default (FR-112 access scope).
                 HealthStatus = r.HealthStatus.ToString(),
                 HealthOnFile = r.HealthJson is not null,

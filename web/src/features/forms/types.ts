@@ -23,6 +23,8 @@ export interface FormQuestion {
   options: string[]
   showWhenKey: string | null
   showWhenValue: string | null
+  /** A health question: answers are shown only to staff with health access (K9/K11). */
+  health?: boolean
 }
 
 export interface ProgramFormRow {
@@ -46,6 +48,7 @@ export interface FormVersionView {
   updatedAt: string
   submittedBy: string | null
   submittedAt: string | null
+  editedBy: string[]
   returnNote: string | null
   approvedBy: string | null
   approvedAt: string | null
@@ -81,6 +84,8 @@ export interface StaffAnswers {
   formVersion: number | null
   household: AnswerView[]
   participant: AnswerView[]
+  /** Why health answers were left out for this staff member, or null/absent when none were withheld. */
+  healthWithheld?: string | null
 }
 
 export interface FamilyAnswers {
