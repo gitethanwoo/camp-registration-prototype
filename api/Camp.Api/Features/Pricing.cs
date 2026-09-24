@@ -22,7 +22,7 @@ public static class Pricing
     // FR-62: a code pending admin approval is indistinguishable from an invalid one.
     public const string InvalidCodeMessage = "This code is not available.";
 
-    public static Quote Build(Session session, IReadOnlyList<Person> participants, PaymentOption option, DiscountCode? discount, string? enteredCode)
+    public static Quote Build(Session session, IReadOnlyList<Person> participants, PaymentOption option, DiscountCode? discount, string? enteredCode, DateOnly today)
     {
         var usable = discount is { Status: DiscountStatus.Approved } ? discount : null;
         string? discountError = !string.IsNullOrWhiteSpace(enteredCode) && usable is null ? InvalidCodeMessage : null;
@@ -57,7 +57,7 @@ public static class Pricing
             case PaymentOption.Plan:
                 dueToday = deposit;
                 schedule.Add(new(null, deposit, "Deposit today"));
-                schedule.AddRange(PlanSchedule(session, total - deposit));
+                schedule.AddRange(PlanSchedule(session, total - deposit, today));
                 break;
             default:
                 dueToday = deposit;
@@ -70,16 +70,35 @@ public static class Pricing
             usable?.Code, discountError);
     }
 
-    /// <summary>Equal monthly installments, the last one landing on the session's balance due date.</summary>
-    public static IEnumerable<ScheduleItem> PlanSchedule(Session session, int remaining)
+    /// <summary>
+    /// Equal monthly installments, the last one landing on the session's balance due date. When <paramref name="today"/>
+    /// is past the first of those dates (the family registered late), the whole schedule moves forward by whole months
+    /// until the first installment is on or after today, keeping the count; no installment lands on or after the day
+    /// the session starts.
+    /// </summary>
+    public static IEnumerable<ScheduleItem> PlanSchedule(Session session, int remaining, DateOnly today)
     {
         var n = session.PlanInstallments;
         if (n == 0 || remaining <= 0) yield break;
         var each = remaining / n;
+        var dates = PlanDates(session, today);
         for (var i = 0; i < n; i++)
         {
             var amount = i == n - 1 ? remaining - each * (n - 1) : each;
-            yield return new(session.BalanceDueDate.AddMonths(i - (n - 1)), amount, $"Installment {i + 1} of {n}");
+            yield return new(dates[i], amount, $"Installment {i + 1} of {n}");
         }
+    }
+
+    /// <summary>The installment dates <see cref="PlanSchedule"/> uses: never before today, never on or after the start date.</summary>
+    public static List<DateOnly> PlanDates(Session session, DateOnly today)
+    {
+        var n = session.PlanInstallments;
+        var shift = 0;
+        while (session.BalanceDueDate.AddMonths(shift - (n - 1)) < today) shift++;
+        var latest = session.StartDate > today ? session.StartDate.AddDays(-1) : today;
+        return Enumerable.Range(0, n)
+            .Select(i => session.BalanceDueDate.AddMonths(shift + i - (n - 1)))
+            .Select(d => d > latest ? latest : d)
+            .ToList();
     }
 }

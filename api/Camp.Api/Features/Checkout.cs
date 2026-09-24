@@ -215,7 +215,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                 }
             }
 
-            var quote = Pricing.Build(session, seated.Select(r => people.Single(p => p.Id == r.PersonId)).ToList(), req.PaymentOption, discount, discount?.Code);
+            var quote = Pricing.Build(session, seated.Select(r => people.Single(p => p.Id == r.PersonId)).ToList(), req.PaymentOption, discount, discount?.Code, clock.Today());
             foreach (var reg in seated) reg.DiscountCents = quote.Lines.Single(l => l.PersonId == reg.PersonId).DiscountCents;
             order.SubtotalCents = quote.SubtotalCents;
             order.DiscountCents = quote.DiscountCents;
@@ -290,7 +290,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             if (order.PaymentOption == PaymentOption.Plan)
             {
                 var seq = 1;
-                foreach (var item in Pricing.PlanSchedule(order.Session, order.TotalCents - order.DueTodayCents))
+                foreach (var item in Pricing.PlanSchedule(order.Session, order.TotalCents - order.DueTodayCents, clock.Today()))
                     db.Installments.Add(new Installment { OrderId = order.Id, Sequence = seq++, DueDate = item.DueDate!.Value, AmountCents = item.AmountCents, Status = InstallmentStatus.Scheduled });
             }
             Outbox("RegistrationConfirmed", "HubSpot", order.ConfirmationCode, new { order.ConfirmationCode, to = order.Household.Email, participants = order.Registrations.Select(r => r.Person.FirstName) });

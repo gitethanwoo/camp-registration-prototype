@@ -73,7 +73,8 @@ function print() {
           </div>
         </dl>
         <p class="text-xs text-muted-foreground">
-          Confirmation {{ payments.confirmationCode }}. Balance due by {{ date(payments.session.balanceDueDate) }}.
+          Confirmation {{ payments.confirmationCode }}. Balance due by
+          {{ date(payments.installments.at(-1)?.dueDate ?? payments.session.balanceDueDate) }}.
         </p>
       </div>
       <DialogFooter>

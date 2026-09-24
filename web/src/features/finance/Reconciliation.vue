@@ -49,6 +49,11 @@ async function loadBatch() {
     loading.value = false
   }
 }
+type BatchSummary = SettlementList['batches'][number]
+const selectedBatch = computed(() => list.value?.batches.find((b) => b.id === batchId.value) ?? null)
+function batchLabel(b: BatchSummary) {
+  return `Fiserv batch ${b.reference}${b.unmatched ? ` · ${b.unmatched} unmatched` : ''}`
+}
 onMounted(async () => {
   await loadList()
   await loadBatch()
@@ -179,11 +184,13 @@ async function resolve() {
 
     <div class="flex flex-wrap items-center gap-3">
       <Select v-if="list" v-model="batchId">
-        <SelectTrigger class="w-full sm:w-96" aria-label="Settlement batch"><SelectValue /></SelectTrigger>
+        <!-- The trigger renders its own label: SelectValue keeps the item text from when it was chosen, so the
+             unmatched count would go stale after a resolve. -->
+        <SelectTrigger class="w-full sm:w-96" aria-label="Settlement batch">
+          <SelectValue>{{ selectedBatch ? batchLabel(selectedBatch) : '' }}</SelectValue>
+        </SelectTrigger>
         <SelectContent>
-          <SelectItem v-for="b in list.batches" :key="b.id" :value="b.id">
-            Fiserv batch {{ b.reference }}<template v-if="b.unmatched"> · {{ b.unmatched }} unmatched</template>
-          </SelectItem>
+          <SelectItem v-for="b in list.batches" :key="b.id" :value="b.id">{{ batchLabel(b) }}</SelectItem>
         </SelectContent>
       </Select>
       <Skeleton v-else class="h-9 w-72" />

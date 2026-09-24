@@ -161,4 +161,17 @@ test('Diane sees the full-pool request blocked and approves Avery’s move', asy
 
   await page.getByRole('tab', { name: 'Approved' }).click()
   await expect(page.getByRole('row').filter({ hasText: 'Avery Johnson' })).toBeVisible()
+
+  // Household 360 History shows the move and Maria's request, newest first.
+  await page.goto('/admin/search?q=Johnson')
+  await page
+    .getByRole('cell', { name: /Johnson/ })
+    .first()
+    .click()
+  await expect(page.getByRole('heading', { name: 'Johnson household' })).toBeVisible()
+  const history = page.locator('[data-slot="card"]').filter({ has: page.getByText('History', { exact: true }) })
+  await expect(history.getByRole('row').nth(1)).toContainText('Approved the transfer of Avery Johnson')
+  await expect(history).toContainText('Moved Avery Johnson from June week')
+  await expect(history).toContainText('asked to move Avery Johnson')
+  await expect(history).not.toContainText('Nothing recorded for this household yet.')
 })

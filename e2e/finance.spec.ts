@@ -84,6 +84,8 @@ test('Marcus resolves both unmatched settlement lines and the journal is created
   await signInAs(page, 'marcus', '/admin/finance/reconciliation')
   await expect(page.getByTestId('unmatched-count')).toContainText('2 unmatched')
   await expect(page.getByTestId('journal-status')).toContainText('Not created')
+  const batchPicker = page.getByRole('combobox', { name: 'Settlement batch' })
+  await expect(batchPicker).toContainText('· 2 unmatched')
 
   await page.getByRole('button', { name: 'View unmatched only' }).click()
   await page.getByRole('row', { name: /Dana Mitchell/ }).click()
@@ -94,6 +96,7 @@ test('Marcus resolves both unmatched settlement lines and the journal is created
   await sheet.getByRole('button', { name: 'Resolve and match' }).click()
   await expect(page.getByText("$250 matched to WS-FC3M17. The family's balance is updated.")).toBeVisible()
   await expect(page.getByTestId('unmatched-count')).toContainText('1 unmatched')
+  await expect(batchPicker).toContainText('· 1 unmatched')
 
   await page.getByRole('row', { name: /K\. Nguyen/ }).click()
   await expect(sheet.getByText("No registration with this cardholder's name owes this amount.")).toBeVisible()
@@ -105,6 +108,7 @@ test('Marcus resolves both unmatched settlement lines and the journal is created
   await expect(page.getByText('$125 posted to unapplied receipts.')).toBeVisible()
   await expect(page.getByTestId('journal-status')).toContainText('Pending')
   await expect(page.getByTestId('unmatched-count')).toContainText('0 unmatched')
+  await expect(batchPicker).not.toContainText('unmatched')
 
   await page.getByRole('link', { name: 'Oracle exports' }).click()
   await expect(page.getByRole('row', { name: /JRN-\d{4}-\d{2}-\d{2}/ }).first()).toContainText('Pending')

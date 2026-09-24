@@ -50,7 +50,10 @@ public class AccessTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var body = await (await Alex()).GetFromJsonAsync<JsonElement>($"{Access}/staff");
         var rows = body.GetProperty("rows").EnumerateArray().ToList();
         var morgan = rows.Single(r => r.GetProperty("email").GetString() == AccessSeed.FormerStaffEmail);
-        Assert.Equal("Active", morgan.GetProperty("status").GetString()); // until the first sync says otherwise
+        // Revoked by an earlier sync: Morgan isn't in the emulator's staff organization, so opening K11 has nothing to revoke.
+        Assert.Equal("Revoked", morgan.GetProperty("status").GetString());
+        Assert.True(morgan.GetProperty("revokedAt").GetDateTime() < factory.Clock.GetUtcNow().UtcDateTime.AddDays(-7));
+        Assert.Equal(1, body.GetProperty("lastSync").GetProperty("revoked").GetInt32());
         Assert.Equal("WSC Camps", morgan.GetProperty("ministry").GetProperty("name").GetString());
         var grace = rows.Single(r => r.GetProperty("email").GetString() == "grace.patel@winshape.example");
         Assert.Equal("Host coordinator", grace.GetProperty("roleLabel").GetString());
@@ -58,6 +61,21 @@ public class AccessTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(body.GetProperty("syncDue").GetBoolean());
         // No password field anywhere: people are added and removed in the identity provider.
         Assert.DoesNotContain("password", body.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Seeded_active_staff_match_the_WorkOS_emulator_staff_organization()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "infra", "workos", "workos-emulate.config.yaml"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        var yaml = File.ReadAllText(Path.Combine(dir.FullName, "infra", "workos", "workos-emulate.config.yaml"));
+        var memberships = System.Text.RegularExpressions.Regex.Matches(yaml, @"-\s*\{\s*email:\s*([^,\s]+),\s*role:\s*([a-z]+)\s*\}")
+            .Select(m => $"{m.Groups[1].Value}={m.Groups[2].Value}").Order().ToList();
+        var seeded = AccessSeed.Staff.Where(p => p.Active).Select(p => $"{p.Email}={p.Role}").Order().ToList();
+
+        Assert.Equal(memberships, seeded);
+        Assert.DoesNotContain(AccessSeed.FormerStaffEmail, yaml, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -421,6 +439,35 @@ public class AccessSyncTests(AccessSyncTests.Factory factory) : IClassFixture<Ac
 
         var list = await alex.GetFromJsonAsync<JsonElement>("/api/access/staff");
         Assert.False(list.GetProperty("syncDue").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_sync_that_finds_everyone_as_they_are_changes_no_one_and_only_links_WorkOS_ids()
+    {
+        var alex = await factory.SignInAsStaff("admin", "Alex Morgan");
+        // A seeded-style row with no WorkOS id yet: the sync links it without calling that an update.
+        await factory.WithDb(async db =>
+        {
+            db.Set<StaffMember>().Add(new StaffMember { Email = "unlinked.person@winshape.example", FirstName = "Una", LastName = "Linked", Role = "cet", Status = StaffStatus.Active, CreatedAt = factory.Clock.GetUtcNow().UtcDateTime });
+            return await db.SaveChangesAsync();
+        });
+        var active = await factory.WithDb(db => db.Set<StaffMember>().AsNoTracking().Where(m => m.Status == StaffStatus.Active).ToListAsync());
+        factory.Directory.Down = false;
+        factory.Directory.Members.Clear();
+        factory.Directory.Members.AddRange(active.Select(m => (m.WorkOsUserId ?? $"user_{m.Email}", m.Email, m.FirstName, m.LastName, m.Role)));
+        var before = await factory.WithDb(db => db.Set<StaffMember>().AsNoTracking().OrderBy(m => m.Id).Select(m => new { m.Id, m.Status, m.RevokedAt }).ToListAsync());
+        var audits = await factory.WithDb(db => db.AuditEvents.CountAsync(a => a.EntityType == "StaffMember"));
+
+        var run = await (await alex.PostAsync("/api/access/staff/sync", null)).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(active.Count, run.GetProperty("members").GetInt32());
+        Assert.Equal(0, run.GetProperty("added").GetInt32());
+        Assert.Equal(0, run.GetProperty("updated").GetInt32());
+        Assert.Equal(0, run.GetProperty("revoked").GetInt32());
+        Assert.Equal(JsonSerializer.Serialize(before), JsonSerializer.Serialize(await factory.WithDb(db => db.Set<StaffMember>().AsNoTracking().OrderBy(m => m.Id).Select(m => new { m.Id, m.Status, m.RevokedAt }).ToListAsync())));
+        Assert.Equal(audits, await factory.WithDb(db => db.AuditEvents.CountAsync(a => a.EntityType == "StaffMember")));
+        Assert.Equal("user_unlinked.person@winshape.example",
+            await factory.WithDb(db => db.Set<StaffMember>().Where(m => m.Email == "unlinked.person@winshape.example").Select(m => m.WorkOsUserId).SingleAsync()));
     }
 
     [Fact]

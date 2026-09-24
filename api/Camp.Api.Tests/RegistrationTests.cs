@@ -65,12 +65,35 @@ public class RegistrationTests(ApiFactory factory) : IClassFixture<ApiFactory>
             r => Assert.Equal(RegistrationStatus.Cancelled, r.Status));
     }
 
+    [Fact]
+    public async Task A_plan_bought_after_its_first_monthly_date_schedules_every_installment_from_today()
+    {
+        // Balance due May 1 with 3 installments would put the first on Mar 1; the clock says Mar 2.
+        var (sessionId, _) = await IsolatedDayCampPool(capacity: 5, balanceDue: new DateOnly(2028, 5, 1));
+        var family = await NewFamilyWithGrade6Child("Late");
+        var today = DateOnly.FromDateTime(factory.Clock.GetUtcNow().UtcDateTime);
+
+        var result = await Checkout(family, sessionId, "late-plan", Card("4242424242424242"), PaymentOption.Plan);
+
+        Assert.Equal(OrderStatus.Paid, result.Status);
+        var order = await factory.WithDb(db => db.Orders.AsNoTracking().Include(o => o.Installments).Include(o => o.Session)
+            .SingleAsync(o => o.IdempotencyKey == "late-plan"));
+        var installments = order.Installments.OrderBy(i => i.Sequence).ToList();
+        Assert.Equal(3, installments.Count);
+        Assert.All(installments, i => Assert.True(i.DueDate >= today && i.DueDate < order.Session.StartDate, $"{i.DueDate} is outside {today}..{order.Session.StartDate}"));
+        Assert.Equal(new DateOnly(2028, 4, 1), installments[0].DueDate);
+        Assert.Equal(order.TotalCents - order.DueTodayCents, installments.Sum(i => i.AmountCents));
+        // The review step's quote showed the same dates.
+        var quote = Pricing.Build(order.Session, [new Person { Id = 1 }], PaymentOption.Plan, null, null, today);
+        Assert.Equal(quote.Schedule.Skip(1).Select(s => s.DueDate!.Value), installments.Select(i => i.DueDate));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     string Card(string number) => _gateway.Tokenize(number);
 
     /// <summary>A fresh Day Camp copy with only a Grade 6 pool, so tests don't share seats.</summary>
-    async Task<(int SessionId, int PoolId)> IsolatedDayCampPool(int capacity)
+    async Task<(int SessionId, int PoolId)> IsolatedDayCampPool(int capacity, DateOnly? balanceDue = null)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CampDbContext>();
@@ -84,7 +107,7 @@ public class RegistrationTests(ApiFactory factory) : IClassFixture<ApiFactory>
             PriceCents = template.PriceCents,
             DepositCents = template.DepositCents,
             PlanInstallments = template.PlanInstallments,
-            BalanceDueDate = template.BalanceDueDate,
+            BalanceDueDate = balanceDue ?? template.BalanceDueDate,
         };
         var pool = new CapacityPool { Session = session, Name = "Grade 6", GradeMin = 6, GradeMax = 6, Capacity = capacity };
         db.CapacityPools.Add(pool);
@@ -104,7 +127,7 @@ public class RegistrationTests(ApiFactory factory) : IClassFixture<ApiFactory>
         return h.Id;
     }
 
-    async Task<CheckoutResult> Checkout(int householdId, int sessionId, string key, string token)
+    async Task<CheckoutResult> Checkout(int householdId, int sessionId, string key, string token, PaymentOption option = PaymentOption.Deposit)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CampDbContext>();
@@ -116,7 +139,7 @@ public class RegistrationTests(ApiFactory factory) : IClassFixture<ApiFactory>
             [new CheckoutParticipant(kid.Id, new() { ["tshirt"] = "Youth M", ["swim"] = "Beginner" }, new HealthForm(null, null, null, null, "Dr. Test", "555-0100", null))],
             new() { ["church"] = "No" },
             waivers.Select(w => new WaiverSignature(w.Id, w.PerParticipant ? kid.Id : null, "Parent")).ToList(),
-            PaymentOption.Deposit, null, token);
+            option, null, token);
         return await scope.ServiceProvider.GetRequiredService<CheckoutService>().CheckoutAsync(householdId, "test", req, default);
     }
 }

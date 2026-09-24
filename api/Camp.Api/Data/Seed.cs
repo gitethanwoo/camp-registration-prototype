@@ -88,7 +88,8 @@ public static class Seed
             PriceCents = 32500,
             DepositCents = 10000,
             PlanInstallments = 3,
-            BalanceDueDate = new(2028, 5, 1),
+            // Apr 1, May 1 and Jun 1: every installment is still ahead on the demo's "today" (Mar 2, 2028).
+            BalanceDueDate = new(2028, 6, 1),
         };
         var dayPools = Enumerable.Range(1, 6).Select(g => Pool(dayS, $"Grade {g}", null, g, g, 20, g)).ToArray();
         dayS.Pools.AddRange(dayPools);

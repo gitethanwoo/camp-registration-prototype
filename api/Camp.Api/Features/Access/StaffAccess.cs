@@ -95,7 +95,9 @@ public static class StaffSync
             }
 
             seen.Add(row);
-            var changed = row.WorkOsUserId != m.UserId || row.Email != m.Email || row.FirstName != m.FirstName || row.LastName != m.LastName;
+            // Linking a seeded or invited row to its WorkOS id for the first time is bookkeeping, not a change anyone sees.
+            var changed = (row.WorkOsUserId is not null && row.WorkOsUserId != m.UserId)
+                || row.Email != m.Email || row.FirstName != m.FirstName || row.LastName != m.LastName;
             if (row.Role != m.Role)
             {
                 audit.Record(db, "staff.role_synced", "StaffMember", row.Id,

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Setup;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,13 +9,27 @@ namespace Camp.Api.Features.Access;
 
 /// <summary>
 /// Staff rows for the WorkOS personas (matched by email; sign-in and sync attach their WorkOS ids), one former
-/// staff member who is no longer in the WorkOS organization so the first sync shows a revocation, a health
-/// setting for every program, and the content of Day Camp health forms the core seed marked Complete but left empty.
+/// staff member already revoked by an earlier sync, a health setting for every program, and the content of Day Camp
+/// health forms the core seed marked Complete but left empty. The active rows match the emulator's staff organization
+/// (<c>infra/workos/workos-emulate.config.yaml</c>), so the first sync on fresh data changes no one.
 /// Runs after every other slice's seed so programs they add get a setting too.
 /// </summary>
 public sealed class AccessSeed(TimeProvider time) : ISeedModule
 {
     public const string FormerStaffEmail = "morgan.ellis@winshape.example";
+
+    /// <summary>The seeded staff roster. Everyone but Morgan Ellis is active and in the WorkOS staff organization.</summary>
+    public static readonly (string Email, string First, string Last, string Role, bool AllMinistries, bool Health, bool Active)[] Staff =
+    [
+        ("alex.morgan@winshape.example", "Alex", "Morgan", "admin", true, true, true),
+        ("diane.carter@winshape.example", "Diane", "Carter", "cet", true, false, true),
+        ("marcus.lee@winshape.example", "Marcus", "Lee", "finance", true, false, true),
+        ("grace.patel@winshape.example", "Grace", "Patel", "host", false, false, true),
+        (FormerStaffEmail, "Morgan", "Ellis", "cet", false, true, false),
+    ];
+
+    /// <summary>Morgan Ellis left the staff organization this many days before the demo's "today".</summary>
+    public const int FormerStaffRevokedDaysAgo = 34;
 
     public int Order => 950;
 
@@ -30,29 +45,49 @@ public sealed class AccessSeed(TimeProvider time) : ISeedModule
     static async Task SeedStaff(CampDbContext db, DateTime now, CancellationToken ct)
     {
         var wsc = await db.Ministries.Where(m => m.Code == "WSC").Select(m => (int?)m.Id).FirstOrDefaultAsync(ct);
-        (string Email, string First, string Last, string Role, int? Ministry, bool Health, DateTime? LastSignIn)[] people =
-        [
-            ("alex.morgan@winshape.example", "Alex", "Morgan", "admin", null, true, null),
-            ("diane.carter@winshape.example", "Diane", "Carter", "cet", null, false, null),
-            ("marcus.lee@winshape.example", "Marcus", "Lee", "finance", null, false, null),
-            ("grace.patel@winshape.example", "Grace", "Patel", "host", wsc, false, null),
-            (FormerStaffEmail, "Morgan", "Ellis", "cet", wsc, true, now.AddDays(-41).Date.AddHours(13).AddMinutes(12)),
-        ];
         var existing = await db.Set<StaffMember>().Select(m => m.Email).ToListAsync(ct);
-        foreach (var p in people.Where(p => !existing.Contains(p.Email, StringComparer.OrdinalIgnoreCase)))
-            db.Set<StaffMember>().Add(new StaffMember
+        var revokedAt = now.AddDays(-FormerStaffRevokedDaysAgo).Date.AddHours(14).AddMinutes(5);
+        var added = new List<StaffMember>();
+        foreach (var p in Staff.Where(p => !existing.Contains(p.Email, StringComparer.OrdinalIgnoreCase)))
+        {
+            var row = new StaffMember
             {
                 Email = p.Email,
                 FirstName = p.First,
                 LastName = p.Last,
                 Role = p.Role,
-                MinistryId = p.Ministry,
+                MinistryId = p.AllMinistries ? null : wsc,
                 HealthAccess = p.Health,
-                Status = StaffStatus.Active,
-                LastSignInAt = p.LastSignIn,
+                Status = p.Active ? StaffStatus.Active : StaffStatus.Revoked,
+                // Morgan last signed in a week before leaving; the sync that noticed revoked them.
+                LastSignInAt = p.Active ? null : revokedAt.AddDays(-7).Date.AddHours(13).AddMinutes(12),
+                SyncedAt = p.Active ? null : revokedAt.AddDays(-7),
+                RevokedAt = p.Active ? null : revokedAt,
                 CreatedAt = now.AddDays(-60).Date,
-            });
+            };
+            db.Set<StaffMember>().Add(row);
+            added.Add(row);
+        }
         await db.SaveChangesAsync(ct);
+
+        // The earlier sync that revoked Morgan, so K11 opens with a history and Morgan's sheet says why.
+        if (added.FirstOrDefault(m => m.Status == StaffStatus.Revoked) is { } former)
+        {
+            const string actor = "Alex Morgan (ADMIN)";
+            db.Set<StaffSyncRun>().Add(new StaffSyncRun { RanAt = revokedAt, Actor = actor, Members = Staff.Count(p => p.Active), Revoked = 1 });
+            var revoked = new AuditEvent
+            {
+                Actor = actor,
+                Action = "staff.revoked",
+                EntityType = "StaffMember",
+                EntityId = former.Id.ToString(CultureInfo.InvariantCulture),
+                Detail = $"{former.Name} is no longer in the WorkOS staff organization; access revoked.",
+                CreatedAt = revokedAt,
+            };
+            db.AuditEvents.Add(revoked);
+            db.Set<AuditChange>().Add(new AuditChange { AuditEvent = revoked, Field = "Status", Before = "Active", After = "Revoked" });
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     /// <summary>Administrators only, to start; CampDoc programs hold no details here, so no one.</summary>

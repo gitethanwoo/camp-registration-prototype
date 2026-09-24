@@ -5,6 +5,7 @@ using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
+using Camp.Api.Features.Admittance;
 using Camp.Api.Features.Polish;
 using Camp.Api.Features.StaffCx;
 using Camp.Api.Integrations;
@@ -212,6 +213,40 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(before - 1, await factory.WithDb(db => db.CapacityPools.Where(p => p.Id == fromPool).Select(p => p.Reserved).SingleAsync()));
         Assert.Equal(toBefore + 1, await factory.WithDb(db => db.CapacityPools.Where(p => p.Id == newPool).Select(p => p.Reserved).SingleAsync()));
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(a => a.Action == "registration.transferred" && a.EntityId == regId.ToString(CultureInfo.InvariantCulture))));
+    }
+
+    [Fact]
+    public async Task Household_history_shows_what_happened_to_its_orders_registrations_transfers_and_applications_newest_first()
+    {
+        var staff = await factory.SignInAsStaff();
+        var cheaper = await CheaperSession(30000);
+        var (client, householdId, regId) = await NewFamilyRegisteredInWeekOne("History", PaymentOption.Plan);
+        var (_, otherHousehold, _) = await NewFamilyRegisteredInWeekOne("Neighbor", PaymentOption.Full);
+        var request = await Json(await client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = cheaper, reason = "Different week" }));
+        Assert.Equal(HttpStatusCode.OK, (await staff.PostAsJsonAsync($"/api/admin/transfers/{request.GetProperty("id").GetInt32()}/approve", new { note = (string?)null })).StatusCode);
+        // An admittance decision is audited against the application, not the household.
+        var application = await factory.WithDb(db => db.Set<AdmittanceApplication>().AsNoTracking().OrderBy(a => a.Id).FirstAsync());
+        await factory.WithDb(db =>
+        {
+            db.AuditEvents.Add(new AuditEvent { Actor = "Diane Carter (CET)", Action = "application.approved", EntityType = "AdmittanceApplication", EntityId = application.Id.ToString(CultureInfo.InvariantCulture), Detail = "Approved the test couple.", CreatedAt = factory.Clock.GetUtcNow().UtcDateTime.AddMinutes(5) });
+            return db.SaveChangesAsync();
+        });
+
+        var history = (await Json(await staff.GetAsync($"/api/admin/households/{householdId}"))).GetProperty("history").EnumerateArray().ToList();
+        var actions = history.Select(h => h.GetProperty("action").GetString()).ToList();
+        Assert.Contains("registration.confirmed", actions);
+        Assert.Contains("transfer.requested", actions);
+        Assert.Contains("registration.transferred", actions);
+        Assert.Contains("transfer.approved", actions);
+        Assert.DoesNotContain("application.approved", actions); // another household's application
+        var times = history.Select(h => h.GetProperty("createdAt").GetDateTime()).ToList();
+        Assert.Equal(times.OrderDescending(), times);
+        Assert.True(actions.IndexOf("transfer.approved") < actions.IndexOf("registration.confirmed"));
+        Assert.DoesNotContain(history, h => h.GetProperty("detail").GetString()!.Contains("Neighbor", StringComparison.Ordinal));
+
+        var applicant = (await Json(await staff.GetAsync($"/api/admin/households/{application.HouseholdId}"))).GetProperty("history").EnumerateArray();
+        Assert.Equal("application.approved", applicant.First().GetProperty("action").GetString());
+        Assert.NotEqual(otherHousehold, householdId);
     }
 
     [Fact]

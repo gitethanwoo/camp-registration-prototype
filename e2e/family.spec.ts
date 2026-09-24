@@ -43,10 +43,20 @@ async function registerForDayCamp(page: Page, kids: string[], option: 'Pay depos
   await page.getByRole('button', { name: 'Continue' }).click()
 
   await page.getByRole('radio', { name: option }).click()
+  if (option === 'Payment plan') {
+    // The demo clock says Mar 2, 2028: every installment is still ahead, three of them, the last on Jun 1.
+    await expect(page.getByRole('row', { name: /Installment 1 of 3/ })).toContainText('Apr 1, 2028')
+    await expect(page.getByRole('row', { name: /Installment 3 of 3/ })).toContainText('Jun 1, 2028')
+    await expect(page.getByText('Mar 1, 2028')).toHaveCount(0)
+  }
   await page.getByRole('button', { name: 'Continue to payment' }).click()
   await page.getByRole('button', { name: '4242 4242 4242 4242' }).click()
   await page.getByRole('button', { name: /^Pay \$/ }).click()
   await expect(page.getByRole('heading', { name: 'You’re registered!' })).toBeVisible()
+  if (option === 'Payment plan') {
+    await expect(page.getByText('Apr 1, 2028')).toBeVisible()
+    await expect(page.getByText('Jun 1, 2028')).toBeVisible()
+  }
 }
 
 test('Sam signs in for the first time, adds a child, and registers them for Day Camp', async ({ page }) => {
@@ -75,7 +85,7 @@ test('Sam signs in for the first time, adds a child, and registers them for Day 
   await page.goto('/family')
   await expect(page.getByRole('heading', { name: 'Day Camp' })).toBeVisible()
   const balance = page.locator('#checklist li').filter({ hasText: 'Balance due' })
-  await expect(balance).toContainText('$100 paid · $225 due by May 1, 2028')
+  await expect(balance).toContainText('$100 paid · $225 due by Jun 1, 2028')
   await expect(balance.getByRole('link', { name: 'Pay balance' })).toHaveAttribute(
     'href',
     /\/family\/registrations\/WS-[A-Z0-9]+\/payments$/,
@@ -133,6 +143,8 @@ test('Maria registers Avery and Mia on the plan, a declined card changes nothing
   // F6: pay the balance. The declined card leaves it at $450.
   await page.getByRole('link', { name: 'Payments and balance' }).click()
   await expect(page.getByRole('heading', { name: 'Day Camp · Atlanta payments' })).toBeVisible()
+  await expect(page.getByText('Payment plan: 3 × $150, last one Jun 1, 2028')).toBeVisible()
+  await expect(page.getByText('Next: $150 on Apr 1, 2028', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'Pay $450 now' }).click()
   const dialog = page.getByRole('dialog', { name: 'Pay balance' })
   await dialog.getByRole('button', { name: '4000 0000 0000 0002' }).click()

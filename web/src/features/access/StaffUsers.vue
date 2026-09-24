@@ -31,7 +31,8 @@ async function sync(quiet = false) {
   try {
     const run = await api.post<SyncRun>('/access/staff/sync')
     await load()
-    if (!quiet || run.revoked || run.added) toast.success(syncSummary(run))
+    // The automatic sync on opening the page speaks up only when it changed someone's access.
+    if (!quiet || run.added || run.updated || run.revoked) toast.success(syncSummary(run))
   } catch (e) {
     syncError.value = saveError(e).message
   } finally {

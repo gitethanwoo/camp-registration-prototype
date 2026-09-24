@@ -48,10 +48,14 @@ test('Diane is refused a Day Camp health form without health-data access', async
   await expect(page.getByRole('heading', { name: 'Staff access' })).toHaveCount(0)
 })
 
-test('Alex syncs staff from WorkOS and the former staff member is revoked', async ({ page }) => {
+test('Opening staff access syncs quietly: the seed already matches WorkOS, and the former staff member was revoked earlier', async ({
+  page,
+}) => {
   await signInAs(page, 'alex', '/admin/setup/users')
   await expect(page.getByRole('heading', { name: 'Staff access' })).toBeVisible()
-  await expect(page.getByTestId('last-sync')).toContainText('in WorkOS')
+  // The sync that runs on opening the page finds nothing to change, so it says nothing.
+  await expect(page.getByTestId('last-sync')).toContainText('just now')
+  await expect(page.getByTestId('last-sync')).toContainText('4 in WorkOS')
 
   await page.getByRole('tab', { name: /Revoked/ }).click()
   const morgan = page.getByRole('row').filter({ hasText: 'Morgan Ellis' })
@@ -61,6 +65,11 @@ test('Alex syncs staff from WorkOS and the former staff member is revoked', asyn
   await expect(sheet).toContainText('no longer in the WinShape Staff organization')
   await expect(sheet.getByText('access revoked').first()).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(page.getByText(/Synced \d+ staff from WorkOS/)).toHaveCount(0)
+
+  // Sync now still reports, even when nothing changed.
+  await page.getByRole('button', { name: 'Sync now' }).click()
+  await expect(page.getByText('Synced 4 staff from WorkOS. No changes.')).toBeVisible()
 })
 
 test('Alex gives Diane health-data access and opens Day Camp to Customer Experience', async ({ page }) => {

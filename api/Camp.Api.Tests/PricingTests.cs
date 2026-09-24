@@ -11,8 +11,11 @@ public class PricingTests
         PriceCents = 32500,
         DepositCents = 10000,
         PlanInstallments = 3,
-        BalanceDueDate = new(2028, 5, 1),
+        BalanceDueDate = new(2028, 6, 1),
     };
+
+    /// <summary>The demo's "today": registration season for the 2028 camps.</summary>
+    static readonly DateOnly Today = new(2028, 3, 2);
 
     static readonly Person[] Kids =
     [
@@ -23,7 +26,7 @@ public class PricingTests
     [Fact]
     public void Johnson_plan_matches_the_canonical_dataset()
     {
-        var q = Pricing.Build(DayCamp, Kids, PaymentOption.Plan, null, null);
+        var q = Pricing.Build(DayCamp, Kids, PaymentOption.Plan, null, null, Today);
 
         Assert.Equal(65000, q.TotalCents);
         Assert.Equal(20000, q.DueTodayCents);
@@ -31,13 +34,35 @@ public class PricingTests
         Assert.Equal(q.TotalCents, q.Schedule.Sum(s => s.AmountCents));
         // Every installment lands before camp starts.
         Assert.All(q.Schedule.Skip(1), s => Assert.True(s.DueDate < DayCamp.StartDate));
+        Assert.Equal([new DateOnly(2028, 4, 1), new DateOnly(2028, 5, 1), new DateOnly(2028, 6, 1)], q.Schedule.Skip(1).Select(s => s.DueDate!.Value));
+        Assert.Equal("Installment 1 of 3", q.Schedule[1].Label);
+    }
+
+    [Theory]
+    [InlineData(2028, 3, 2)]  // one day after the first monthly date
+    [InlineData(2028, 3, 1)]  // on it: kept
+    [InlineData(2028, 4, 20)] // late: the plan moves a month, capped before camp starts
+    [InlineData(2028, 6, 11)] // the day before camp
+    public void Installments_are_never_in_the_past_and_keep_their_count(int y, int m, int d)
+    {
+        var today = new DateOnly(y, m, d);
+        var session = new Session { StartDate = new(2028, 6, 12), PriceCents = 32500, DepositCents = 10000, PlanInstallments = 3, BalanceDueDate = new(2028, 5, 1) };
+        var plan = Pricing.Build(session, Kids, PaymentOption.Plan, null, null, today).Schedule.Skip(1).ToList();
+
+        Assert.Equal(3, plan.Count);
+        Assert.All(plan, s => Assert.InRange(s.DueDate!.Value, today, session.StartDate.AddDays(-1)));
+        Assert.Equal(plan.Select(s => s.DueDate).Order(), plan.Select(s => s.DueDate));
+        Assert.Equal(45000, plan.Sum(s => s.AmountCents));
+        if (today == new DateOnly(2028, 3, 1)) Assert.Equal(new DateOnly(2028, 3, 1), plan[0].DueDate);
+        if (today == new DateOnly(2028, 3, 2))
+            Assert.Equal([new DateOnly(2028, 4, 1), new DateOnly(2028, 5, 1), new DateOnly(2028, 6, 1)], plan.Select(s => s.DueDate!.Value));
     }
 
     [Fact]
     public void Plan_installments_absorb_rounding_and_still_sum_to_total()
     {
         var discount = new DiscountCode { Code = "EARLYBIRD", Kind = DiscountKind.Percent, Value = 10, Status = DiscountStatus.Approved };
-        var q = Pricing.Build(DayCamp, Kids, PaymentOption.Plan, discount, "EARLYBIRD");
+        var q = Pricing.Build(DayCamp, Kids, PaymentOption.Plan, discount, "EARLYBIRD", Today);
 
         Assert.Equal(58500, q.TotalCents);
         Assert.Equal(q.TotalCents, q.Schedule.Sum(s => s.AmountCents));
@@ -47,8 +72,8 @@ public class PricingTests
     public void Pending_discount_looks_exactly_like_an_invalid_one()
     {
         var pending = new DiscountCode { Code = "SUMMERFUN", Kind = DiscountKind.Flat, Value = 5000, Status = DiscountStatus.PendingApproval };
-        var pendingQuote = Pricing.Build(DayCamp, Kids, PaymentOption.Full, pending, "SUMMERFUN");
-        var bogusQuote = Pricing.Build(DayCamp, Kids, PaymentOption.Full, null, "NOPE");
+        var pendingQuote = Pricing.Build(DayCamp, Kids, PaymentOption.Full, pending, "SUMMERFUN", Today);
+        var bogusQuote = Pricing.Build(DayCamp, Kids, PaymentOption.Full, null, "NOPE", Today);
 
         Assert.Equal(0, pendingQuote.DiscountCents);
         Assert.Equal(bogusQuote.DiscountError, pendingQuote.DiscountError);
@@ -58,7 +83,7 @@ public class PricingTests
     public void Discount_can_never_exceed_the_price()
     {
         var huge = new DiscountCode { Code = "X", Kind = DiscountKind.Flat, Value = 999_999, Status = DiscountStatus.Approved };
-        var q = Pricing.Build(DayCamp, Kids, PaymentOption.Full, huge, "X");
+        var q = Pricing.Build(DayCamp, Kids, PaymentOption.Full, huge, "X", Today);
 
         Assert.Equal(0, q.TotalCents);
         Assert.All(q.Lines, l => Assert.True(l.DiscountCents <= l.PriceCents));

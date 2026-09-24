@@ -175,7 +175,7 @@ public static class GuestEndpoints
             var code = req.DiscountCode?.Trim().ToUpper();
             var discount = string.IsNullOrEmpty(code) ? null : await db.DiscountCodes.AsNoTracking().FirstOrDefaultAsync(d => d.Code == code);
             discount = await DiscountRuleGate.UsableAsync(db, discount, s, clock); // K5 scope, dates and cap
-            return Results.Ok(Pricing.Build(s, people.OrderBy(p => req.PersonIds.IndexOf(p.Id)).ToList(), req.PaymentOption, discount, code));
+            return Results.Ok(Pricing.Build(s, people.OrderBy(p => req.PersonIds.IndexOf(p.Id)).ToList(), req.PaymentOption, discount, code, clock.Today()));
         });
 
         // Stand-in for Fiserv hosted fields: in production the card number is typed into Fiserv's

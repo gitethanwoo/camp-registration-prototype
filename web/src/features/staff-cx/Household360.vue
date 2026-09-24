@@ -285,7 +285,11 @@ const primary = computed(() => h.value?.adults.find((a) => a.role === 'Primary')
           <Card>
             <CardHeader><CardTitle>History</CardTitle></CardHeader>
             <CardContent>
-              <DataTable :columns="historyColumns" :data="h.history" empty-text="No staff changes recorded yet." />
+              <DataTable
+                :columns="historyColumns"
+                :data="h.history"
+                empty-text="Nothing recorded for this household yet."
+              />
             </CardContent>
           </Card>
         </div>

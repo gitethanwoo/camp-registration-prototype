@@ -42,7 +42,7 @@ public sealed class StaffCxSeed(TimeProvider clock) : ISeedModule
             PriceCents = weekOne.PriceCents,
             DepositCents = weekOne.DepositCents,
             PlanInstallments = weekOne.PlanInstallments,
-            BalanceDueDate = new(2028, 5, 1),
+            BalanceDueDate = weekOne.BalanceDueDate,
         };
         var pools = Enumerable.Range(1, 6)
             .Select(g => new CapacityPool { Session = weekTwo, Name = $"Grade {g}", GradeMin = g, GradeMax = g, Capacity = 20, SortOrder = g })
@@ -98,7 +98,7 @@ public sealed class StaffCxSeed(TimeProvider clock) : ISeedModule
         };
         order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Charge, AmountCents = weekTwo.DepositCents, Succeeded = true, ProcessorRef = "fsv_jlee0001", CardLast4 = "4417", CreatedAt = created });
         var seq = 1;
-        foreach (var item in Pricing.PlanSchedule(weekTwo, weekTwo.PriceCents - weekTwo.DepositCents))
+        foreach (var item in Pricing.PlanSchedule(weekTwo, weekTwo.PriceCents - weekTwo.DepositCents, DateOnly.FromDateTime(created)))
             order.Installments.Add(new Installment { Sequence = seq++, DueDate = item.DueDate!.Value, AmountCents = item.AmountCents, Status = InstallmentStatus.Scheduled });
         var jordanA = a.Members[1];
         var reg = new Registration

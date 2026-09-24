@@ -158,7 +158,7 @@ function showReceipt(h: HistoryEntry) {
             </div>
             <p v-if="data.installments.length" class="text-muted-foreground">
               Payment plan: {{ data.installments.length }} × {{ money(data.installments[0]?.amountCents) }}, last one
-              {{ date(data.session.balanceDueDate) }}
+              {{ date(data.installments.at(-1)?.dueDate ?? data.session.balanceDueDate) }}
             </p>
             <p v-else-if="data.balanceCents > 0" class="text-muted-foreground">
               Due by {{ date(data.session.balanceDueDate) }}

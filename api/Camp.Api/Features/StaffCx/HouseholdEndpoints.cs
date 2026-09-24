@@ -1,6 +1,8 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Admittance;
+using Camp.Api.Features.Finance;
 using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -123,8 +125,7 @@ public sealed class HouseholdEndpoints : IEndpointModule
             var key = id.ToString(CultureInfo.InvariantCulture);
             var sync = await db.OutboxEvents.AsNoTracking().Where(e => e.Target == "Salesforce" && e.AggregateId == key)
                 .OrderByDescending(e => e.Id).Select(e => new { e.Type, e.CreatedAt, e.ProcessedAt }).FirstOrDefaultAsync(ct);
-            var history = await db.AuditEvents.AsNoTracking().Where(a => a.EntityType == "Household" && a.EntityId == key)
-                .OrderByDescending(a => a.Id).Take(20).Select(a => new { a.Actor, a.Action, a.Detail, a.CreatedAt }).ToListAsync(ct);
+            var history = await HistoryAsync(db, id, h.Members.Select(m => m.Id), ct);
 
             return Results.Ok(new
             {
@@ -232,4 +233,37 @@ public sealed class HouseholdEndpoints : IEndpointModule
             return Results.Ok();
         }).RequireAuthorization(Policies.Cet);
     }
+    /// <summary>
+    /// Audit events about the household and everything it owns: its members, orders and their installments,
+    /// registrations, waitlist spots, admittance and scholarship applications. Newest first. Health-record views
+    /// stay out (FR-112); they're in the audit log.
+    /// </summary>
+    static async Task<List<HistoryRow>> HistoryAsync(CampDbContext db, int id, IEnumerable<int> memberIds, CancellationToken ct)
+    {
+        static List<string> Keys(IEnumerable<int> ids) => [.. ids.Select(i => i.ToString(CultureInfo.InvariantCulture))];
+        var household = id.ToString(CultureInfo.InvariantCulture);
+        var people = Keys(memberIds);
+        var orders = Keys(await db.Orders.Where(o => o.HouseholdId == id).Select(o => o.Id).ToListAsync(ct));
+        var installments = Keys(await db.Installments.Where(i => db.Orders.Any(o => o.Id == i.OrderId && o.HouseholdId == id)).Select(i => i.Id).ToListAsync(ct));
+        var registrations = Keys(await db.Registrations.Where(r => r.HouseholdId == id).Select(r => r.Id).ToListAsync(ct));
+        var waitlist = Keys(await db.WaitlistEntries.Where(w => w.HouseholdId == id).Select(w => w.Id).ToListAsync(ct));
+        var applications = Keys(await db.Set<AdmittanceApplication>().Where(a => a.HouseholdId == id).Select(a => a.Id).ToListAsync(ct));
+        var scholarships = Keys(await db.Set<ScholarshipApplication>().Where(a => a.HouseholdId == id).Select(a => a.Id).ToListAsync(ct));
+
+        return await db.AuditEvents.AsNoTracking()
+            .Where(a => !a.Action.StartsWith("health."))
+            .Where(a => (a.EntityType == "Household" && a.EntityId == household)
+                || (a.EntityType == "Person" && people.Contains(a.EntityId))
+                || (a.EntityType == "PaymentOrder" && orders.Contains(a.EntityId))
+                || (a.EntityType == "Installment" && installments.Contains(a.EntityId))
+                || (a.EntityType == "Registration" && registrations.Contains(a.EntityId))
+                || (a.EntityType == "WaitlistEntry" && waitlist.Contains(a.EntityId))
+                || (a.EntityType == "AdmittanceApplication" && applications.Contains(a.EntityId))
+                || (a.EntityType == "ScholarshipApplication" && scholarships.Contains(a.EntityId)))
+            .OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id).Take(50)
+            .Select(a => new HistoryRow(a.Actor, a.Action, a.Detail, a.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    sealed record HistoryRow(string Actor, string Action, string Detail, DateTime CreatedAt);
 }

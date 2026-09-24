@@ -130,8 +130,8 @@ public sealed class PricingSetupEndpoints : IEndpointModule
             BalanceDueDate = req.BalanceDueDate,
         };
         var camper = new Person { FirstName = "Camper" };
-        var plan = Pricing.Build(draft, [camper], PaymentOption.Plan, null, null);
-        var deposit = Pricing.Build(draft, [camper], PaymentOption.Deposit, null, null);
+        var plan = Pricing.Build(draft, [camper], PaymentOption.Plan, null, null, clock.Today());
+        var deposit = Pricing.Build(draft, [camper], PaymentOption.Deposit, null, null, clock.Today());
         var tiers = (req.Tiers ?? []).Select(t => new RefundTier { DaysBefore = t.DaysBefore, RefundPercent = t.RefundPercent, Basis = t.Basis, AdminFeeCents = t.AdminFeeCents })
             .OrderByDescending(t => t.DaysBefore).ToList();
         var paidInFull = draft.PriceCents;
