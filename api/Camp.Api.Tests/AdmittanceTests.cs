@@ -375,6 +375,46 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         return session.Id;
     });
 
+    [Fact]
+    public async Task An_unpublished_program_takes_no_drafts_and_no_submits()
+    {
+        var sessionId = await IsolatedRetreat(capacity: 5);
+        var programId = await MoveToOwnProgram(sessionId);
+        var (family, _) = await NewCouple("Unpublished");
+        var id = await SaveDraft(family, sessionId, GoodAnswers);
+        var authorizations = _gateway.AuthorizeCount;
+
+        // K2 "Return to draft" after the family saved a draft: submitting authorizes nothing.
+        await factory.WithDb(db => db.Programs.Where(p => p.Id == programId).ExecuteUpdateAsync(s => s.SetProperty(p => p.IsPublished, false)));
+        var submit = await family.PostAsJsonAsync($"/api/admittance/applications/{id}/submit", new { cardToken = Card("4242424242424242"), idempotencyKey = Guid.NewGuid().ToString() });
+        Assert.Equal(HttpStatusCode.Conflict, submit.StatusCode);
+        Assert.Equal(authorizations, _gateway.AuthorizeCount);
+
+        var (other, _) = await NewCouple("UnpublishedDraft");
+        var draft = await other.PutAsJsonAsync($"/api/admittance/sessions/{sessionId}/draft", Draft(GoodAnswers));
+        Assert.Equal(HttpStatusCode.NotFound, draft.StatusCode);
+    }
+
+    /// <summary>Gives an isolated session a program of its own, so a test can unpublish it alone.</summary>
+    async Task<int> MoveToOwnProgram(int sessionId) => await factory.WithDb(async db =>
+    {
+        var session = await db.Sessions.Include(s => s.Program).SingleAsync(s => s.Id == sessionId);
+        var copy = new CampProgram
+        {
+            MinistryId = session.Program.MinistryId,
+            Slug = $"test-{Guid.NewGuid():N}"[..20],
+            Name = "Test retreat",
+            Type = session.Program.Type,
+            HealthMechanism = session.Program.HealthMechanism,
+            Location = session.Program.Location,
+            IsPublished = true,
+        };
+        db.Programs.Add(copy);
+        session.Program = copy;
+        await db.SaveChangesAsync();
+        return copy.Id;
+    });
+
     async Task<(HttpClient Client, int HouseholdId)> NewCouple(string name)
     {
         var email = $"{name.ToLowerInvariant()}-{Guid.NewGuid():N}@example.com";

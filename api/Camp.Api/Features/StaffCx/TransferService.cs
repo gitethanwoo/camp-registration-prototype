@@ -82,7 +82,7 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
 
         var priceDiff = to.PriceCents - reg.Session.PriceCents;
         var newPrice = reg.PriceCents + priceDiff;
-        var discount = await DiscountAfterMove(db, reg, Math.Max(newPrice, 0), ct);
+        var discount = await DiscountAfterMove(db, reg, to, Math.Max(newPrice, 0), ct);
         var newBalance = newPrice - discount - reg.PaidCents;
         var refund = Math.Max(0, -newBalance);
         requirements.Add(priceDiff == 0
@@ -98,16 +98,28 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
 
     /// <summary>
     /// The camper's discount at the new price. A percent code is worked out again on the new price, the
-    /// same way checkout priced it; a flat code keeps its amount, capped at the new price.
+    /// same way checkout priced it; a flat code keeps its amount, capped at the new price. A code whose
+    /// K5 rule is scoped to one session doesn't follow the camper to another one, because checkout
+    /// wouldn't take it there either (its dates and use cap were settled when the family bought).
+    /// A finance scholarship award (O7), which also lives in <see cref="Registration.DiscountCents"/>,
+    /// always carries over.
     /// </summary>
-    static async Task<int> DiscountAfterMove(CampDbContext db, Registration reg, int newPrice, CancellationToken ct)
+    static async Task<int> DiscountAfterMove(CampDbContext db, Registration reg, Session to, int newPrice, CancellationToken ct)
     {
         if (reg.DiscountCents == 0) return 0;
+        var scholarship = await db.Set<Finance.ScholarshipAwardLine>().Where(l => l.RegistrationId == reg.Id).SumAsync(l => (int?)l.AmountCents, ct) ?? 0;
+        scholarship = Math.Min(scholarship, reg.DiscountCents);
+        var codePart = reg.DiscountCents - scholarship;
         var code = reg.OrderId is null ? null : await db.Orders.Where(o => o.Id == reg.OrderId)
             .Join(db.DiscountCodes, o => o.DiscountCode, d => d.Code, (o, d) => d).AsNoTracking().FirstOrDefaultAsync(ct);
-        return code is { Kind: DiscountKind.Percent }
-            ? Math.Min((int)Math.Round(newPrice * Math.Min(code.Value, 100) / 100m), newPrice)
-            : Math.Min(reg.DiscountCents, newPrice);
+        if (code is not null && codePart > 0)
+        {
+            var scopedTo = await db.Set<Setup.DiscountRule>().Where(r => r.DiscountCodeId == code.Id).Select(r => r.SessionId).FirstOrDefaultAsync(ct);
+            codePart = scopedTo is { } only && only != to.Id ? 0
+                : code.Kind == DiscountKind.Percent ? (int)Math.Round(newPrice * Math.Min(code.Value, 100) / 100m)
+                : codePart;
+        }
+        return Math.Min(codePart + scholarship, newPrice);
     }
 
     public async Task<TransferOutcome> ApproveAsync(int requestId, string actor, string? note, CancellationToken ct)

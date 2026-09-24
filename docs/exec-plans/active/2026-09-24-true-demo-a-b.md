@@ -23,16 +23,18 @@ When this plan is done, a presenter can sign in as each seeded persona (see `REA
 - [x] (2026-09-24) Wave 1, slice 4: staff customer service (C1, C2, C8, C9, C10, F8). See `docs/exec-plans/completed/2026-09-24-staff-cx.md`.
 - [x] (2026-09-24) Wave 1 integration: merge in order 1 → 4, regenerate one combined migration, full suite green on branch `wave1` (test:api 97/97; e2e 23/23 twice on a fresh stack; reviewer fixes and cross-slice links). Merged to `main` as 25eddf2 and pushed; pre-push gates passed. See `docs/exec-plans/completed/2026-09-24-wave1-integration.md`.
 - [x] (2026-09-24) Wave 2 planned: four slices (setup, finance, ops, host), defined under "Wave 2" in Plan of Work. Added the `Admin` policy and the admin persona Alex Morgan for the setup slice.
-- [ ] Wave 2, slice 5: program setup (`setup`).
-- [ ] Wave 2, slice 6: finance (`finance`).
-- [ ] Wave 2, slice 7: operations (`ops`).
-- [ ] Wave 2, slice 8: host portal (`host`).
-- [ ] Wave 2 integration.
+- [x] (2026-09-24) Wave 2, slice 5: program setup (`setup`). Built and reviewed on `slice/setup`; merged into `wave2`.
+- [x] (2026-09-24) Wave 2, slice 6: finance (`finance`). Built and reviewed on `slice/finance`; merged into `wave2`.
+- [x] (2026-09-24) Wave 2, slice 7: operations (`ops`). Built and reviewed on `slice/ops`; merged into `wave2`.
+- [x] (2026-09-24) Wave 2, slice 8: host portal (`host`). Built and reviewed on `slice/host`; merged into `wave2`.
+- [x] (2026-09-24) Wave 2 integration on branch `wave2` (not yet merged to main): one `Wave2` migration with the audit trigger, cross-slice fixes, `npm run test:api` 171/171, `npx playwright test` 49 and 49 on a fresh stack. See `docs/exec-plans/completed/2026-09-24-wave2-integration.md`.
 
 ## Surprises & Discoveries
 
 - Wave 1: every slice passed its own e2e on its own database, but 5 of 23 specs failed once the seeds were combined. One slice's seed added a second Day Camp session (so "Register" became "Register for June week…"), another's added a past retreat session that the review queue opened by default, and several specs mutated Maria's household. Wave 2 slices therefore seed into their own programs and sessions where they can, never rename or add sessions to programs other slices' specs use, and write specs that assert on their own rows rather than global counts.
   Evidence: `docs/exec-plans/completed/2026-09-24-wave1-integration.md`.
+- Wave 2: code merged cleanly, but two slices seeded the same program slug (`family-camp`), and the later seed skipped its own demo program without an error. Future slices should give seeded programs a slice-specific slug, or fail loudly when the slug they need is taken.
+  Evidence: `docs/exec-plans/completed/2026-09-24-wave2-integration.md`.
 
 ## Decision Log
 
@@ -165,7 +167,7 @@ Parallel worktrees can't all bind to :5080 and :5173. Each slice runs its own AP
 - [x] Wave 1: `npm run test:api` on main (97/97, 2026-09-24)
 - [x] Wave 1: `npm run test:e2e` on a fresh stack (23/23 twice, 2026-09-24)
 - [x] Wave 1: walkthrough of each persona's demo path at desktop and phone width (2026-09-24)
-- [ ] Wave 2: all of the above on main after wave 2 merges
+- [ ] Wave 2: all of the above on main after wave 2 merges (on branch `wave2`, 2026-09-24: lint, typecheck, check:api pass; test:api 171/171; e2e 49/49 twice on a fresh stack; persona walkthrough at desktop and phone)
 
 ## Idempotence and Recovery
 

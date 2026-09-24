@@ -19,7 +19,7 @@ const SLOP_COPY = [
   /\bin today's\b/i,
   /\bLorem ipsum\b/i,
   /Oops!/,
-  /Something went wrong\.?["'<]/,
+  /Something went wrong/i,
   /🚀|✨|🎉/u,
 ]
 const failures = []

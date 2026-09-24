@@ -5,12 +5,15 @@ import GuestLayout from '@/layouts/GuestLayout.vue'
 import { loadSession, signIn } from '@/lib/session'
 
 // Feature slices register pages from src/features/<slice>/routes.ts; see src/features/README.md.
-const slices = import.meta.glob<{ routes?: RouteRecordRaw[]; adminRoutes?: RouteRecordRaw[] }>(
-  './features/*/routes.ts',
-  { eager: true },
-)
+const slices = import.meta.glob<{
+  routes?: RouteRecordRaw[]
+  adminRoutes?: RouteRecordRaw[]
+  hostRoutes?: RouteRecordRaw[]
+}>('./features/*/routes.ts', { eager: true })
 const sliceRoutes = Object.values(slices).flatMap((m) => m.routes ?? [])
 const sliceAdminRoutes = Object.values(slices).flatMap((m) => m.adminRoutes ?? [])
+// Top-level portals with their own shell (the host portal at /host).
+const sliceHostRoutes = Object.values(slices).flatMap((m) => m.hostRoutes ?? [])
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -88,6 +91,7 @@ export const router = createRouter({
         ...sliceAdminRoutes,
       ],
     },
+    ...sliceHostRoutes,
     { path: '/:pathMatch(.*)*', redirect: '/programs' },
   ],
 })
@@ -100,6 +104,12 @@ router.beforeEach(async (to) => {
     signIn(to.fullPath)
     return false
   }
+  // Host coordinators are staff with the host role; they have their own portal and no console.
+  if (needs === 'host') {
+    if (session.kind !== 'staff') return { path: '/no-access', query: { need: 'staff' } }
+    return session.role === 'host' ? true : { path: '/admin' }
+  }
+  if (needs === 'staff' && session.role === 'host') return { path: '/host' }
   if (needs !== session.kind) return { path: '/no-access', query: { need: needs } }
   return true
 })

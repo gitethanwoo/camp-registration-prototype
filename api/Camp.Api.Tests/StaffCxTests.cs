@@ -417,6 +417,60 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task A_session_scoped_code_stays_behind_and_a_scholarship_moves_with_the_camper()
+    {
+        // Wave 2: K5 rules (setup) and O7 awards (finance) both feed Registration.DiscountCents.
+        var code = $"WK1{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var (weekOne, _) = await WeekOneAndAvery();
+        await factory.WithDb(async db =>
+        {
+            var d = new DiscountCode { Code = code, Kind = DiscountKind.Percent, Value = 10, Status = DiscountStatus.Approved, CreatedBy = "test" };
+            db.DiscountCodes.Add(d);
+            db.Set<Camp.Api.Features.Setup.DiscountRule>().Add(new Camp.Api.Features.Setup.DiscountRule
+            {
+                DiscountCode = d,
+                Name = "June week only",
+                SessionId = weekOne,
+                CreatedBy = "test",
+                CreatedAt = DateTime.UtcNow,
+                ValidFrom = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1),
+                ValidTo = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30),
+            });
+            return await db.SaveChangesAsync();
+        });
+        var pricier = await CheaperSession(40000);
+        var (client, householdId, regId) = await NewFamilyRegisteredInWeekOne("Scoped", PaymentOption.Full, code);
+        Assert.Equal(3250, await factory.WithDb(db => db.Registrations.Where(r => r.Id == regId).Select(r => r.DiscountCents).SingleAsync()));
+        await factory.WithDb(async db =>
+        {
+            var reg = await db.Registrations.SingleAsync(r => r.Id == regId);
+            var app = new Camp.Api.Features.Finance.ScholarshipApplication
+            {
+                HouseholdId = householdId,
+                OrderId = reg.OrderId!.Value,
+                SubmittedBy = "test",
+                SubmittedAt = DateTime.UtcNow,
+                RequestedCents = 5000,
+                IncomeBand = "test",
+                Reason = "test",
+                Status = Camp.Api.Features.Finance.ScholarshipStatus.Approved,
+                AwardCents = 5000,
+            };
+            app.Lines.Add(new Camp.Api.Features.Finance.ScholarshipAwardLine { RegistrationId = reg.Id, AmountCents = 5000 });
+            db.Add(app);
+            reg.DiscountCents += 5000;
+            return await db.SaveChangesAsync();
+        });
+
+        var request = await Json(await client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = pricier, reason = "Later week" }));
+        var staff = await factory.SignInAsStaff();
+        Assert.Equal(HttpStatusCode.OK, (await staff.PostAsJsonAsync($"/api/admin/transfers/{request.GetProperty("id").GetInt32()}/approve", new { note = (string?)null })).StatusCode);
+
+        var discount = await factory.WithDb(db => db.Registrations.Where(r => r.Id == regId).Select(r => r.DiscountCents).SingleAsync());
+        Assert.Equal(5000, discount); // the June-week-only 10% is gone; the $50 award is kept
+    }
+
+    [Fact]
     public async Task Rebalancing_leaves_failed_installments_out_of_the_scheduled_ones()
     {
         var staff = await factory.SignInAsStaff();

@@ -1,0 +1,41 @@
+first_name,last_name,email,phone,date_of_birth,role
+Aaron,Mitchell,aaron.mitchell@example.org,(404) 555-1101,02/02/1972,Group leader
+Bethany,Coleman,bethany.coleman@example.org,(404) 555-1102,03/03/1979,Kitchen
+Caleb,Foster,caleb.foster@example.org,(404) 555-1103,04/04/1986,Games
+Deborah,Hayes,deborah.hayes@example.org,(404) 555-1104,05/05/1993,Check-in
+Elijah,Grant,elijah.grant@example.org,(404) 555-1105,06/06/2000,Group leader
+Faith,Sullivan,faith.sullivan@example.org,(404) 555-1106,07/07/1969,Crafts
+Gabriel,Russell,gabriel.russell@example.org,(404) 555-1107,08/08/1976,Games
+Chris,Walker,,(404) 555-1108,09/09/1983,Group leader
+Hannah,Bishop,hannah.bishop@example.org,(404) 555-1109,10/10/1990,First aid
+Isaac,Palmer,isaac.palmer@example.org,(404) 555-1110,11/11/1997,Group leader
+Joy,Stephens,joy.stephens@example.org,(404) 555-1111,12/12/1966,Kitchen
+Levi,Warren,levi.warren@example.org,(404) 555-1112,01/13/1973,Games
+Lydia,Fleming,lydia.fleming@example.org,(404) 555-1113,02/14/1980,Crafts
+Micah,Harper,micah.harper@example.org,(404) 555-1114,03/15/1987,Group leader
+Naomi,Bennett,naomi.bennett@example.org,(404) 555-1115,04/16/1994,Check-in
+Owen,Lawson,owen.lawson@example.org,(404) 555-1116,05/17/2001,Group leader
+Dana,Ruiz,dana.ruiz@example.org,(404) 555-1117,02/30/1991,Kitchen
+Priscilla,Webb,priscilla.webb@example.org,(404) 555-1118,07/19/1977,Crafts
+Silas,Porter,silas.porter@example.org,(404) 555-1119,08/20/1984,Games
+Ruth,Chambers,ruth.chambers@example.org,(404) 555-1120,09/21/1991,First aid
+Titus,Holland,titus.holland@example.org,(404) 555-1121,10/22/1998,Group leader
+Abigail,Wade,abigail.wade@example.org,(404) 555-1122,11/23/1967,Check-in
+Ezra,Barker,ezra.barker@example.org,(404) 555-1123,12/24/1974,Group leader
+Leah,Dixon,leah.dixon@example.org,(404) 555-1124,01/25/1981,Kitchen
+Nathan,Graves,nathan.graves@example.org,(404) 555-1125,02/26/1988,Games
+Esther,Mills,esther.mills@example.org,(404) 555-1126,03/27/1995,Crafts
+Jonah,Nichols,jonah.nichols@example.org,(404) 555-1127,04/01/2002,Group leader
+Miriam,Burke,miriam.burke@example.org,(404) 555-1128,05/02/1971,Check-in
+Seth,Fuller,seth.fuller@example.org,(404) 555-1129,06/03/1978,Group leader
+Tabitha,Shaw,tabitha.shaw@example.org,(404) 555-1130,07/04/1985,Kitchen
+Adam,Pierce,adam.pierce@example.org,(404) 555-1131,08/05/1992,Games
+Morgan,Lee,morgan.lee@example.org,(404) 555-1132,09/06/1999,Group leader
+Rachel,Hudson,rachel.hudson@example.org,(404) 555-1133,10/07/1968,Crafts
+Simon,Ramsey,simon.ramsey@example.org,(404) 555-1134,11/08/1975,Group leader
+Anna,Gibbs,anna.gibbs@example.org,(404) 555-1135,12/09/1982,First aid
+Philip,Lowe,philip.lowe@example.org,(404) 555-1136,01/10/1989,Games
+Sarah,Brennan,sarah.brennan@example.org,(404) 555-1137,02/11/1996,Check-in
+Andrew,Keller,andrew.keller@example.org,(404) 555-1138,03/12/1965,Group leader
+Martha,Quinn,martha.quinn@example.org,(404) 555-1139,04/13/1972,Kitchen
+Peter,Vaughn,peter.vaughn@example.org,(404) 555-1140,05/14/1979,Group leader

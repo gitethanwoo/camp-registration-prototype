@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Setup;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -200,7 +201,10 @@ public static class AdminEndpoints
                     Operations = r.Order?.Operations.OrderBy(o => o.CreatedAt).Select(o => new { o.Id, Kind = o.Kind.ToString(), o.AmountCents, o.Succeeded, o.ProcessorRef, o.CardLast4, o.Reason, o.CreatedAt }),
                     Installments = r.Order?.Installments.OrderBy(i => i.Sequence).Select(i => new { i.Sequence, i.DueDate, i.AmountCents, Status = i.Status.ToString() }),
                 },
-                Cancellation = r.Status == RegistrationStatus.Confirmed ? CancellationQuote(r) : null,
+                // K4: the session's cancellation and refund table.
+                Cancellation = r.Status == RegistrationStatus.Confirmed
+                    ? RefundPolicy.Quote(r, await RefundPolicy.TiersForAsync(db, r.SessionId), DateOnly.FromDateTime(DateTime.UtcNow))
+                    : null,
                 Audit = audit.Select(a => new { a.Actor, a.Action, a.Detail, a.CreatedAt }),
                 Messages = messages.Select(m => new { m.Type, m.Target, m.CreatedAt, m.ProcessedAt }),
             });
@@ -279,7 +283,7 @@ public static class AdminEndpoints
             audit.Record("capacity.changed", "CapacityPool", id, $"{pool.Name}: {pool.Capacity} → {req.Capacity}");
             await db.SaveChangesAsync();
             return Results.Ok();
-        });
+        }).RequireAuthorization(Policies.Admin); // K3: capacity is an admin change, like session setup's pool editor
 
         // C7 · Waitlist management
         admin.MapGet("/sessions/{id:int}/waitlist", async (int id, CampDbContext db) =>
@@ -350,20 +354,5 @@ public static class AdminEndpoints
 
         admin.MapGet("/audit", async (CampDbContext db, int take = 50) =>
             await db.AuditEvents.OrderByDescending(a => a.Id).Take(take).AsNoTracking().ToListAsync());
-    }
-
-    /// <summary>Time-based cancellation policy (K4). Figures are the program policy's, applied to this registration.</summary>
-    static object CancellationQuote(Registration r)
-    {
-        var days = r.Session.StartDate.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
-        var depositShare = Math.Min(r.Session.DepositCents, r.PaidCents);
-        var beyondDeposit = r.PaidCents - depositShare;
-        var (rule, refund) = days switch
-        {
-            >= 60 => ("60+ days before start: full refund less deposit", beyondDeposit),
-            >= 14 => ("14–59 days before start: 50% of amounts paid beyond deposit", beyondDeposit / 2),
-            _ => ("Within 14 days of start: no refund", 0),
-        };
-        return new { DaysUntilStart = days, Rule = rule, SuggestedRefundCents = refund, MaxRefundCents = r.PaidCents };
     }
 }
