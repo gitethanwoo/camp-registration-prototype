@@ -164,6 +164,7 @@ export interface RegistrationDetail {
     lastName: string
     gradeLabel: string | null
     pool: string
+    movedTo: { name: string; startDate: string; endDate: string } | null
     status: string
     healthStatus: string
     waivers: {

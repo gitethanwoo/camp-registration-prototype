@@ -202,6 +202,9 @@ async function sign() {
                   <p class="text-sm text-muted-foreground">
                     {{ [p.gradeLabel, p.pool].filter((x, i, all) => x && all.indexOf(x) === i).join(' · ') }}
                   </p>
+                  <p v-if="p.movedTo" class="text-sm">
+                    Moved to {{ p.movedTo.name }} · {{ dateRange(p.movedTo.startDate, p.movedTo.endDate) }}
+                  </p>
                 </div>
                 <StatusBadge :status="p.status" />
               </li>

@@ -436,6 +436,28 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task A_camper_moved_by_a_transfer_shows_their_new_session_on_the_registration()
+    {
+        var (family, _) = await NewFamily("Moved");
+        var first = await AddChild(family, "Mo", new DateOnly(2017, 4, 4), Gender.Male);
+        var second = await AddChild(family, "Mae", new DateOnly(2019, 4, 4), Gender.Female);
+        var code = await RegisterOnPlan(await HouseholdIdOf(family), [first, second]);
+        // F8 approval moves one registration and leaves the order on its session until every camper has moved.
+        var weekTwo = await factory.WithDb(async db =>
+        {
+            var order = await db.Orders.Include(o => o.Session).SingleAsync(o => o.ConfirmationCode == code);
+            var to = await db.Sessions.Where(s => s.ProgramId == order.Session.ProgramId && s.Id != order.SessionId).FirstAsync();
+            await db.Registrations.Where(r => r.OrderId == order.Id && r.PersonId == first).ExecuteUpdateAsync(u => u.SetProperty(r => r.SessionId, to.Id));
+            return to.Name;
+        });
+
+        var detail = await family.GetFromJsonAsync<JsonElement>($"/api/family/registrations/{code}");
+        var people = detail.GetProperty("participants").EnumerateArray().ToDictionary(p => p.GetProperty("personId").GetInt32());
+        Assert.Equal(weekTwo, people[first].GetProperty("movedTo").GetProperty("name").GetString());
+        Assert.Equal(JsonValueKind.Null, people[second].GetProperty("movedTo").ValueKind);
+    }
+
+    [Fact]
     public async Task The_home_page_shows_a_held_waitlist_offer_and_no_dead_health_action()
     {
         var (family, _) = await NewFamily("Offer");

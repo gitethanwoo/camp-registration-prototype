@@ -1,10 +1,10 @@
 # Wave 1 integration: one green suite on one stack, plus the reviewer's cross-slice fixes
 
 - Plan Type: ExecPlan
-- Status: In Progress
+- Status: Completed
 - Owner: Claude (wave 1 integrator)
 - Started: 2026-09-24
-- Completed:
+- Completed: 2026-09-24
 
 > Maintain this file in accordance with `docs/PLANS.md`.
 
@@ -22,7 +22,8 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - [x] (2026-09-24 21:05Z) Staff-cx: concurrent transfer requests return 409 (8). Not reproducible on `wave1`: fc86843 already catches the unique-index violation and returns 409. Added a regression test (3 rounds of 10 concurrent requests from two signed-in clients) that passes.
 - [x] (2026-09-24 21:05Z) Cross-slice links (9): F5 "Request transfer", account menu "Applications" and "My groups".
 - [x] (2026-09-24 21:40Z) e2e: `workers: 1`, a global setup that resets the stack's database, and specs adjusted to the combined seed.
-- [ ] Gates, API tests, two full e2e runs on a fresh stack, and a persona click-through at desktop and 390px.
+- [x] (2026-09-24 22:30Z) Persona click-through at 1440 and 390 wide found that F5 kept showing "June week" for a camper staff had moved to June week 2 (the order keeps its session until every camper moves). F5 now shows "Moved to <session> · <dates>" per participant, with an API test.
+- [x] (2026-09-24 22:45Z) Gates, API tests, two full e2e runs on a fresh stack, and a persona click-through at desktop and 390px.
 
 ## Surprises & Discoveries
 
@@ -30,6 +31,8 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
   Evidence: `test-results/admittance-a-couple-applie-…/error-context.md` shows the breadcrumb "Spring Marriage Retreat · Spring 2026" and "2 of 80 couples confirmed". Both admittance failures (the demo path and the Marcus read-only check) come from this.
 - Observation: after the merge, the family spec's `Register` button no longer existed. Day Camp has a second session (staff-cx's "June week 2"), so the program page labels each button `Register for <session>`. The family spec also registers Avery for June week before the staff-cx spec runs, and the staff-cx spec asserted Avery started unregistered.
   Evidence: `test-results/family-…/error-context.md`; with one worker in file order, staff-cx's precondition failed until it reused the existing registration.
+- Observation: an F8 transfer moves one registration, and `TransferService` only moves the order's `SessionId` once every camper on it has moved. F1, F4 and F5 read the session from the order, so after Diane moved Avery, all three still said June 12–16 for "Avery and Mia".
+  Evidence: the Maria walkthrough on F5 after the full e2e run; `api/Camp.Api/Features/StaffCx/TransferService.cs` (`if (siblings.All(r => r.SessionId == to.Id)) order.SessionId = to.Id;`).
 - Observation: F5's "Request transfer" button already rendered after the merge, but it linked to `/family/registrations/WS-XXXX/transfer`. The staff-cx route is `/family/registrations/:id/transfer` with a numeric registration id, so the page loaded with `id = NaN`.
   Evidence: `web/src/features/family/RegistrationDetail.vue` resolves the route by path shape only; `web/src/features/staff-cx/routes.ts` maps `:id` through `Number(...)`.
 
@@ -47,10 +50,17 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - (2026-09-24) Baseline on `wave1` before changes: `npm run test:api` 86/86; `npx playwright test` on a fresh stack 18 passed, 5 failed.
 - (2026-09-24) New API tests for findings 1, 2, 6 and 7 fail against the HEAD versions of `BalancePaymentService.cs` and `AdmittanceService.cs` (3 of 3 runs) and pass with the fixes. The auth, F1 and F6 tests cover code that didn't exist before. `npm run test:api` 96/96; `npm run lint` and `npm run typecheck` pass.
 - (2026-09-24) After `docker compose down -v && docker compose up -d --build`: `npx playwright test` 23 passed, then again straight after, 23 passed. `e2e/staff-cx.spec.ts` alone 5 passed (registers Avery itself); `e2e/family.spec.ts` alone 5 passed.
+- (2026-09-24) Final: `npm run verify:precommit` pass; `npm run test:api` 97/97; after `docker compose down -v && docker compose up -d --build`, `npx playwright test` 23 passed and 23 passed again. The walkthrough (Maria, Sam, Pastor Dave, Diane, Marcus at 1440×1000 and 390×844) found no sideways scroll on any page and every link it followed resolved. Screenshots are in the session scratchpad (`wave1-shots/`), not the repo.
 
 ## Outcomes & Retrospective
 
-Not started.
+Wave 1 is one working product on branch `wave1`. The five cross-slice e2e failures came from two causes. The admittance queue opened on a past session from another slice's seed, and specs assumed they were alone with Maria's household. The fixes were one API ordering change, a database reset in the Playwright global setup, and section-scoped assertions. No assertion was weakened. The reviewer's money and capacity findings (1, 2, 6, 7) each have an API test that failed before the fix and passes after. Finding 8 was already fixed by fc86843; a regression test now covers it.
+
+Left open:
+- F1 and F4 still show the order's session for a split order after a transfer. F5 now shows the moved camper's own session. A per-camper card on F1 and F4 belongs with wave 2's transfer work.
+- The account menu checks for Applications and My groups once, on layout mount. It won't show them in the same visit where a family's first application is created, only after a reload.
+- David Johnson isn't a WorkOS emulator persona. His sign-in into the Johnson household is covered by an API test, not by the demo.
+- The e2e suite depends on the global-setup reset (`E2E_RESET=0` skips it; then a second run fails on the one-time demo steps).
 
 ## Context and Orientation
 
@@ -66,7 +76,7 @@ Files this plan changes and why:
 - `api/Camp.Api/Auth/AuthEndpoints.cs` (critical): sign-in finds the household through an adult member with access.
 - `api/Camp.Api/Features/Admittance/*`: `AdmittanceApplication.PoolId`, decline releases that pool, reauthorize voids on a lost race, sessions ordered upcoming first. `api/Camp.Api/Data/Migrations/*Wave1*` regenerated.
 - `api/Camp.Api/Features/StaffCx/TransferEndpoints.cs`: concurrent transfer requests.
-- `web/src/layouts/GuestLayout.vue`, `web/src/features/family/RegistrationDetail.vue`: cross-slice links.
+- `web/src/layouts/GuestLayout.vue`, `web/src/features/family/RegistrationDetail.vue`: cross-slice links; F5 shows a moved camper's own session.
 - `playwright.config.ts`, `e2e/global-setup.ts`, `e2e/*.spec.ts`: one worker, reset, combined-seed selectors.
 
 ## Plan of Work
@@ -86,10 +96,10 @@ From `/Users/ethanwoo/dev/camp-registration-prototype`:
 
 ## Validation and Acceptance
 
-- [ ] `npm run verify:precommit` (pass)
-- [ ] `npm run test:api` (pass)
-- [ ] `npx playwright test` on a fresh stack, twice in a row (pass)
-- [ ] Persona click-through at 1440 and 390 wide (pass)
+- [x] `npm run verify:precommit` (pass)
+- [x] `npm run test:api` (pass)
+- [x] `npx playwright test` on a fresh stack, twice in a row (pass)
+- [x] Persona click-through at 1440 and 390 wide (pass)
 
 ## Idempotence and Recovery
 
@@ -97,7 +107,7 @@ The migration is regenerated from `main`'s snapshot, so rerunning the steps prod
 
 ## Artifacts and Notes
 
-None yet.
+Commits on `wave1`: 353244f (API fixes, tests, migration, links), b0af1c6 (e2e), and the commit that completes this plan (F5 moved camper, plan updates).
 
 ## Interfaces and Dependencies
 

@@ -17,11 +17,11 @@ When this plan is done, a presenter can sign in as each seeded persona (see `REA
 ## Progress
 
 - [x] (2026-09-24) Step 0, the foundation: quality gates, WorkOS sign-in, and slice seams. See `docs/exec-plans/completed/2026-09-24-foundation-guardrails-auth.md`.
-- [ ] Wave 1, slice 1: family self-service (F1–F6, plus add child).
-- [ ] Wave 1, slice 2: admittance programs (R2, F7, C6, card hold).
-- [ ] Wave 1, slice 3: groups and cohorts (R8, G1, G2).
-- [ ] Wave 1, slice 4: staff customer service (C1, C2, C8, C9, C10, F8).
-- [ ] Wave 1 integration: merge in order 1 → 4, regenerate one combined migration, full suite green.
+- [x] (2026-09-24) Wave 1, slice 1: family self-service (F1–F6, plus add child). See `docs/exec-plans/completed/2026-09-24-family.md`.
+- [x] (2026-09-24) Wave 1, slice 2: admittance programs (R2, F7, C6, card hold). See `docs/exec-plans/completed/2026-09-24-admittance.md`.
+- [x] (2026-09-24) Wave 1, slice 3: groups and cohorts (R8, G1, G2). See `docs/exec-plans/completed/2026-09-24-groups.md`.
+- [x] (2026-09-24) Wave 1, slice 4: staff customer service (C1, C2, C8, C9, C10, F8). See `docs/exec-plans/completed/2026-09-24-staff-cx.md`.
+- [x] (2026-09-24) Wave 1 integration: merge in order 1 → 4, regenerate one combined migration, full suite green on branch `wave1` (test:api 97/97; e2e 23/23 twice on a fresh stack; reviewer fixes and cross-slice links). Not merged to `main` yet, so the validation items below that say "on main" stay open. See `docs/exec-plans/completed/2026-09-24-wave1-integration.md`.
 - [ ] Wave 2 (config, finance, operations, host portal): planned after wave 1 lands.
 
 ## Surprises & Discoveries

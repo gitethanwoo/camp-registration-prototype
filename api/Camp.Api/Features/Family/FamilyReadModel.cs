@@ -42,6 +42,7 @@ public static class FamilyReadModel
             .Include(o => o.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Waivers)
             .Include(o => o.Registrations).ThenInclude(r => r.Person)
             .Include(o => o.Registrations).ThenInclude(r => r.Pool)
+            .Include(o => o.Registrations).ThenInclude(r => r.Session)
             .Include(o => o.Registrations).ThenInclude(r => r.WaiverAcceptances)
             .Include(o => o.Operations)
             .Include(o => o.Installments)

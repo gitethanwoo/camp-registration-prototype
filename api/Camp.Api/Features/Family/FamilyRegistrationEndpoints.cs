@@ -102,6 +102,8 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
                         r.Person.LastName,
                         GradeLabel = FamilyReadModel.GradeLabel(r),
                         Pool = r.Pool.Name,
+                        // A staff-approved transfer (F8) moves one camper; the order keeps its session until all have moved.
+                        MovedTo = r.SessionId != o.SessionId ? new { r.Session.Name, r.Session.StartDate, r.Session.EndDate } : null,
                         Status = r.Status.ToString(),
                         HealthStatus = r.HealthStatus.ToString(),
                         Waivers = program.Waivers.OrderBy(w => w.Id).Select(w => new
