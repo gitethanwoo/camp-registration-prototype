@@ -26,8 +26,8 @@ After this plan:
 - [x] (2026-09-24 00:00Z) Worktree `/Users/ethanwoo/dev/camp-wt/activities` on `slice/activities` from `main` 70609ee; read AGENTS.md, PLANS.md, QUALITY.md, the exec-plan index, the master plan, `docs/product/screen-specs.md` and the K8/O4/R4/P3/R5 concepts; read Checkout, GuestEndpoints, Register.vue, the Ops slice and the Family overview.
 - [x] (2026-09-24 17:10Z) Milestone 1: entities, `Activities` migration, seed, endpoints, checkout integration, O1/O5 change, `ActivitiesTests.cs` (18 tests; `npm run test:api` 238 passing, up from 220). Reverting the capacity guard, the decline release or the household check each fails tests (6 failures together).
 - [x] (2026-09-24 19:40Z) Milestone 2: web slice `web/src/features/activities/` (K8 catalog and editor sheet, O4 schedule with block tabs, cell sheet, keep and move, assign preview; R4 `ActivityStep` with just-filled notice and suggested next choice; P3 page and sheet; R5 `CabinmateStep`; family route `/family/activities/:registrationId`), seven local SVGs in `web/public/images/activities/`, O1 filter and column from the new `activity` shape, F1 "Choose activities" / "Change activities" item. API tweaks: the family activities GET returns `sessionId` (for the P3 sheet) and O4 rows carry `gradeMin`/`gradeMax` (to offer only moves that fit the camper's grade). `e2e/activities.spec.ts` (3 tests) passes on a fresh database.
-- [ ] Milestone 3: `e2e/activities.spec.ts`, full gates, screenshots, seven-pass review.
-- [ ] Milestone 4: plan completed with `node scripts/complete-exec-plan.mjs activities`.
+- [x] (2026-09-24 20:30Z) Milestone 3: `e2e/activities.spec.ts`, full gates, screenshots at 1440×1000 and 390×844, seven-pass review. Review fixes: R4 periods stacked with two option columns (the three-column layout squeezed names and overlapped the "Just filled" badge), the info line wraps on phones, the P3 sheet's "Select for {name}" footer is sticky so it shows on a phone without scrolling, and O1's Activities cell wraps instead of clipping.
+- [x] (2026-09-24 20:40Z) Milestone 4: plan completed with `node scripts/complete-exec-plan.mjs activities`.
 
 ## Surprises & Discoveries
 
@@ -68,7 +68,14 @@ After this plan:
 
 - 2026-09-24 Milestone 1: `npm run test:api` → 238 passed, 0 failed. Spot-check with the conditional `Assigned < Capacity` removed from `ActivityRules.ClaimAsync`, `ActivityRules.ReleaseAsync` removed from the decline branch of `FinalizeAsync`, and the household filter neutralised in the family activities route: 6 of 18 activity tests fail (concurrency, 409, ranked fallback, staff move, decline, other household), then pass again once restored.
 
+- 2026-09-24 Milestone 2–3: `npm run lint`, `npm run typecheck`, `npm run check:api` pass (pre-commit hook on every commit). `npm run test:api` → 238 passed. Full Playwright suite on the isolated stack (`E2E_BASE_URL=http://localhost:5191`, one worker), each run on a freshly dropped and reseeded database: 67 passed, then 67 passed again (64 before + 3 activities tests), after the review fixes.
+- Seven-pass review (spec coverage, data tie-out, concurrency and audit, copy, accessibility names, phone layout, concept comparison) against the K8, O4, R4, P3 and R5 concepts, using screenshots in `/private/tmp/claude-501/-Users-ethanwoo-dev-easyllama-speed-extension/81c4aaa7-fed6-4df5-a1f4-d7149ffc6a20/scratchpad/activities-shots/`. O4 tie-out on the fresh seed: Juniors 76 placed + 7 chose, not placed + 7 not chosen = 90 per period; Seniors 80 + 8 + 8 = 96; 90 + 96 = 186. O1 still reads 186 / 9 / 159 / 27.
+
 ## Outcomes & Retrospective
+
+- Delivered K8, O4, R4, P3, R5, the family activities route and F1 item, and O1/O5 reading the new assignments, on ON Session 3 with two age blocks. Seats are claimed in the checkout transaction with a conditional update, so no slot oversells, and a full choice returns 409 with alternatives that R4 shows as "Just filled".
+- Deferred: cancellations, transfers and waitlist promotions from other slices don't release or claim activity seats yet (only a declined payment does); O3 rooming shows matched cabinmate requests but unmatched ones are only re-checked when the friend registers through checkout; the seeded preferences are repetitive (many seniors rank Climbing, Horseback, Crafts) and could be varied; activity photos are simple local SVG illustrations.
+- Lesson: the wizard's step card is narrower than the concepts assume; check new wizard steps at 1440 with the order summary beside them.
 
 ## Context and Orientation
 
@@ -98,12 +105,16 @@ From `/Users/ethanwoo/dev/camp-wt/activities`:
     scripts/dotnet.sh ef migrations add Activities --project api/Camp.Api --output-dir Data/Migrations
     npm run test:api
 
+Isolated stack used for e2e and screenshots (so the main checkout's database is never reset): API on port 5091 against database `CampRegistration_Activities` on the shared SQL Server (localhost,14333), started with `ConnectionStrings__Default=... WorkOS__RedirectUri=http://localhost:5191/api/auth/callback scripts/dotnet.sh run --project api/Camp.Api --urls http://localhost:5091`; web with `API_URL=http://localhost:5091 npm --prefix web run dev -- --port 5191 --strictPort`. Global setup only resets the 5173 stack, so before each run drop `CampRegistration_Activities` and restart the API (it migrates and seeds), then:
+
+    E2E_BASE_URL=http://localhost:5191 npx playwright test
+
 ## Validation and Acceptance
 
-- [ ] `npm run verify:precommit` (pass)
-- [ ] `npm run test:api` (pass)
-- [ ] `npx playwright test` full suite, one worker, fresh database, twice (pass)
-- [ ] Screenshots of K8, O4, R4, P3, R5 and the family activities page at 1440×1000 and 390×844 compared with the concepts
+- [x] `npm run verify:precommit` (pass)
+- [x] `npm run test:api` (pass)
+- [x] `npx playwright test` full suite, one worker, fresh database, twice (pass)
+- [x] Screenshots of K8, O4, R4, P3, R5 and the family activities page at 1440×1000 and 390×844 compared with the concepts
 
 ## Idempotence and Recovery
 
