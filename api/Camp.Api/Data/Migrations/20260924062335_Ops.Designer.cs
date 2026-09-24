@@ -4,6 +4,7 @@ using Camp.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Camp.Api.Data.Migrations
 {
     [DbContext(typeof(CampDbContext))]
-    partial class CampDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260924062335_Ops")]
+    partial class Ops
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1227,6 +1230,244 @@ namespace Camp.Api.Data.Migrations
                     b.ToTable("GroupWaiverAcceptances", (string)null);
                 });
 
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsBuddyRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RegistrationId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RequestedRegistrationId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedRegistrationId");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("RegistrationId", "RequestedRegistrationId")
+                        .IsUnique();
+
+                    b.ToTable("OpsBuddyRequests", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsCabin", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Beds")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Gender")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "SortOrder");
+
+                    b.ToTable("OpsCabins", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OpsCabin_Beds", "[Beds] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsGroup", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int>("PoolId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("PoolId", "SortOrder");
+
+                    b.ToTable("OpsGroups", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OpsGroup_Capacity", "[Capacity] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsPickupAdult", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Relationship")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseholdId");
+
+                    b.ToTable("OpsPickupAdults", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsPlacement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Activity")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int?>("CabinId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CheckInOverride")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("CheckedInAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CheckedInBy")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<DateTime?>("CheckedOutAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CheckedOutBy")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PickedUpBy")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int>("RegistrationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RemindedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SuggestedGroupId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SuggestionReason")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CabinId");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("RegistrationId")
+                        .IsUnique();
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("SuggestedGroupId");
+
+                    b.ToTable("OpsPlacements", (string)null);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsRoomingReview", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReviewedBy")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique();
+
+                    b.ToTable("OpsRoomingReviews", (string)null);
+                });
+
             modelBuilder.Entity("Camp.Api.Features.StaffCx.DiscountRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -1769,6 +2010,87 @@ namespace Camp.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("WaiverTemplate");
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsBuddyRequest", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.Registration", null)
+                        .WithMany()
+                        .HasForeignKey("RegistrationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Camp.Api.Domain.Registration", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedRegistrationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsCabin", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsGroup", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.CapacityPool", null)
+                        .WithMany()
+                        .HasForeignKey("PoolId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Camp.Api.Domain.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsPickupAdult", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.Household", null)
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsPlacement", b =>
+                {
+                    b.HasOne("Camp.Api.Features.Ops.OpsCabin", null)
+                        .WithMany()
+                        .HasForeignKey("CabinId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Camp.Api.Features.Ops.OpsGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Camp.Api.Domain.Registration", null)
+                        .WithMany()
+                        .HasForeignKey("RegistrationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Camp.Api.Features.Ops.OpsGroup", null)
+                        .WithMany()
+                        .HasForeignKey("SuggestedGroupId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Camp.Api.Features.Ops.OpsRoomingReview", b =>
+                {
+                    b.HasOne("Camp.Api.Domain.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Camp.Api.Features.StaffCx.DiscountRequest", b =>
