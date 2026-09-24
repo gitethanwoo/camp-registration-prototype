@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PoolAvailabilityList from '@/components/PoolAvailability.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
@@ -55,8 +56,8 @@ const audience = computed(() => {
   return pools.length && pools.every(p => p.name.match(/^(Couples|Attendees)$/)) ? 'adults' : 'campers'
 })
 
-function register(sessionId: number, pool: PoolAvailability) {
-  router.push({ path: `/register/${sessionId}`, query: { pool: String(pool.id) } })
+function register(sessionId: number) {
+  router.push(`/register/${sessionId}`)
 }
 </script>
 
@@ -116,11 +117,10 @@ function register(sessionId: number, pool: PoolAvailability) {
           <CardContent class="space-y-4">
             <template v-for="s in program.sessions" :key="s.id">
               <p v-if="program.sessions.length > 1" class="text-sm font-medium">{{ s.name }}</p>
-              <PoolAvailabilityList
-                :pools="s.pools"
-                :cta-label="standard ? 'Register' : undefined"
-                @select="pool => register(s.id, pool)"
-              />
+              <PoolAvailabilityList :pools="s.pools" />
+              <Button v-if="standard" class="w-full" @click="register(s.id)">
+                {{ program.sessions.length > 1 ? `Register for ${s.name}` : 'Register' }}
+              </Button>
             </template>
             <Alert v-if="!standard">
               <Info class="size-4" />
@@ -132,7 +132,7 @@ function register(sessionId: number, pool: PoolAvailability) {
                 This flow isn't part of the prototype yet.
               </AlertDescription>
             </Alert>
-            <p v-else class="text-xs text-muted-foreground">Choose Register for any group. You'll pick which of your children to register next; we place each child in the right group by grade.</p>
+            <p v-else class="text-xs text-muted-foreground">You'll pick which of your children to register next. We place each child in the right group by grade.</p>
           </CardContent>
         </Card>
       </aside>

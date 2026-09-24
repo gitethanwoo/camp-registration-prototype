@@ -2,7 +2,7 @@
 import { ArrowLeft, Check, ChevronUp, HeartPulse, Info, Loader2, Lock, ShieldCheck, TriangleAlert } from '@lucide/vue'
 import type { ColumnDef } from '@tanstack/vue-table'
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -26,7 +26,6 @@ import type { Participant, Question, Quote, RegisterContext } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<{ sessionId: number }>()
-const route = useRoute()
 const router = useRouter()
 const { draft, rotateKey, clear } = useRegistrationDraft(props.sessionId)
 
@@ -65,10 +64,6 @@ onMounted(async () => {
   }
   // Drop anything that's no longer selectable (e.g. registered in another tab).
   draft.selected = draft.selected.filter(id => selectable(byId(id)))
-  // Coming from a pool's Register button: preselect eligible kids in that pool.
-  const poolId = Number(route.query.pool)
-  if (!draft.selected.length && poolId)
-    draft.selected = ctx.value.participants.filter(p => selectable(p) && p.pool?.id === poolId).map(p => p.id)
   if (!draft.signer) draft.signer = ctx.value.household.signer
   if (draft.paymentOption === 'Plan' && !ctx.value.session.planInstallments) draft.paymentOption = 'Deposit'
   if (draft.paymentOption === 'Deposit' && !ctx.value.session.depositCents) draft.paymentOption = 'Full'

@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { AlertTriangle } from '@lucide/vue'
-import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import type { PoolAvailability } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // P2 · Live availability, per pool. No seat-hold countdown (Won't Have).
-defineProps<{ pools: PoolAvailability[], ctaLabel?: string, ctaDisabled?: boolean }>()
-defineEmits<{ select: [pool: PoolAvailability] }>()
+// Informational only: families register once per session and each child is placed by grade.
+defineProps<{ pools: PoolAvailability[] }>()
 </script>
 
 <template>
@@ -30,19 +29,10 @@ defineEmits<{ select: [pool: PoolAvailability] }>()
             <template v-else>{{ p.remaining }} spots left</template>
           </p>
         </div>
-        <Button
-          v-if="ctaLabel"
-          class="ml-auto shrink-0 sm:ml-0"
-          :variant="p.state === 'full' ? 'outline' : 'default'"
-          :disabled="ctaDisabled"
-          @click="$emit('select', p)"
-        >
-          {{ p.state === 'full' ? 'Join waitlist' : ctaLabel }}
-        </Button>
       </div>
       <div v-if="p.state === 'full'" class="mt-3 flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle class="mt-0.5 size-4 shrink-0" />
-        <p>{{ p.name }} has reached capacity. Registering a camper in this group adds them to the waitlist; staff offer open spots in order and you'll be emailed with a deadline to confirm. You won't be charged unless you accept.</p>
+        <p>{{ p.name }} has reached capacity. A camper in this group goes on the waitlist; staff offer open spots in order and you'll be emailed with a deadline to confirm. You won't be charged unless you accept.</p>
       </div>
     </li>
   </ul>
