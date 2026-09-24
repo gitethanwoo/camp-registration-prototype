@@ -97,6 +97,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
                     return new
                     {
                         RegistrationId = r.Id,
+                        r.PersonId,
                         r.Person.FirstName,
                         r.Person.LastName,
                         GradeLabel = FamilyReadModel.GradeLabel(r),
