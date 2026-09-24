@@ -279,12 +279,12 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
           </p>
           <Alert v-if="program.state === 'Draft' && program.returnNote">
             <Info />
-            <AlertTitle>Returned to draft</AlertTitle>
+            <AlertTitle class="line-clamp-none">Returned to draft</AlertTitle>
             <AlertDescription>{{ program.returnNote }}</AlertDescription>
           </Alert>
           <Alert v-if="program.state !== 'Published'" class="border-amber-300 bg-amber-50 text-amber-900">
             <TriangleAlert />
-            <AlertTitle>Not visible to families yet</AlertTitle>
+            <AlertTitle class="line-clamp-none">Not visible to families yet</AlertTitle>
             <AlertDescription class="text-amber-900">
               {{
                 program.state === 'Draft'
@@ -295,7 +295,7 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
           </Alert>
           <Alert v-else>
             <CircleCheck />
-            <AlertTitle>Published</AlertTitle>
+            <AlertTitle class="line-clamp-none">Published</AlertTitle>
             <AlertDescription>Families can see {{ program.name }} and register for its open sessions.</AlertDescription>
           </Alert>
           <p v-if="program.approvalBlock" class="text-sm text-muted-foreground">{{ program.approvalBlock }}</p>

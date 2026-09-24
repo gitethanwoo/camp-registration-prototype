@@ -9,7 +9,7 @@ defineProps<{ page: string }>()
 <template>
   <Alert class="mx-auto max-w-2xl">
     <Lock />
-    <AlertTitle>{{ page }} is for admins</AlertTitle>
+    <AlertTitle class="line-clamp-none">{{ page }} is for admins</AlertTitle>
     <AlertDescription>
       Only WinShape admins can change program setup. Ask an admin if something here needs to change. You can still read
       the audit log.

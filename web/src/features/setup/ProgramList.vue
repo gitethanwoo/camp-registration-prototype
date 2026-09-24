@@ -102,7 +102,11 @@ function approvals(r: ProgramRow) {
       <template #cell-sessions="{ row: r }"> {{ r.sessions.length }} · {{ r.registered }} registered </template>
       <template #cell-waivers="{ row: r }">
         <span v-if="!r.waivers.length" class="text-muted-foreground">None</span>
-        <span v-else>{{ r.waivers.map((w) => `v${w.version}`).join(', ') }}</span>
+        <ul v-else class="space-y-0.5">
+          <li v-for="w in r.waivers" :key="w.id" class="max-w-56 truncate" :title="w.title">
+            {{ w.title }} <span class="text-muted-foreground">v{{ w.version }}</span>
+          </li>
+        </ul>
       </template>
       <template #cell-approval="{ row: r }">
         <span class="text-sm">{{ approvals(r) }}</span>

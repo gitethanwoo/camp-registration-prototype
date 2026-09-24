@@ -43,9 +43,10 @@ const { data, loading, error, load } = useSetupLoad<AuditPage>(() => {
 const exportUrl = computed(() => `/api/admin/audit-log/export?${query.value}`)
 const filtered = computed(() => [...query.value.keys()].length > 0)
 onMounted(load)
+// A filter change goes back to page 1; the page watcher loads it, so load here only when already there.
 watch(query, () => {
-  page.value = 1
-  load()
+  if (page.value === 1) load()
+  else page.value = 1
 })
 watch(page, load)
 function clear() {
@@ -60,12 +61,14 @@ const columns: ColumnDef<AuditRow>[] = [
   {
     accessorKey: 'createdAt',
     header: 'When',
-    meta: { class: 'w-40', cellClass: 'whitespace-nowrap text-muted-foreground' },
+    meta: { class: 'hidden w-40 sm:table-cell', cellClass: 'whitespace-nowrap text-muted-foreground' },
   },
   { accessorKey: 'actor', header: 'Who', meta: { class: 'hidden md:table-cell' } },
-  { accessorKey: 'what', header: 'What happened' },
+  { accessorKey: 'what', header: 'What happened', meta: { cellClass: 'whitespace-normal' } },
   { accessorKey: 'category', header: 'Area', meta: { class: 'hidden lg:table-cell' } },
 ]
+
+const areaLabel = (c: string) => data.value?.categories.find((x) => x.value === c)?.label ?? c
 
 const openId = ref<number | null>(null)
 const entry = ref<AuditEntry | null>(null)
@@ -98,7 +101,7 @@ watch(openId, async (id) => {
 
     <Alert>
       <Lock />
-      <AlertTitle>This log can't be edited</AlertTitle>
+      <AlertTitle class="line-clamp-none">This log can't be edited</AlertTitle>
       <AlertDescription
         >Entries are written when a change is saved. No one, including admins, can change or delete
         them.</AlertDescription
@@ -165,11 +168,13 @@ watch(openId, async (id) => {
       <template #cell-createdAt="{ row: r }">{{ dateTime(r.createdAt) }}</template>
       <template #cell-what="{ row: r }">
         <div class="font-medium">{{ r.what }}</div>
-        <div class="text-sm text-muted-foreground md:hidden">{{ r.actor }}</div>
+        <div class="text-sm text-muted-foreground md:hidden">
+          {{ r.actor }}<span class="sm:hidden"> · {{ dateTime(r.createdAt) }}</span>
+        </div>
         <div v-if="r.detail" class="line-clamp-2 text-sm text-muted-foreground">{{ r.detail }}</div>
       </template>
       <template #cell-category="{ row: r }"
-        ><Badge variant="secondary">{{ r.category }}</Badge></template
+        ><Badge variant="secondary">{{ areaLabel(r.category) }}</Badge></template
       >
     </DataTable>
 
@@ -195,7 +200,10 @@ watch(openId, async (id) => {
               <dt class="text-muted-foreground">Action</dt>
               <dd class="font-mono text-xs">{{ entry.action }}</dd>
               <dt class="text-muted-foreground">Record</dt>
-              <dd>{{ entry.entityType }} #{{ entry.entityId }}</dd>
+              <dd>
+                {{ entry.entityType
+                }}<template v-if="entry.entityId && entry.entityId !== '-'"> #{{ entry.entityId }}</template>
+              </dd>
               <dt v-if="entry.detail" class="text-muted-foreground">Detail</dt>
               <dd v-if="entry.detail">{{ entry.detail }}</dd>
             </dl>

@@ -132,7 +132,7 @@ public sealed class PricingSetupEndpoints : IEndpointModule
             PlanOffered = draft.PlanInstallments > 0,
             Schedule = (draft.PlanInstallments > 0 ? plan : deposit).Schedule.Select((x, i) => new
             {
-                Label = i == 0 ? "Deposit (due at registration)" : x.Label,
+                Label = i == 0 ? "Deposit" : x.Label,
                 x.DueDate,
                 x.AmountCents,
             }),

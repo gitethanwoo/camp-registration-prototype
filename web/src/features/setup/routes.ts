@@ -1,4 +1,4 @@
-import { CalendarDays, DollarSign, FilePen, LayoutGrid, ScrollText, TicketPercent } from '@lucide/vue'
+import { DollarSign, FilePen, LayoutGrid, ScrollText, TicketPercent } from '@lucide/vue'
 import type { RouteRecordRaw } from 'vue-router'
 
 // Slice 5 · Program setup (K2, K3, K4, K5, K7, K12). Setup pages are admin-only on the server;
@@ -12,7 +12,8 @@ export const adminRoutes: RouteRecordRaw[] = [
   {
     path: 'setup/sessions',
     component: () => import('./SessionSetup.vue'),
-    meta: { title: 'Session setup', nav: { group: 'Setup', label: 'Sessions', icon: CalendarDays, order: 10 } },
+    // No sidebar entry: "Sessions & capacity" (/admin/session) links admins here, and so does each program.
+    meta: { title: 'Session setup' },
   },
   {
     path: 'setup/sessions/:id(\\d+)',

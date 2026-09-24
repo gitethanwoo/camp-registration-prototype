@@ -108,10 +108,14 @@ const statusTone: Record<string, string> = {
 }
 
 const columns: ColumnDef<SetupPool>[] = [
-  { accessorKey: 'name', header: 'Pool', meta: { cellClass: 'font-medium' } },
+  { accessorKey: 'name', header: 'Pool', meta: { cellClass: 'whitespace-normal font-medium' } },
   { id: 'who', header: 'Who', meta: { class: 'hidden sm:table-cell', cellClass: 'text-muted-foreground' } },
   { accessorKey: 'capacity', header: 'Capacity', meta: { class: 'text-right', cellClass: 'text-right tabular-nums' } },
-  { accessorKey: 'taken', header: 'Taken', meta: { class: 'text-right', cellClass: 'text-right tabular-nums' } },
+  {
+    accessorKey: 'taken',
+    header: 'Taken',
+    meta: { class: 'hidden text-right sm:table-cell', cellClass: 'text-right tabular-nums' },
+  },
   {
     accessorKey: 'open',
     header: 'Open',
@@ -120,14 +124,15 @@ const columns: ColumnDef<SetupPool>[] = [
   {
     accessorKey: 'waitlisted',
     header: 'Waitlist',
-    meta: { class: 'text-right', cellClass: 'text-right tabular-nums' },
+    meta: { class: 'hidden text-right sm:table-cell', cellClass: 'text-right tabular-nums' },
   },
   { id: 'actions', header: '', meta: { class: 'w-10' } },
 ]
+const grade = (n: number) => (n === 0 ? 'K' : String(n))
 function who(p: SetupPool) {
-  let g = `grades ${p.gradeMin}–${p.gradeMax}`
+  let g = `grades ${grade(p.gradeMin)}–${grade(p.gradeMax)}`
   if (p.gradeMin >= 99) g = 'adults'
-  else if (p.gradeMin === p.gradeMax) g = `grade ${p.gradeMin}`
+  else if (p.gradeMin === p.gradeMax) g = `grade ${grade(p.gradeMin)}`
   return p.gender ? `${p.gender === 'Male' ? 'Boys' : 'Girls'}, ${g}` : `Everyone, ${g}`
 }
 
@@ -183,7 +188,7 @@ async function remove() {
 
     <Alert v-for="name in s.fullPools" :key="name" class="border-amber-300 bg-amber-50 text-amber-900">
       <TriangleAlert />
-      <AlertTitle>{{ name }} is full</AlertTitle>
+      <AlertTitle class="line-clamp-none">{{ name }} is full</AlertTitle>
       <AlertDescription class="text-amber-900"
         >Families are on its waitlist. An admin offers each spot from the waitlist.</AlertDescription
       >
@@ -212,7 +217,9 @@ async function remove() {
             <DataTable :columns="columns" :data="s.pools" :get-row-id="(p) => String(p.id)" empty-text="No pools yet.">
               <template #cell-name="{ row: p }">
                 {{ p.name }}
-                <div class="text-xs font-normal text-muted-foreground sm:hidden">{{ who(p) }}</div>
+                <div class="text-xs font-normal text-muted-foreground sm:hidden">
+                  {{ who(p) }}<br />{{ p.taken }} taken · {{ p.waitlisted }} waiting
+                </div>
               </template>
               <template #cell-who="{ row: p }">{{ who(p) }}</template>
               <template #cell-actions="{ row: p }">
@@ -286,7 +293,7 @@ async function remove() {
             </div>
             <Alert v-if="s.capacityFromOpera">
               <Info />
-              <AlertTitle>Room capacity comes from Oracle Opera</AlertTitle>
+              <AlertTitle class="line-clamp-none">Room capacity comes from Oracle Opera</AlertTitle>
               <AlertDescription>Retreat-center pools are read-only here.</AlertDescription>
             </Alert>
             <div class="space-y-2">

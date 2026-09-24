@@ -161,7 +161,7 @@ function amountText(r: DiscountRuleRow | null) {
       <div class="space-y-4 px-4">
         <Alert v-if="readOnly">
           <Info />
-          <AlertTitle>{{ rule!.source }}</AlertTitle>
+          <AlertTitle class="line-clamp-none">{{ rule!.source }}</AlertTitle>
           <AlertDescription>
             Host and partner codes are approved or rejected in Discount approvals, with the terms the requester asked
             for.
@@ -269,8 +269,8 @@ function amountText(r: DiscountRuleRow | null) {
             <Select v-model="form.stackable" :disabled="readOnly">
               <SelectTrigger id="r-stack" class="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="no">Doesn't combine with other codes</SelectItem>
-                <SelectItem value="yes">Combines with other stacking codes</SelectItem>
+                <SelectItem value="no">Doesn't stack</SelectItem>
+                <SelectItem value="yes">Stacks with other codes</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -278,7 +278,7 @@ function amountText(r: DiscountRuleRow | null) {
 
         <Alert v-if="err('value') || preview?.guard" variant="destructive" role="alert">
           <TriangleAlert />
-          <AlertTitle>{{
+          <AlertTitle class="line-clamp-none">{{
             preview?.guard ? "Combined discounts can't go over 100%" : 'Check the discount amount'
           }}</AlertTitle>
           <AlertDescription>{{ err('value') ?? preview?.guard }}</AlertDescription>

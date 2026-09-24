@@ -8,18 +8,24 @@ export function useSetupLoad<T>(url: () => string | null) {
   const forbidden = ref(false)
   const error = ref<string | null>(null)
 
+  // Only the latest request may write, so a slow response to an older filter can't replace a newer one.
+  let latest = 0
   async function load() {
     const u = url()
     if (!u) return
+    const mine = ++latest
     loading.value = true
     try {
-      data.value = await api.get<T>(u)
+      const result = await api.get<T>(u)
+      if (mine !== latest) return
+      data.value = result
       error.value = null
     } catch (e) {
+      if (mine !== latest) return
       if (e instanceof ApiError && e.status === 403) forbidden.value = true
       else error.value = e instanceof ApiError ? e.message : "Couldn't load this page. Refresh to try again."
     } finally {
-      loading.value = false
+      if (mine === latest) loading.value = false
     }
   }
 

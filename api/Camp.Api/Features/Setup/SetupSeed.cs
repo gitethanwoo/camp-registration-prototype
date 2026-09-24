@@ -52,7 +52,7 @@ public sealed class SetupSeed : ISeedModule
                         Sequence = seq++,
                         Role = role,
                         Description = description,
-                        ApprovedBy = p.IsPublished ? "Approved in WIN before migration" : null,
+                        ApprovedBy = p.IsPublished ? "WIN (before migration)" : null,
                         ApprovedAt = p.IsPublished ? migrated : null,
                     });
                 db.Set<ProgramSetup>().Add(setup);
@@ -85,7 +85,7 @@ public sealed class SetupSeed : ISeedModule
                     EffectiveDate = w.EffectiveDate,
                     CreatedBy = "Imported from WIN",
                     CreatedAt = migrated,
-                    ApprovedBy = "Approved in WIN before migration",
+                    ApprovedBy = "WIN (before migration)",
                     ApprovedAt = migrated,
                 });
         }
@@ -182,7 +182,7 @@ public sealed class SetupSeed : ISeedModule
                 RetiredDate = new(2026, 3, 1),
                 CreatedBy = "Imported from WIN",
                 CreatedAt = new DateTime(2025, 10, 20, 15, 0, 0, DateTimeKind.Utc),
-                ApprovedBy = "Approved in WIN before migration",
+                ApprovedBy = "WIN (before migration)",
                 ApprovedAt = new DateTime(2025, 10, 28, 15, 0, 0, DateTimeKind.Utc),
             },
             new WaiverVersion
@@ -195,7 +195,7 @@ public sealed class SetupSeed : ISeedModule
                 EffectiveDate = new(2026, 3, 1),
                 CreatedBy = "Imported from WIN",
                 CreatedAt = new DateTime(2026, 2, 10, 15, 0, 0, DateTimeKind.Utc),
-                ApprovedBy = "Approved in WIN before migration",
+                ApprovedBy = "WIN (before migration)",
                 ApprovedAt = new DateTime(2026, 2, 24, 15, 0, 0, DateTimeKind.Utc),
             },
             new WaiverVersion

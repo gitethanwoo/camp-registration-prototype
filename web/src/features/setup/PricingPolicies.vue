@@ -223,14 +223,21 @@ const basisLabel: Record<RefundBasis, string> = {
             <Table>
               <TableHeader
                 ><TableRow
-                  ><TableHead>Payment</TableHead><TableHead>Due</TableHead
+                  ><TableHead>Payment</TableHead><TableHead class="hidden sm:table-cell">Due</TableHead
                   ><TableHead class="text-right">Amount</TableHead></TableRow
                 ></TableHeader
               >
               <TableBody>
                 <TableRow v-for="p in preview?.schedule" :key="p.label">
-                  <TableCell>{{ p.label }}</TableCell>
-                  <TableCell>{{ date(p.dueDate) }}</TableCell>
+                  <TableCell class="whitespace-normal">
+                    {{ p.label }}
+                    <span class="block text-muted-foreground sm:hidden">{{
+                      p.dueDate ? `Due ${date(p.dueDate)}` : 'Due at registration'
+                    }}</span>
+                  </TableCell>
+                  <TableCell class="hidden sm:table-cell">{{
+                    p.dueDate ? date(p.dueDate) : 'At registration'
+                  }}</TableCell>
                   <TableCell class="text-right tabular-nums">{{ money(p.amountCents) }}</TableCell>
                 </TableRow>
               </TableBody>
@@ -248,8 +255,8 @@ const basisLabel: Record<RefundBasis, string> = {
           <CardHeader>
             <CardTitle>Cancellation and refund policy</CardTitle>
             <CardDescription
-              >Refunds staff offer when cancelling. The last window has to start 0 days before the
-              session.</CardDescription
+              >What staff refund when a registration is cancelled. Each window starts that many days before the session;
+              keep a 0-day window so late cancellations are covered too.</CardDescription
             >
           </CardHeader>
           <CardContent class="space-y-3">
@@ -318,7 +325,9 @@ const basisLabel: Record<RefundBasis, string> = {
                 <li v-for="p in preview.schedule" :key="p.label" class="flex justify-between gap-3 p-3">
                   <span
                     ><span class="block">{{ p.label }}</span
-                    ><span class="text-muted-foreground">Due {{ date(p.dueDate) }}</span></span
+                    ><span class="text-muted-foreground">{{
+                      p.dueDate ? `Due ${date(p.dueDate)}` : 'Due at registration'
+                    }}</span></span
                   >
                   <span class="tabular-nums">{{ money(p.amountCents) }}</span>
                 </li>

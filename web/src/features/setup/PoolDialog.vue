@@ -106,7 +106,7 @@ const err = (k: string) => errors.value[k]?.[0]
             </Select>
           </div>
           <div class="space-y-2">
-            <Label for="pool-gmin">From grade</Label>
+            <Label for="pool-gmin">From grade <span class="font-normal text-muted-foreground">(0 = K)</span></Label>
             <Input id="pool-gmin" v-model="form.gradeMin" type="number" min="0" max="12" :disabled="locked()" />
           </div>
           <div class="space-y-2">

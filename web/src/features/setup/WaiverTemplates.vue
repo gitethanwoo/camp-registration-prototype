@@ -197,7 +197,7 @@ async function discard() {
         <CardContent class="space-y-4">
           <Alert class="border-amber-300 bg-amber-50 text-amber-900">
             <TriangleAlert />
-            <AlertTitle>A new version doesn't change signed waivers</AlertTitle>
+            <AlertTitle class="line-clamp-none">A new version doesn't change signed waivers</AlertTitle>
             <AlertDescription class="text-amber-900"
               >{{ w.signatures }} signatures stay tied to the version each family signed.</AlertDescription
             >
@@ -234,7 +234,7 @@ async function discard() {
                 v-model="body"
                 :disabled="!open.editable"
                 rows="16"
-                class="font-serif leading-relaxed"
+                class="font-serif leading-relaxed disabled:text-foreground disabled:opacity-100"
               />
             </div>
             <p v-if="!open.editable && open.approvalBlock" class="text-sm text-muted-foreground">

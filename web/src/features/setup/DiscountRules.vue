@@ -85,7 +85,7 @@ async function saved(id?: number) {
       <template #cell-code="{ row: r }">
         <div class="font-mono font-medium">{{ r.code }}</div>
         <div class="text-sm text-muted-foreground">
-          {{ r.name }}<span class="sm:hidden"> · {{ r.description }}</span>
+          {{ r.hasRule ? r.name : r.source }}<span class="sm:hidden"> · {{ r.description }}</span>
         </div>
       </template>
       <template #cell-dates="{ row: r }">
@@ -93,7 +93,9 @@ async function saved(id?: number) {
         <span v-else class="text-muted-foreground">No limit</span>
       </template>
       <template #cell-usage="{ row: r }">{{ r.uses }} / {{ r.maxUses ?? '∞' }}</template>
-      <template #cell-status="{ row: r }"><PublishBadge :state="r.status" /></template>
+      <template #cell-status="{ row: r }"
+        ><PublishBadge :state="r.status" :label="r.status === 'Pending approval' ? 'Pending' : r.status"
+      /></template>
     </DataTable>
 
     <DiscountRuleSheet
