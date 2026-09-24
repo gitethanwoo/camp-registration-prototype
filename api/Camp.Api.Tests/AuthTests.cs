@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Camp.Api.Data;
+using Camp.Api.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Tests;
@@ -64,6 +65,57 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal("Diane Carter (CET)", actor);
     }
 
-    sealed record MeResponse(string Name, string Email, List<MemberResponse> Members);
+    [Fact]
+    public async Task A_co_owner_signs_in_to_the_household_they_share()
+    {
+        var johnson = await factory.WithDb(db => db.Households.Where(h => h.Email == Seed.JohnsonEmail).Select(h => h.Id).SingleAsync());
+        using var david = await factory.SignInAsFamily("david.johnson@example.com", "David", "Johnson");
+        var me = await david.GetFromJsonAsync<MeResponse>("/api/me");
+        Assert.Equal(johnson, me!.Id);
+        Assert.Contains(me.Members, m => m.FirstName == "Avery");
+        Assert.False(await factory.WithDb(db => db.Households.AnyAsync(h => h.Email == "david.johnson@example.com")));
+    }
+
+    [Fact]
+    public async Task A_revoked_adult_signs_in_to_a_new_empty_household()
+    {
+        var email = $"revoked-{Guid.NewGuid():N}@example.com";
+        var shared = await factory.WithDb(async db =>
+        {
+            var h = new Household { Name = "Shared", Email = $"owner-{email}" };
+            h.Members.Add(new Person { FirstName = "Owner", LastName = "Shared", IsAdult = true, Role = "Primary", Email = $"owner-{email}" });
+            h.Members.Add(new Person { FirstName = "Ex", LastName = "Shared", IsAdult = true, Role = "Co-owner", Email = email });
+            db.Households.Add(h);
+            await db.SaveChangesAsync();
+            return h;
+        });
+        using var owner = await factory.SignInAsFamily($"owner-{email}", "Owner", "Shared");
+        var exId = shared.Members.Single(m => m.Email == email).Id;
+        (await owner.PostAsync($"/api/family/members/{exId}/revoke-access", null)).EnsureSuccessStatusCode();
+
+        using var ex = await factory.SignInAsFamily(email, "Ex", "Shared");
+        var me = await ex.GetFromJsonAsync<MeResponse>("/api/me");
+        Assert.NotEqual(shared.Id, me!.Id);
+        Assert.Single(me.Members);
+    }
+
+    [Fact]
+    public async Task An_email_that_signs_in_elsewhere_cant_be_given_to_another_households_adult()
+    {
+        using var sam = await factory.SignInAsFamily($"sam-{Guid.NewGuid():N}@example.com", "Sam", "Rivera");
+        using var maria = await sam.PostAsJsonAsync("/api/family/members", new { firstName = "Maria", lastName = "Johnson", isAdult = true, email = Seed.JohnsonEmail });
+        Assert.Equal(HttpStatusCode.BadRequest, maria.StatusCode);
+        Assert.Contains("another family account", await maria.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var david = await sam.PostAsJsonAsync("/api/family/members", new { firstName = "David", lastName = "Johnson", isAdult = true, email = "David.Johnson@example.com" });
+        Assert.Equal(HttpStatusCode.BadRequest, david.StatusCode);
+        using var invite = await sam.PostAsJsonAsync("/api/family/invitations", new { firstName = "David", lastName = "Johnson", email = "david.johnson@example.com" });
+        Assert.Equal(HttpStatusCode.BadRequest, invite.StatusCode);
+
+        // An adult without account access elsewhere doesn't sign in anywhere, so their email is free.
+        using var fresh = await sam.PostAsJsonAsync("/api/family/members", new { firstName = "Rosa", lastName = "Rivera", isAdult = true, email = $"rosa-{Guid.NewGuid():N}@example.com" });
+        Assert.Equal(HttpStatusCode.Created, fresh.StatusCode);
+    }
+
+    sealed record MeResponse(int Id, string Name, string Email, List<MemberResponse> Members);
     sealed record MemberResponse(string FirstName);
 }

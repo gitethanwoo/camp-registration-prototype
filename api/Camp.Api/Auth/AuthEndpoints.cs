@@ -18,6 +18,9 @@ public sealed class AuthEndpoints : IEndpointModule
 {
     const string StateCookie = "camp.auth_state";
 
+    /// <summary>A duplicate merge renames the archived household's email to "merged-into-{id}:…".</summary>
+    const string ArchivedPrefix = "merged-into-";
+
     /// <inheritdoc />
     public void Map(IEndpointRouteBuilder app)
     {
@@ -100,10 +103,18 @@ public sealed class AuthEndpoints : IEndpointModule
         await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
     }
 
-    // A guest's household is matched by email. First sign-in creates an empty household with
-    // the guest as its primary adult; they add children from the family portal.
+    // A guest's household is found through an adult member who has account access (the primary
+    // owner or a co-owner; revoking access clears the role, so a revoked adult no longer matches),
+    // then through the household's own email. Households archived by a duplicate merge are skipped.
+    // First sign-in with neither creates an empty household with the guest as its primary adult.
     static async Task<int> HouseholdFor(CampDbContext db, WorkOsIdentity id, CancellationToken ct)
     {
+        var member = await db.People
+            .Where(p => p.IsAdult && p.Role != null && p.Email == id.Email && !p.Household.Email.StartsWith(ArchivedPrefix))
+            .OrderBy(p => p.Role == "Primary" ? 0 : 1).ThenBy(p => p.Id)
+            .Select(p => (int?)p.HouseholdId).FirstOrDefaultAsync(ct);
+        if (member is { } memberHousehold) return memberHousehold;
+
         var existing = await db.Households.Where(h => h.Email == id.Email).Select(h => (int?)h.Id).FirstOrDefaultAsync(ct);
         if (existing is { } householdId) return householdId;
 
