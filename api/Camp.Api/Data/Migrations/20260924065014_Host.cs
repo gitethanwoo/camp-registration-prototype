@@ -185,7 +185,7 @@ namespace Camp.Api.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "HostInvoiceLine",
+                name: "HostInvoiceLines",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -197,9 +197,9 @@ namespace Camp.Api.Data.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_HostInvoiceLine", x => x.Id);
+                    table.PrimaryKey("PK_HostInvoiceLines", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_HostInvoiceLine_HostInvoices_InvoiceId",
+                        name: "FK_HostInvoiceLines_HostInvoices_InvoiceId",
                         column: x => x.InvoiceId,
                         principalTable: "HostInvoices",
                         principalColumn: "Id",
@@ -245,8 +245,8 @@ namespace Camp.Api.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_HostInvoiceLine_InvoiceId",
-                table: "HostInvoiceLine",
+                name: "IX_HostInvoiceLines_InvoiceId",
+                table: "HostInvoiceLines",
                 column: "InvoiceId");
 
             migrationBuilder.CreateIndex(
@@ -317,7 +317,7 @@ namespace Camp.Api.Data.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "HostInvoiceLine");
+                name: "HostInvoiceLines");
 
             migrationBuilder.DropTable(
                 name: "HostInvoicePayments");

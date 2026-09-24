@@ -121,15 +121,12 @@ const deadlineIcon = {
               </div>
               <p class="text-2xl font-semibold tabular-nums">{{ data.volunteers.total }} on file</p>
               <p class="text-sm text-muted-foreground">
-                {{ data.volunteers.approved }} approved
-                <template v-if="data.upload.needsDecision > 0">
-                  ·
-                  <span class="text-amber-700"
-                    >{{ data.upload.needsDecision }} upload
-                    {{ data.upload.needsDecision === 1 ? 'row needs' : 'rows need' }}
-                    fixes</span
-                  ></template
-                >
+                {{ data.volunteers.approved }} approved · {{ data.volunteers.inProgress }} in progress ·
+                {{ data.volunteers.notStarted }} not started
+              </p>
+              <p v-if="data.upload.needsDecision > 0" class="text-sm text-amber-700">
+                {{ data.upload.needsDecision }} upload
+                {{ data.upload.needsDecision === 1 ? 'row needs' : 'rows need' }} fixes
               </p>
             </div>
           </CardContent>

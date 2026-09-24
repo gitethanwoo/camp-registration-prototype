@@ -1330,7 +1330,7 @@ namespace Camp.Api.Data.Migrations
 
                     b.HasIndex("InvoiceId");
 
-                    b.ToTable("HostInvoiceLine");
+                    b.ToTable("HostInvoiceLines", (string)null);
                 });
 
             modelBuilder.Entity("Camp.Api.Features.Host.HostInvoicePayment", b =>

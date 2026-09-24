@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Camp.Api.Data.Migrations
 {
     [DbContext(typeof(CampDbContext))]
-    [Migration("20260924062342_Host")]
+    [Migration("20260924065014_Host")]
     partial class Host
     {
         /// <inheritdoc />
@@ -1333,7 +1333,7 @@ namespace Camp.Api.Data.Migrations
 
                     b.HasIndex("InvoiceId");
 
-                    b.ToTable("HostInvoiceLine");
+                    b.ToTable("HostInvoiceLines", (string)null);
                 });
 
             modelBuilder.Entity("Camp.Api.Features.Host.HostInvoicePayment", b =>

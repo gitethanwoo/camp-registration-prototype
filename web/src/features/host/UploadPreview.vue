@@ -126,8 +126,15 @@ async function submit() {
                 </TableCell>
                 <TableCell class="align-top">
                   <div class="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" @click="fixing = r">Fix</Button>
-                    <Button size="sm" variant="ghost" :disabled="busy === r.id" @click="act(r, 'skip')">Skip</Button>
+                    <Button size="sm" variant="outline" class="max-sm:h-11" @click="fixing = r">Fix</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      class="max-sm:h-11"
+                      :disabled="busy === r.id"
+                      @click="act(r, 'skip')"
+                      >Skip</Button
+                    >
                   </div>
                 </TableCell>
               </TableRow>
@@ -149,7 +156,7 @@ async function submit() {
             <span class="min-w-0 flex-1 truncate"
               >{{ name(r) }}<span v-if="r.issue" class="block text-xs text-muted-foreground">{{ r.issue }}</span></span
             >
-            <Button size="sm" variant="ghost" :disabled="busy === r.id" @click="act(r, 'restore')"
+            <Button size="sm" variant="ghost" class="max-sm:h-11" :disabled="busy === r.id" @click="act(r, 'restore')"
               ><Undo2 />Bring back</Button
             >
           </li>
@@ -182,7 +189,8 @@ async function submit() {
           <AlertDescription>
             <template v-if="upload.errors">{{ plural(upload.errors, 'unresolved row') }} will be held back. </template
             >Valid volunteers join your list as Not started and go to your church's vetting workflow. No WinShape staff
-            ticket is created.
+            ticket is created. Each volunteer gets a background-check email; their status here changes to In progress
+            when they start it and to Approved when the check clears.
           </AlertDescription>
         </Alert>
         <div class="space-y-2">

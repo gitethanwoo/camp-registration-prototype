@@ -210,6 +210,14 @@ internal sealed class HostInvoiceConfiguration : IEntityTypeConfiguration<HostIn
     }
 }
 
+internal sealed class HostInvoiceLineConfiguration : IEntityTypeConfiguration<HostInvoiceLine>
+{
+    public void Configure(EntityTypeBuilder<HostInvoiceLine> b)
+    {
+        b.ToTable("HostInvoiceLines");
+    }
+}
+
 internal sealed class HostInvoicePaymentConfiguration : IEntityTypeConfiguration<HostInvoicePayment>
 {
     public void Configure(EntityTypeBuilder<HostInvoicePayment> b)
