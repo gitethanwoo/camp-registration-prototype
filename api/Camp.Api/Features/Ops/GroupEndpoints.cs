@@ -213,7 +213,6 @@ internal sealed class GroupBoard
     {
         var at = CurrentGroups();
         var cap = Groups.ToDictionary(g => g.Id, g => g.Capacity);
-        var name = Groups.ToDictionary(g => g.Id, g => g.Name);
         int Count(int g) => at.Values.Count(x => x == g);
         var reasons = new Dictionary<int, string>();
         var inPair = Pairs().SelectMany(p => new[] { p.A.RegistrationId, p.B.RegistrationId }).ToHashSet();
@@ -249,7 +248,7 @@ internal sealed class GroupBoard
         void Move(Camper c, int group, string why)
         {
             at[c.RegistrationId] = group;
-            reasons[c.RegistrationId] = $"{why} Suggested for {name[group]}.";
+            reasons[c.RegistrationId] = why;
         }
     }
 

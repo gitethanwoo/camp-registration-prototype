@@ -76,6 +76,8 @@ public class OpsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.All(roster, r => Assert.Equal(
             r.GetProperty("payment").GetString() == "Balance due",
             r.GetProperty("reasons").EnumerateArray().Any(x => x.GetString() == "Balance")));
+        // Campers without a bed read "Unassigned", which is also the value of the page's cabin filter.
+        Assert.Equal(14, roster.Count(r => r.GetProperty("cabin").GetString() == "Unassigned"));
 
         var pools = body.GetProperty("pools").EnumerateArray().ToList();
         Assert.Equal([46, 50, 44, 46], pools.Select(p => p.GetProperty("reserved").GetInt32()));

@@ -61,6 +61,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
                 Roster = campers.Select(c => new
                 {
                     c.RegistrationId,
+                    c.HouseholdId,
                     c.Name,
                     c.Grade,
                     Gender = c.Gender.ToString(),
@@ -130,8 +131,8 @@ public sealed class ReadinessEndpoints : IEndpointModule
 /// <summary>Cabin and group names for a session, for roster columns.</summary>
 internal sealed record OpsNames(Dictionary<int, string> Cabins, Dictionary<int, string> Groups)
 {
-    public string? Cabin(int? id) => id is { } x ? Cabins.GetValueOrDefault(x) : null;
-    public string? Group(int? id) => id is { } x ? Groups.GetValueOrDefault(x) : null;
+    public string Cabin(int? id) => id is { } x && Cabins.TryGetValue(x, out var n) ? n : "Unassigned";
+    public string Group(int? id) => id is { } x && Groups.TryGetValue(x, out var n) ? n : "Unassigned";
 
     public static async Task<OpsNames> For(CampDbContext db, int sessionId, CancellationToken ct) => new(
         await db.Set<OpsCabin>().Where(c => c.SessionId == sessionId).ToDictionaryAsync(c => c.Id, c => c.Name, ct),
