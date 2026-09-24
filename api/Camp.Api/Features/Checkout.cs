@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Forms;
 using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
@@ -23,7 +24,8 @@ public record CheckoutRequest(
     List<WaiverSignature> Waivers,
     PaymentOption PaymentOption,
     string? DiscountCode,
-    string CardToken);
+    string CardToken,
+    int? FormVersionId = null); // K6: the form version the wizard showed; a stale one is refused
 
 public record CheckoutResult(string ConfirmationCode, OrderStatus Status, string? Message);
 
@@ -58,14 +60,37 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
         if (people.Count != personIds.Count) throw Invalid("participants", "Participants must belong to your household.");
 
         var errors = new Dictionary<string, string[]>();
+        // K6: a program with a live form version is asked and checked by that version (required,
+        // conditional and typed answers); others keep the original program questions.
+        var form = await FormRules.LiveAsync(db, session.ProgramId, ct);
+        var householdAnswers = new List<CleanAnswer>();
+        var camperAnswers = new Dictionary<int, List<CleanAnswer>>();
+        if (form is not null)
+        {
+            if (req.FormVersionId is { } shown && shown != form.Id)
+                errors["formVersionId"] = ["The registration questions changed while you were registering. Go back to Questions and answer the new version."];
+            var (clean, problems) = FormRules.Check(form.Questions.Where(q => q.Scope == QuestionScope.Household), req.HouseholdAnswers);
+            householdAnswers = clean;
+            if (problems.Count > 0) errors["householdAnswers"] = [.. problems];
+        }
         var placements = new List<(Person Person, CapacityPool Pool, CheckoutParticipant Input)>();
         foreach (var input in req.Participants)
         {
             var person = people.Single(p => p.Id == input.PersonId);
             var (pool, reason) = Eligibility.FindPool(person, session);
             if (pool is null) { errors[$"participants.{person.Id}"] = [reason!]; continue; }
-            var missing = MissingAnswers(session.Program, input.Answers, req.HouseholdAnswers);
-            if (missing.Count > 0) errors[$"participants.{person.Id}.answers"] = [.. missing];
+            if (form is not null)
+            {
+                var known = householdAnswers.ToDictionary(a => a.Question.Key, a => a.Value);
+                var (clean, problems) = FormRules.Check(form.Questions.Where(q => q.Scope == QuestionScope.Participant), input.Answers, known);
+                camperAnswers[person.Id] = clean;
+                if (problems.Count > 0) errors[$"participants.{person.Id}.answers"] = [.. problems.Select(m => $"{person.FirstName}: {m}")];
+            }
+            else
+            {
+                var missing = MissingAnswers(session.Program, input.Answers, req.HouseholdAnswers);
+                if (missing.Count > 0) errors[$"participants.{person.Id}.answers"] = [.. missing];
+            }
             if (session.Program.HealthMechanism == HealthMechanism.Embedded && string.IsNullOrWhiteSpace(input.Health?.PhysicianName))
                 errors[$"participants.{person.Id}.health"] = ["Health form is incomplete."];
             placements.Add((person, pool, input));
@@ -155,7 +180,9 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                             HealthMechanism.Embedded => FormStatus.Complete,
                             _ => FormStatus.Incomplete, // completed in CampDoc / third-party tool; status synced back
                         },
-                        AnswersJson = JsonSerializer.Serialize(Merge(input.Answers, req.HouseholdAnswers)),
+                        AnswersJson = form is null
+                            ? JsonSerializer.Serialize(Merge(input.Answers, req.HouseholdAnswers))
+                            : JsonSerializer.Serialize(householdAnswers.Concat(camperAnswers[person.Id]).ToDictionary(a => a.Question.Key, a => a.Value)),
                         HealthJson = session.Program.HealthMechanism == HealthMechanism.Embedded ? JsonSerializer.Serialize(input.Health) : null,
                         CreatedAt = clock.UtcNow(),
                     };
@@ -208,6 +235,15 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                 Outbox("WaitlistJoined", "HubSpot", order.ConfirmationCode, new { order.ConfirmationCode, person = name, w.Position });
             }
             await db.SaveChangesAsync(ct);
+            if (form is not null)
+            {
+                // K6: each answer is kept with the version and question it answered. Household answers
+                // belong to the order; camper answers to the camper's registration.
+                db.AddRange(householdAnswers.Select(a => new FormAnswer { OrderId = order.Id, FormVersionId = form.Id, FormQuestionId = a.Question.Id, Value = a.Value }));
+                foreach (var reg in seated)
+                    db.AddRange(camperAnswers[reg.PersonId].Select(a => new FormAnswer { OrderId = order.Id, RegistrationId = reg.Id, FormVersionId = form.Id, FormQuestionId = a.Question.Id, Value = a.Value }));
+                await db.SaveChangesAsync(ct);
+            }
             await tx.CommitAsync(ct);
         }
 
