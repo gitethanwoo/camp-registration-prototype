@@ -8,6 +8,7 @@ export const personas = {
   diane: 'diane.carter@winshape.example', // staff, CET
   marcus: 'marcus.lee@winshape.example', // staff, finance
   grace: 'grace.patel@winshape.example', // host coordinator
+  alex: 'alex.morgan@winshape.example', // staff, admin (setup)
 } as const
 
 /** Signs in through the WorkOS emulator's hosted page, then waits to land back in the app. */

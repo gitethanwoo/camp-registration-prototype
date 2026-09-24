@@ -7,6 +7,7 @@ users:
   - { email: diane.carter@winshape.example, first_name: Diane, last_name: Carter, email_verified: true }
   - { email: marcus.lee@winshape.example, first_name: Marcus, last_name: Lee, email_verified: true }
   - { email: grace.patel@winshape.example, first_name: Grace, last_name: Patel, email_verified: true }
+  - { email: alex.morgan@winshape.example, first_name: Alex, last_name: Morgan, email_verified: true }
 
 roles:
   - { slug: cet, name: Customer Experience Team }
@@ -21,3 +22,4 @@ organizations:
       - { email: diane.carter@winshape.example, role: cet }
       - { email: marcus.lee@winshape.example, role: finance }
       - { email: grace.patel@winshape.example, role: host }
+      - { email: alex.morgan@winshape.example, role: admin }

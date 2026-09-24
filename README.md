@@ -29,6 +29,7 @@ docker compose up --build
 | `diane.carter@winshape.example` | Staff, Customer Experience (CET)                       |
 | `marcus.lee@winshape.example`   | Staff, Finance                                         |
 | `grace.patel@winshape.example`  | Host coordinator                                       |
+| `alex.morgan@winshape.example`  | Staff, Administrator (program setup)                   |
 
 The API migrates and seeds the database on startup. To start over with clean demo data, run `docker compose down -v`.
 

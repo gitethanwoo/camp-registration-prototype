@@ -31,6 +31,9 @@ public static class Policies
     /// <summary>Host coordinators for partner-run events.</summary>
     public const string Host = "host";
 
+    /// <summary>Administrators: program setup, pricing, waivers, audit log.</summary>
+    public const string Admin = "admin";
+
     internal static void Configure(AuthorizationOptions o)
     {
         o.AddPolicy(Family, p => p.RequireClaim(CampClaims.HouseholdId));
@@ -38,6 +41,7 @@ public static class Policies
         o.AddPolicy(Cet, p => p.RequireClaim(CampClaims.StaffRole, "cet", "admin"));
         o.AddPolicy(Finance, p => p.RequireClaim(CampClaims.StaffRole, "finance", "admin"));
         o.AddPolicy(Host, p => p.RequireClaim(CampClaims.StaffRole, "host", "admin"));
+        o.AddPolicy(Admin, p => p.RequireClaim(CampClaims.StaffRole, "admin"));
     }
 }
 
