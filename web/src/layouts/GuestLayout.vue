@@ -91,6 +91,9 @@ const nav = [
               <DropdownMenuItem v-if="session.kind === 'family'" as-child
                 ><RouterLink to="/family/access">Household access</RouterLink></DropdownMenuItem
               >
+              <DropdownMenuItem v-if="session.kind === 'family'" as-child
+                ><RouterLink to="/family/scholarships">Scholarships</RouterLink></DropdownMenuItem
+              >
               <DropdownMenuItem v-if="session.kind === 'staff'" as-child
                 ><RouterLink to="/admin">Staff console</RouterLink></DropdownMenuItem
               >
