@@ -13,6 +13,8 @@ builder.Services.AddDbContext<CampDbContext>(o => o.UseSqlServer(builder.Configu
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddProblemDetails();
 
+// The one clock. Inject TimeProvider instead of reading DateTime.UtcNow (wave 3 adds a demo clock here).
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPaymentGateway, FakeFiservGateway>();
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddCampAuth(builder.Configuration);

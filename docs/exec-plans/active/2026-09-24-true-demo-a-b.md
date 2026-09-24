@@ -149,6 +149,32 @@ Every slice, in order:
 - H3 invoices: list, detail with line items, and Pay through the fake gateway. Payments are recorded server-side.
 - May edit: `web/src/router.ts` and `web/src/lib/nav.ts` for the host auth value only; `Auth/AuthEndpoints.cs` only if the host role needs a different landing route.
 
+**Wave 3.** Same rules as waves 1 and 2. New code reads time only from the injected `TimeProvider` (API) and `now()` from `@/lib/clock` (web); never `DateTime.UtcNow`, `new Date()` or `Date.now()` for "now".
+
+**Slice 9, registration form builder (`forms`), personas Alex (admin), Maria (family), Diane (staff read).**
+
+- K6 question builder per program: question types (short text, long text, yes/no, single choice, multiple choice, date, number), per-participant vs per-household scope, required, conditional logic (show when another question has a value), a live phone preview, versioning (published versions are immutable; edits make a draft), and "changes require approval" (a second admin approves before a version goes live, like K7 waivers).
+- The registration wizard renders the live version for the program: household questions once, participant questions per camper, with conditional logic and required checks enforced on the server too. Answers are stored per order/registration with the form version id.
+- Staff see answers on the admin registration detail; families see theirs on F5.
+- Seed a published form for Day Camp and Overnight Camp with a conditional question (e.g. "Does your camper need medication at camp?" → "Medication name and schedule").
+- May edit: `web/src/pages/guest/Register.vue`, `Features/Checkout.cs` (accept and validate answers), `Features/GuestEndpoints.cs` (register-context carries the form), `web/src/pages/admin/RegistrationDetail.vue`, and the family F5 page. Record each in the Decision Log.
+
+**Slice 10, health settings and staff access (`access`), persona Alex (admin).**
+
+- K11 staff users and roles: users synced from the identity provider (the WorkOS emulator's `org_winshape_staff` memberships via its API, standing in for Entra), role, ministry scope, health-data access flag, last sign-in; users removed from the org show as Revoked automatically on the next sync. No password reset or "add user with password". Role and ministry scope changes are audited.
+- K9 health collection settings per program/session: mechanism (embedded, third-party form, CampDoc) with a warning when CampDoc is chosen for a non-Overnight program, and which staff can view health data. Enforce it: health answers and health checklist details are returned only to staff with health access, and each view writes a `health.viewed` audit row.
+- May edit: `Auth/AuthEndpoints.cs` to record last sign-in and apply ministry scope/health flag to the session (ExecPlan and Decision Log required).
+
+**Polish (`polish`), one agent on its own branch, in parallel with slices 9 and 10.**
+
+- Demo clock: a `TimeProvider` whose "now" is `Demo:Now` (default 2028-03-02T15:00:00Z, during registration season) plus real elapsed time, registered in `Program.cs`; the API exposes the offset (e.g. `/api/clock`) and `web/src/lib/clock.ts` applies it. Replace every `DateTime.UtcNow`/`Today` read and web "now" read with it. Tests use a fixed clock.
+- Family Camp gets a waiver so no published program registers without one; published programs with no waiver can't be published (K2 guard).
+- Route guard for `meta.roles` (redirect to /no-access with the needed role).
+- F1 family home and F4 My registrations show a moved camper's new session and dates.
+- The account menu refreshes Applications and My groups after a first application or group.
+- Add David Johnson (Maria's co-guardian) as a sign-in persona in the WorkOS seed, README and e2e fixtures.
+- May edit any file needed; keep each change small and record it.
+
 ## Concrete Steps
 
 From the repo root:
