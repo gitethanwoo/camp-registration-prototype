@@ -50,7 +50,9 @@ public sealed class AuthEndpoints : IEndpointModule
             var id = await workos.AuthenticateAsync(code, ct);
             var staffRole = id.OrganizationId == options.Value.StaffOrganizationId ? id.Role : null;
             await SignInAsync(http, db, id, staffRole, ct);
-            return Results.Redirect(returnTo == "/" && staffRole is not null ? "/admin" : returnTo);
+            // Host coordinators have their own portal; other staff land in the console.
+            var landing = staffRole == "host" ? "/host" : "/admin";
+            return Results.Redirect(returnTo == "/" && staffRole is not null ? landing : returnTo);
         });
 
         auth.MapPost("/logout", async (HttpContext http) =>
