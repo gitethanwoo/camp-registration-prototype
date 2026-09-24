@@ -135,7 +135,12 @@ function role(m: Overview['members'][number]) {
         <Card v-for="r in data.registrations" :key="r.confirmationCode">
           <CardHeader>
             <CardTitle class="flex items-center gap-2"><CalendarDays class="size-5" />{{ r.program }}</CardTitle>
-            <CardDescription>{{ dateRange(r.startDate, r.endDate) }} · {{ r.participants }}</CardDescription>
+            <CardDescription>
+              <template v-if="r.participants">{{ dateRange(r.startDate, r.endDate) }} · {{ r.participants }}</template>
+              <span v-for="m in r.moved" :key="m.firstName" class="block">
+                {{ dateRange(m.startDate, m.endDate) }} · {{ m.firstName }}, moved to {{ m.session }}
+              </span>
+            </CardDescription>
             <CardAction>
               <Badge variant="outline" class="border-emerald-200 bg-emerald-50 text-emerald-800"
                 >{{ r.count }} {{ r.count === 1 ? 'camper' : 'campers' }}</Badge
@@ -213,7 +218,12 @@ function role(m: Overview['members'][number]) {
               <p class="font-semibold">You’re all set for camp!</p>
               <p class="text-sm text-muted-foreground">
                 Waivers, health forms, and payments are complete for
-                {{ data.registrations.map((r) => r.participants).join(' and ') }}.
+                {{
+                  data.registrations
+                    .flatMap((r) => [r.participants, ...r.moved.map((m) => m.firstName)])
+                    .filter(Boolean)
+                    .join(' and ')
+                }}.
               </p>
             </div>
           </CardContent>

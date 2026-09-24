@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ChevronDown, ClipboardCheck, House, LayoutGrid, LifeBuoy } from '@lucide/vue'
-import { onMounted, ref } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
+import { onMounted, ref, watch } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import Logo from '@/components/Logo.vue'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -17,6 +17,7 @@ import { api } from '@/lib/api'
 import { loadSession, useSession } from '@/lib/session'
 
 const { session, initials, signIn, signOut } = useSession()
+const route = useRoute()
 
 // Retreat applications and church groups belong to other slices; the menu shows them only to a
 // family that has one, so most families see the same short menu.
@@ -28,13 +29,20 @@ const any = (url: string) =>
     .then((rows) => rows.length > 0)
     .catch(() => false)
 
-onMounted(async () => {
+// Checked on load, after each navigation and when the menu opens, so a family's first application or
+// group shows up without a reload. Once an entry is shown it stays for the visit.
+async function refreshMenu() {
   const s = await loadSession()
   if (s.kind !== 'family') return
-  const [apps, groups] = await Promise.all([any('/admittance/applications'), any('/groups')])
+  const [apps, groups] = await Promise.all([
+    hasApplications.value || any('/admittance/applications'),
+    hasGroups.value || any('/groups'),
+  ])
   hasApplications.value = apps
   hasGroups.value = groups
-})
+}
+onMounted(refreshMenu)
+watch(() => route.path, refreshMenu)
 
 const nav = [
   { to: '/programs', label: 'Programs' },
@@ -60,7 +68,7 @@ const nav = [
         </nav>
         <div class="ml-auto flex items-center gap-3">
           <Button v-if="session && !session.signedIn" size="sm" @click="signIn()">Sign in</Button>
-          <DropdownMenu v-else-if="session?.signedIn">
+          <DropdownMenu v-else-if="session?.signedIn" @update:open="(open) => open && refreshMenu()">
             <DropdownMenuTrigger
               class="flex items-center gap-2 rounded-full p-1 pr-2 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >

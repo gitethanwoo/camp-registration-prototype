@@ -24,6 +24,7 @@ docker compose up --build
 | Email                           | Who                                                    |
 | ------------------------------- | ------------------------------------------------------ |
 | `maria.johnson@example.com`     | Returning family: Avery (G6) and Mia (G4)              |
+| `david.johnson@example.com`     | Maria's co-owner; signs in to the same Johnson family  |
 | `sam.rivera@example.com`        | New family. The household is created at first sign-in. |
 | `pastor.dave@example.com`       | Church group leader                                    |
 | `diane.carter@winshape.example` | Staff, Customer Experience (CET)                       |

@@ -67,7 +67,10 @@ public sealed class FamilyEndpoints : IEndpointModule
                         Session = o.Session.Name,
                         o.Session.StartDate,
                         o.Session.EndDate,
-                        Participants = FamilyReadModel.Participants(active.Select(r => r.Person.FirstName)),
+                        // Campers still in the order's session; a camper moved by a transfer is listed under Moved with their own dates.
+                        Participants = FamilyReadModel.Participants(active.Where(r => r.SessionId == o.SessionId).Select(r => r.Person.FirstName)),
+                        Moved = active.Where(r => r.SessionId != o.SessionId).OrderBy(r => r.Person.DateOfBirth)
+                            .Select(r => new { r.Person.FirstName, Session = r.Session.Name, r.Session.StartDate, r.Session.EndDate }),
                         Count = active.Count,
                         money.TotalCents,
                         money.PaidCents,

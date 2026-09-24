@@ -50,6 +50,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
                         GradeLabel = FamilyReadModel.GradeLabel(r),
                         Status = r.Status.ToString(),
                         Position = (int?)null,
+                        MovedTo = r.Status == RegistrationStatus.Cancelled ? null : FamilyReadModel.MovedTo(r, o),
                     }).Concat(waiting.Select(w => new
                     {
                         w.Person.Id,
@@ -57,6 +58,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
                         GradeLabel = (string?)null,
                         Status = w.Status == WaitlistStatus.Offered ? "OfferedSpot" : "Waitlisted",
                         Position = (int?)w.Position,
+                        MovedTo = (MovedSession?)null,
                     })).ToList(),
                     money.TotalCents,
                     money.PaidCents,
@@ -104,7 +106,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
                         GradeLabel = FamilyReadModel.GradeLabel(r),
                         Pool = r.Pool.Name,
                         // A staff-approved transfer (F8) moves one camper; the order keeps its session until all have moved.
-                        MovedTo = r.SessionId != o.SessionId ? new { r.Session.Name, r.Session.StartDate, r.Session.EndDate } : null,
+                        MovedTo = FamilyReadModel.MovedTo(r, o),
                         Status = r.Status.ToString(),
                         HealthStatus = r.HealthStatus.ToString(),
                         Waivers = program.Waivers.OrderBy(w => w.Id).Select(w => new

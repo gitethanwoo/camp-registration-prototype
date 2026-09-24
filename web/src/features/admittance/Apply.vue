@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { cardComplete, emptyCard, newKey, tokenize } from './card'
 import CardFields from './CardFields.vue'
 import type { ApplyContext, FormQuestion } from './types'
+import { now } from '@/lib/clock'
 
 const props = defineProps<{ sessionId: number }>()
 const router = useRouter()
@@ -130,7 +131,7 @@ async function save() {
         step: step.value,
       })
       appId.value = res.id
-      savedAt.value = new Date()
+      savedAt.value = now()
       saveFailed.value = false
     } catch (e) {
       saveFailed.value = true

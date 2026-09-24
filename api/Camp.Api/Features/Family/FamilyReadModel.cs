@@ -47,6 +47,10 @@ public static class FamilyReadModel
             .Include(o => o.Installments)
             .AsSplitQuery();
 
+    /// <summary>A camper a staff-approved transfer (F8) moved to another session; the order keeps its session until every camper has moved.</summary>
+    public static MovedSession? MovedTo(Registration r, PaymentOrder o) =>
+        r.SessionId != o.SessionId ? new(r.Session.Name, r.Session.StartDate, r.Session.EndDate) : null;
+
     public static List<Registration> Active(PaymentOrder o) => o.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled).ToList();
 
     public static OrderMoney Money(PaymentOrder o)
@@ -99,18 +103,20 @@ public static class FamilyReadModel
         foreach (var r in confirmed)
         {
             var who = r.Person.FirstName;
+            // A moved camper's own rows name the session they now attend.
+            var rctx = r.SessionId == o.SessionId ? ctx : $"{program.Name} · {r.Session.Name}";
             var signed = r.WaiverAcceptances.Select(a => a.WaiverTemplateId).ToHashSet();
             var missing = program.Waivers.Count(w => !signed.Contains(w.Id));
             if (program.Waivers.Count > 0)
-                yield return new($"waiver-{r.Id}", who, ctx, "Waivers", missing == 0 ? "Complete" : $"Missing: {missing} to sign", missing == 0, "Sign waivers", "waiver", $"{detail}#checklist");
+                yield return new($"waiver-{r.Id}", who, rctx, "Waivers", missing == 0 ? "Complete" : $"Missing: {missing} to sign", missing == 0, "Sign waivers", "waiver", $"{detail}#checklist");
 
             if (r.HealthStatus is FormStatus.NotRequired) continue;
             var healthDone = r.HealthStatus == FormStatus.Complete;
             yield return program.HealthMechanism == HealthMechanism.CampDoc
-                ? new($"health-{r.Id}", who, ctx, "Health forms in CampDoc", healthDone ? "Complete" : "Incomplete", healthDone, "Open CampDoc", "campdoc", "https://app.campdoc.com/")
+                ? new($"health-{r.Id}", who, rctx, "Health forms in CampDoc", healthDone ? "Complete" : "Incomplete", healthDone, "Open CampDoc", "campdoc", "https://app.campdoc.com/")
                 // The embedded health form is filled in during registration; there's no page to finish it
                 // afterwards, so an incomplete one is shown without a button rather than a dead link.
-                : new($"health-{r.Id}", who, ctx, "Health form", healthDone ? "Complete" : "Incomplete", healthDone, "", "health", "");
+                : new($"health-{r.Id}", who, rctx, "Health form", healthDone ? "Complete" : "Incomplete", healthDone, "", "health", "");
         }
 
         if (confirmed.Count == 0) yield break;
@@ -132,3 +138,6 @@ public static class FamilyReadModel
                 $"{Money(money.PaidCents)} paid · {Money(money.BalanceCents)} due by {Day(o.Session.BalanceDueDate)}", false, "Pay balance", "balance", payments);
     }
 }
+
+/// <summary>Where a moved camper now goes (F1, F4, F5).</summary>
+public sealed record MovedSession(string Name, DateOnly StartDate, DateOnly EndDate);

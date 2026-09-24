@@ -19,8 +19,8 @@ declare module 'vue-router' {
     /** Who may open this page. Inherited by child routes. */
     auth?: 'family' | 'staff' | 'host'
     /**
-     * Staff roles whose API calls this page's data needs. The sidebar hides the entry from other roles;
-     * the page itself still explains a 403. Leave unset for pages every console role can read.
+     * Staff roles whose API calls this page's data needs. The sidebar hides the entry from other roles,
+     * and the router sends anyone else to /no-access naming the role. Leave unset for pages every console role can read.
      */
     roles?: StaffRole[]
     /** Staff sidebar entry. */

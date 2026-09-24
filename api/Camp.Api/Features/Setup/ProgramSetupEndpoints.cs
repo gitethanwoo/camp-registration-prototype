@@ -181,7 +181,7 @@ public sealed partial class ProgramSetupEndpoints : IEndpointModule
     }
 
     /// <summary>K2's publish guard: families sign a program's waivers at checkout, so a program with none can't go live.</summary>
-    internal const string NoWaiver = "Add a waiver before publishing. Families sign it at checkout, so a program can't be published without one.";
+    public const string NoWaiver = "Add a waiver before publishing. Families sign it at checkout, so a program can't be published without one.";
 
     internal static IQueryable<Registration> ActiveRegistrations(CampDbContext db) =>
         db.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled && r.Order!.Status != OrderStatus.Declined);
