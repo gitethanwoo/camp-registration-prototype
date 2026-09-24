@@ -17,7 +17,7 @@ import { saveError, useSetupLoad } from '@/features/setup/useSetupLoad'
 import AccessBadge from './AccessBadge.vue'
 import StaffSheet from './StaffSheet.vue'
 import type { StaffList, StaffRow, SyncRun } from './types'
-import { ago } from './when'
+import { actorName, ago } from './when'
 
 // K11 · Staff users and roles (FR-2, FR-6). Who is staff comes from WorkOS (standing in for Entra);
 // this page sets ministry scope and health-data access, and shows who was revoked.
@@ -92,7 +92,8 @@ const openId = ref<number | null>(null)
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">Staff access</h1>
       <p class="text-muted-foreground">
-        Who can use the WinShape console, which ministry they work in, and whether they can read camper health details.
+        Who can use the WinShape console and whether they can read camper health details. Ministry scope limits health
+        details to one ministry's programs; it doesn't yet limit registrations, households or waitlists.
       </p>
     </div>
 
@@ -108,8 +109,8 @@ const openId = ref<number | null>(null)
         </p>
         <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
           <span v-if="data?.lastSync" class="text-foreground" data-testid="last-sync">
-            Last synced {{ ago(data.lastSync.ranAt) }} by {{ data.lastSync.actor }} · {{ data.lastSync.members }} in
-            WorkOS
+            Last synced {{ ago(data.lastSync.ranAt) }} by {{ actorName(data.lastSync.actor) }} ·
+            {{ data.lastSync.members }} in WorkOS
           </span>
           <span v-else-if="data" class="text-foreground">Not synced yet.</span>
           <Button size="sm" variant="outline" class="text-foreground" :disabled="syncing || !data" @click="sync()">
@@ -137,7 +138,7 @@ const openId = ref<number | null>(null)
           <SelectTrigger class="w-full lg:w-44" aria-label="Filter by ministry scope"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All scopes</SelectItem>
-            <SelectItem value="none">All ministries</SelectItem>
+            <SelectItem value="none">Unscoped (all ministries)</SelectItem>
             <SelectItem v-for="m in data?.ministries ?? []" :key="m.id" :value="String(m.id)">{{ m.name }}</SelectItem>
           </SelectContent>
         </Select>

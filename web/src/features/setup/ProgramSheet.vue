@@ -212,12 +212,21 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
             </div>
             <div class="space-y-2">
               <Label for="p-health">Health information</Label>
-              <Select v-model="form.healthMechanism" :disabled="!editable">
-                <SelectTrigger id="p-health" class="w-full"><SelectValue /></SelectTrigger>
+              <Select v-model="form.healthMechanism" :disabled="!editable || !isNew">
+                <SelectTrigger id="p-health" class="w-full" :aria-invalid="!!err('healthMechanism') || undefined"
+                  ><SelectValue
+                /></SelectTrigger>
                 <SelectContent>
                   <SelectItem v-for="h in health" :key="h.value" :value="h.value">{{ h.label }}</SelectItem>
                 </SelectContent>
               </Select>
+              <p v-if="err('healthMechanism')" class="text-sm text-destructive">{{ err('healthMechanism') }}</p>
+              <p v-else-if="!isNew" class="text-xs text-muted-foreground">
+                Change this under
+                <RouterLink to="/admin/setup/health" class="text-primary underline-offset-4 hover:underline"
+                  >Setup › Health settings</RouterLink
+                >, which also sets who can view health details.
+              </p>
             </div>
             <div class="space-y-2">
               <Label for="p-location">Location</Label>

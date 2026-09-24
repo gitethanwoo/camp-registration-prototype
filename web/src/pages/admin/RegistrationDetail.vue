@@ -39,9 +39,6 @@ interface Detail {
     lastName: string
     dateOfBirth: string
     gender: string
-    dietary: string | null
-    allergies: string | null
-    adaNeeds: string | null
   }
   household: {
     id: number
@@ -330,18 +327,13 @@ async function cancel() {
             <Card>
               <CardHeader><CardTitle>Answers</CardTitle></CardHeader>
               <CardContent>
-                <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                <p v-if="!Object.keys(r.answers ?? {}).length" class="text-sm text-muted-foreground">
+                  No registration questions answered.
+                </p>
+                <dl v-else class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                   <div v-for="(v, k) in r.answers" :key="k">
                     <dt class="text-muted-foreground">{{ answerLabels[k] ?? k }}</dt>
                     <dd>{{ v || '—' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted-foreground">Allergies</dt>
-                    <dd>{{ r.participant.allergies || 'None' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted-foreground">Dietary</dt>
-                    <dd>{{ r.participant.dietary || 'None' }}</dd>
                   </div>
                 </dl>
               </CardContent>

@@ -23,8 +23,10 @@ public static class HealthAccessRules
     };
 
     /// <summary>CampDoc is Overnight Camp's system of record (FR-22); no other program uses it.</summary>
-    public static bool IsOvernight(CampProgram p) =>
-        p.Slug == "overnight-camp" || p.Name.Contains("Overnight", StringComparison.OrdinalIgnoreCase);
+    public static bool IsOvernight(CampProgram p) => IsOvernight(p.Slug, p.Name);
+
+    public static bool IsOvernight(string slug, string name) =>
+        slug == "overnight-camp" || name.Contains("Overnight", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Why <paramref name="member"/> can't view health details for <paramref name="program"/>, or null when they can.
@@ -136,6 +138,7 @@ public static class StaffSync
     {
         var row = await db.Set<StaffMember>().Include(m => m.Ministry).FirstOrDefaultAsync(m => m.WorkOsUserId == userId, ct)
             ?? await db.Set<StaffMember>().Include(m => m.Ministry).FirstOrDefaultAsync(m => m.Email == email, ct);
+        var added = row is null;
         if (row is null)
         {
             row = new StaffMember { Email = email, Status = StaffStatus.Active, CreatedAt = now, Role = role };
@@ -155,6 +158,13 @@ public static class StaffSync
         (row.WorkOsUserId, row.Email, row.Role, row.LastSignInAt) = (userId, email, role, now);
         if (firstName.Length > 0 || lastName.Length > 0) (row.FirstName, row.LastName) = (firstName, lastName);
         await db.SaveChangesAsync(ct);
+        if (added)
+        {
+            // Same trail as a sync-added member; the audit row needs the id, so it follows the first save.
+            audit.Record(db, "staff.added", "StaffMember", row.Id, $"Added {row.Name} ({HealthAccessRules.RoleLabel(role)}) on their first sign-in as a WorkOS staff member.",
+                ("Status", null, "Active"), ("Role", null, HealthAccessRules.RoleLabel(role)));
+            await db.SaveChangesAsync(ct);
+        }
         return row;
     }
 }

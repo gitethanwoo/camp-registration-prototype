@@ -14,6 +14,7 @@ import { api } from '@/lib/api'
 import { dateTime } from '@/lib/format'
 import { saveError } from '@/features/setup/useSetupLoad'
 import type { Ministry, StaffDetail } from './types'
+import { actorName } from './when'
 
 const props = defineProps<{ id: number | null; ministries: Ministry[] }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -157,7 +158,7 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
               </SelectContent>
             </Select>
             <p class="text-sm text-muted-foreground">
-              They see registrations and health details for these programs only.
+              Health details are limited to this ministry's programs. Registrations and households aren't scoped yet.
             </p>
             <p v-if="err('ministryId')" class="text-sm text-destructive">{{ err('ministryId') }}</p>
           </div>
@@ -208,7 +209,7 @@ const err = (k: string) => fieldErrors.value[k]?.[0]
           <ol v-if="detail?.activity.length" class="space-y-3 text-sm">
             <li v-for="a in detail.activity" :key="a.id">
               <div>{{ a.detail }}</div>
-              <div class="text-muted-foreground">{{ dateTime(a.createdAt) }} · {{ a.actor }}</div>
+              <div class="text-muted-foreground">{{ dateTime(a.createdAt) }} · {{ actorName(a.actor) }}</div>
             </li>
           </ol>
           <p v-else class="text-sm text-muted-foreground">No changes recorded yet.</p>

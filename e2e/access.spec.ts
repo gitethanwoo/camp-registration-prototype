@@ -30,6 +30,9 @@ test('Diane is refused a Day Camp health form without health-data access', async
   await signInAs(page, 'diane', '/admin')
   const id = await dayCampRegistration(page)
   await page.goto(`/admin/registrations/${id}`)
+  // Allergies and dietary needs are health details: not on the page, only behind the enforced dialog.
+  await expect(page.getByRole('button', { name: 'View health form' })).toBeVisible()
+  await expect(page.getByText('Allergies', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'View health form' }).click()
 
   const dialog = page.getByRole('dialog')

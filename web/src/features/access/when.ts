@@ -10,3 +10,8 @@ export function ago(iso: string) {
   if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
   return dateTime(iso)
 }
+
+/** Audit actors read "Alex Morgan (ADMIN)"; screens show the name. */
+export function actorName(actor: string) {
+  return actor.replace(/\s*\([A-Z]+\)$/, '')
+}

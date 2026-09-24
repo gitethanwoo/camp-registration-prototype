@@ -248,17 +248,72 @@ public class AccessTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task The_seed_fills_only_empty_Day_Camp_forms_and_changes_no_status()
+    public async Task The_registration_detail_shows_no_profile_health_to_staff_without_health_access()
+    {
+        // Avery's profile says "Peanuts (mild)"; allergies are health details, read only through the enforced endpoint.
+        var reg = await factory.WithDb(db => db.Registrations.Where(r => r.Person.Allergies != null).Select(r => r.Id).FirstAsync());
+        var cet = await factory.SignInAsStaff("cet", "Diane Carter");
+        var text = await cet.GetStringAsync($"/api/admin/registrations/{reg}");
+        Assert.DoesNotContain("\"allergies\"", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"dietary\"", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"adaNeeds\"", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Peanuts", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_seed_fills_only_empty_embedded_forms_from_the_profile_and_changes_no_status()
     {
         var counts = await factory.WithDb(async db => new
         {
-            Empty = await db.Registrations.CountAsync(r => r.Session.Program.Slug == "day-camp-atlanta" && r.HealthStatus == FormStatus.Complete && r.HealthJson == null),
+            Empty = await db.Registrations.CountAsync(r => r.Session.Program.HealthMechanism == HealthMechanism.Embedded && r.HealthStatus == FormStatus.Complete && r.HealthJson == null),
             Filled = await db.Registrations.CountAsync(r => r.Session.Program.Slug == "day-camp-atlanta" && r.HealthJson != null),
+            FamilyCamp = await db.Registrations.CountAsync(r => r.Session.Program.Slug == "family-camp" && r.HealthJson != null),
             OnForms = await db.Registrations.CountAsync(r => r.Session.Program.Slug == "overnight-camp" && r.HealthJson != null),
         });
         Assert.Equal(0, counts.Empty);
         Assert.True(counts.Filled > 0);
+        Assert.True(counts.FamilyCamp > 0);
         Assert.Equal(0, counts.OnForms);
+
+        // The backfilled form agrees with the camper's profile: what the form says is what the family entered.
+        var forms = await factory.WithDb(db => db.Registrations.Where(r => r.HealthJson != null)
+            .Select(r => new { r.HealthJson, r.Person.Allergies, r.Person.Dietary }).ToListAsync());
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        foreach (var f in forms)
+        {
+            var form = JsonSerializer.Deserialize<Camp.Api.Features.HealthForm>(f.HealthJson!, options)!;
+            if (!string.IsNullOrWhiteSpace(f.Allergies)) Assert.Equal(f.Allergies, form.Allergies);
+            if (!string.IsNullOrWhiteSpace(f.Dietary)) Assert.Equal(f.Dietary, form.Dietary);
+        }
+    }
+
+    [Fact]
+    public async Task Setup_programs_cannot_route_around_the_CampDoc_guard()
+    {
+        var alex = await Alex();
+        const string setup = "/api/admin/setup/programs";
+        static object Program(string name, string mechanism) =>
+            new { ministryId = 1, name, type = "Standard", healthMechanism = mechanism, location = "Mount Berry", tagline = "A tagline.", description = "A description." };
+
+        // Creating a non-overnight program on CampDoc is refused; Health settings is where that is confirmed.
+        var created = await alex.PostAsJsonAsync(setup, Program("Spring Family Camp", "CampDoc"));
+        Assert.Equal(HttpStatusCode.BadRequest, created.StatusCode);
+        Assert.Contains("CampDoc is used by Overnight Camp only", await created.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        // A draft's method can't be changed from the program sheet at all.
+        var ok = await alex.PostAsJsonAsync(setup, Program("Spring Family Camp", "Embedded"));
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        var id = (await ok.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        var edit = await alex.PutAsJsonAsync($"{setup}/{id}", Program("Spring Family Camp", "CampDoc"));
+        Assert.Equal(HttpStatusCode.BadRequest, edit.StatusCode);
+        Assert.Contains("Setup › Health settings", await edit.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HealthMechanism.Embedded, await Mechanism(id));
+        Assert.Equal(HttpStatusCode.OK, (await alex.PutAsJsonAsync($"{setup}/{id}", Program("Spring Family Camp 2", "Embedded"))).StatusCode);
+
+        // And Family Camp itself stays on its embedded form.
+        var family = await ProgramId("family-camp");
+        Assert.NotEqual(HttpStatusCode.OK, (await alex.PutAsJsonAsync($"{setup}/{family}", Program("Family Camp", "CampDoc"))).StatusCode);
+        Assert.Equal(HealthMechanism.Embedded, await Mechanism(family));
     }
 
     Task<HttpClient> Alex() => factory.SignInAsStaff("admin", "Alex Morgan");
@@ -427,9 +482,26 @@ public class AccessSyncTests(AccessSyncTests.Factory factory) : IClassFixture<Ac
         factory.Directory.Members.Clear();
         factory.Directory.Members.Add(("user_test_admin@winshape.example", "admin@winshape.example", "Alex", "Morgan", "admin"));
         Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync("/api/access/staff/sync", null)).StatusCode);
-        var refused = await cet.GetAsync($"/api/access/registrations/{reg}/health");
-        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-        Assert.Contains("revoked", await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await cet.GetAsync($"/api/access/registrations/{reg}/health")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_session_revoked_by_sync_is_refused_everywhere_in_the_console()
+    {
+        var alex = await factory.SignInAsStaff("admin", "Alex Morgan");
+        var marcus = await factory.SignInAsStaff("finance", "Marcus Lee");
+        Assert.Equal(HttpStatusCode.OK, (await marcus.GetAsync("/api/admin/registrations")).StatusCode);
+
+        factory.Directory.Down = false;
+        factory.Directory.Members.Clear();
+        factory.Directory.Members.Add(("user_test_admin@winshape.example", "admin@winshape.example", "Alex", "Morgan", "admin"));
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync("/api/access/staff/sync", null)).StatusCode);
+
+        // Same cookie, next request: refused, not just for health details.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await marcus.GetAsync("/api/admin/registrations")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await marcus.GetAsync("/api/admin/registrations")).StatusCode);
+        // Alex, still in the organization, keeps working.
+        Assert.Equal(HttpStatusCode.OK, (await alex.GetAsync("/api/admin/registrations")).StatusCode);
     }
 
     [Fact]

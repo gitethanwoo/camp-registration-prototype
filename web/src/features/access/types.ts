@@ -61,6 +61,7 @@ export interface HealthProgram {
   sessions: { id: number; name: string; startDate: string; endDate: string }[]
   registered: number
   formsOnFile: number
+  healthComplete: number
   viewers: { id: number; name: string; role: string }[]
   blocked: { id: number; name: string; role: string; reason: string }[]
 }
@@ -97,7 +98,7 @@ export const mechanisms: { value: Mechanism; label: string; help: string }[] = [
   {
     value: 'ThirdParty',
     label: 'Third-party form',
-    help: 'Families get a link to an outside form. This platform keeps completion status only.',
+    help: 'Families fill in an outside form, and staff see its link. This platform keeps completion status only.',
   },
   {
     value: 'CampDoc',

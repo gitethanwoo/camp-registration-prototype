@@ -164,7 +164,9 @@ public static class AdminEndpoints
                 r.Grade,
                 GradeLabel = Eligibility.GradeLabel(r.Grade),
                 r.CreatedAt,
-                Participant = new { r.Person.Id, r.Person.FirstName, r.Person.LastName, r.Person.DateOfBirth, Gender = r.Person.Gender.ToString(), r.Person.Dietary, r.Person.Allergies, r.Person.AdaNeeds },
+                Participant = new { r.Person.Id, r.Person.FirstName, r.Person.LastName, r.Person.DateOfBirth, Gender = r.Person.Gender.ToString() },
+                // No allergies, dietary or ADA needs here: they are health details, read only through
+                // GET /api/access/registrations/{id}/health, which enforces K9/K11 access and audits the view.
                 Household = new
                 {
                     h.Id,

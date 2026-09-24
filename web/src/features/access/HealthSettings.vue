@@ -180,7 +180,13 @@ const roleLabel = (slug: string) => data.value?.roles.find((r) => r.slug === slu
             <CardTitle class="text-lg">{{ selected.name }}</CardTitle>
             <CardDescription>
               {{ selected.ministry.name }}<template v-if="selected.location"> · {{ selected.location }}</template> ·
-              {{ selected.formsOnFile }} of {{ selected.registered }} health forms on file
+              <template v-if="selected.mechanism === 'Embedded'"
+                >{{ selected.formsOnFile }} of {{ selected.registered }} health forms on file</template
+              >
+              <template v-else
+                >{{ selected.healthComplete }} of {{ selected.registered }} complete in
+                {{ selected.mechanism === 'CampDoc' ? 'CampDoc' : 'the third-party form' }}</template
+              >
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -226,7 +232,10 @@ const roleLabel = (slug: string) => data.value?.roles.find((r) => r.slug === slu
                   :aria-invalid="!!err('thirdPartyFormUrl') || undefined"
                 />
                 <p v-if="err('thirdPartyFormUrl')" class="text-sm text-destructive">{{ err('thirdPartyFormUrl') }}</p>
-                <p v-else class="text-sm text-muted-foreground">Families get this link after checkout.</p>
+                <p v-else class="text-sm text-muted-foreground">
+                  Staff see this link on each registration's health form. Send it to families yourself; the family
+                  checklist doesn't show it yet.
+                </p>
               </div>
 
               <Separator />

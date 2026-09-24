@@ -127,7 +127,8 @@ public sealed class AccessEndpoints : IEndpointModule
             var onFile = await db.Registrations.Where(r => r.HealthJson != null).GroupBy(r => r.Session.ProgramId)
                 .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
             var registered = await db.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled).GroupBy(r => r.Session.ProgramId)
-                .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+                .Select(g => new { g.Key, Count = g.Count(), Complete = g.Count(r => r.HealthStatus == FormStatus.Complete) })
+                .ToDictionaryAsync(x => x.Key, ct);
             return Results.Ok(new
             {
                 Roles = HealthAccessRules.ViewerRoleChoices.Select(r => new { Slug = r, Label = HealthAccessRules.RoleLabel(r) }),
@@ -148,7 +149,8 @@ public sealed class AccessEndpoints : IEndpointModule
                         s?.UpdatedAt,
                         s?.UpdatedBy,
                         Sessions = p.Sessions.OrderBy(x => x.StartDate).Select(x => new { x.Id, x.Name, x.StartDate, x.EndDate }),
-                        Registered = registered.GetValueOrDefault(p.Id),
+                        Registered = registered.GetValueOrDefault(p.Id)?.Count ?? 0,
+                        HealthComplete = registered.GetValueOrDefault(p.Id)?.Complete ?? 0,
                         FormsOnFile = onFile.GetValueOrDefault(p.Id),
                         Viewers = HealthAccessRules.Viewers(staff, p, s).OrderBy(m => m.LastName)
                             .Select(m => new { m.Id, m.Name, Role = HealthAccessRules.RoleLabel(m.Role) }),

@@ -24,7 +24,7 @@ public sealed class AccessSeed(TimeProvider time) : ISeedModule
         var now = time.GetUtcNow().UtcDateTime;
         await SeedStaff(db, now, ct);
         await SeedHealthSettings(db, ct);
-        await BackfillDayCampForms(db, ct);
+        await BackfillEmbeddedForms(db, ct);
     }
 
     static async Task SeedStaff(CampDbContext db, DateTime now, CancellationToken ct)
@@ -70,25 +70,29 @@ public sealed class AccessSeed(TimeProvider time) : ISeedModule
     }
 
     /// <summary>
-    /// Fills only a null HealthJson on Day Camp registrations already marked Complete, so no status,
-    /// count or balance changes. Answers are fictional and deterministic.
+    /// Fills only a null HealthJson on embedded-form registrations (Day Camp, Family Camp and the other programs that
+    /// collect health here) already marked Complete, so no status,
+    /// count or balance changes. Allergies, dietary needs and ADA needs come from the camper's profile,
+    /// as checkout would have prefilled them; only medications, physician and insurance are made up (deterministic).
     /// </summary>
-    static async Task BackfillDayCampForms(CampDbContext db, CancellationToken ct)
+    static async Task BackfillEmbeddedForms(CampDbContext db, CancellationToken ct)
     {
-        var regs = await db.Registrations
-            .Where(r => r.Session.Program.Slug == "day-camp-atlanta" && r.HealthStatus == FormStatus.Complete && r.HealthJson == null)
+        var regs = await db.Registrations.Include(r => r.Person)
+            .Where(r => r.Session.Program.HealthMechanism == HealthMechanism.Embedded && r.HealthStatus == FormStatus.Complete && r.HealthJson == null)
             .ToListAsync(ct);
-        string[] allergies = ["None known", "Peanuts", "None known", "Penicillin", "Bee stings", "None known", "Tree nuts", "Seasonal pollen"];
-        string[] medications = ["None", "None", "Albuterol inhaler as needed", "None", "EpiPen, carried by counselor", "Cetirizine 10 mg each morning"];
-        string[] dietary = ["None", "Vegetarian", "None", "Gluten-free", "None"];
+        string[] medications = ["None", "None", "Albuterol inhaler as needed", "None", "Methylphenidate 10 mg at lunch, given by the camp nurse"];
         string[] doctors = ["Dr. Alicia Moore", "Dr. James Whitfield", "Dr. Priya Raman", "Dr. Thomas Greer", "Dr. Hannah Cole"];
         string[] insurers = ["Blue Cross Blue Shield of Georgia", "Aetna", "UnitedHealthcare", "Kaiser Permanente", "Cigna"];
         foreach (var r in regs)
         {
             var i = r.Id;
+            var allergies = string.IsNullOrWhiteSpace(r.Person.Allergies) ? "None known" : r.Person.Allergies;
+            var medication = allergies.Contains("peanut", StringComparison.OrdinalIgnoreCase) || allergies.Contains("bee", StringComparison.OrdinalIgnoreCase)
+                ? "EpiPen, carried by counselor"
+                : medications[i % medications.Length];
             r.HealthJson = JsonSerializer.Serialize(new HealthForm(
-                dietary[i % dietary.Length], allergies[i % allergies.Length], i % 9 == 0 ? "Needs shade breaks; uses a hat and sunscreen" : null,
-                medications[i % medications.Length], doctors[i % doctors.Length], $"(404) 555-01{i % 100:00}", insurers[i % insurers.Length]));
+                string.IsNullOrWhiteSpace(r.Person.Dietary) ? "None" : r.Person.Dietary, allergies, r.Person.AdaNeeds,
+                medication, doctors[i % doctors.Length], $"(404) 555-01{i % 100:00}", insurers[i % insurers.Length]));
         }
         await db.SaveChangesAsync(ct);
     }
