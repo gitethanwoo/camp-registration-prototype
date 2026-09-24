@@ -160,6 +160,9 @@ function register(sessionId: number) {
               <Button v-else-if="program.type === 'Admittance'" class="w-full" @click="router.push(`/apply/${s.id}`)">
                 {{ program.sessions.length > 1 ? `Apply for ${s.name}` : 'Apply' }}
               </Button>
+              <Button v-else-if="program.type === 'Cohort'" class="w-full" @click="router.push(`/groups/new/${s.id}`)">
+                Register your group
+              </Button>
             </template>
             <Alert v-if="!standard">
               <Info class="size-4" />
@@ -170,7 +173,7 @@ function register(sessionId: number) {
                 {{
                   program.type === 'Admittance'
                     ? 'Couples apply first; your card is authorized, not charged, until approval.'
-                    : "The group leader registers the cohort and each attendee completes forms by secure link. This flow isn't part of the prototype yet."
+                    : 'The group leader registers the cohort and each attendee completes forms by secure link.'
                 }}
               </AlertDescription>
             </Alert>
