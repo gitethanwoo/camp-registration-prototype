@@ -154,7 +154,8 @@ internal sealed class ActivityAssignmentConfig : IEntityTypeConfiguration<Activi
         b.Property(x => x.Source).HasMaxLength(20);
         b.HasOne<Registration>().WithMany().HasForeignKey(x => x.RegistrationId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<ActivitySlot>().WithMany().HasForeignKey(x => x.SlotId).OnDelete(DeleteBehavior.NoAction);
-        b.HasIndex(x => new { x.RegistrationId, x.Period });
+        // One place per camper per period: a second concurrent write fails instead of double-booking.
+        b.HasIndex(x => new { x.RegistrationId, x.Period }).IsUnique();
         b.HasIndex(x => x.SessionId);
         b.HasIndex(x => x.SlotId);
     }

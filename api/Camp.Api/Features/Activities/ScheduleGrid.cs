@@ -79,17 +79,7 @@ internal sealed class ScheduleGrid
         string Name(int registrationId) => campers.TryGetValue(registrationId, out var c) ? c.Name : "A camper outside this block";
 
         var conflicts = new List<object>();
-        foreach (var g in Places.Where(p => slot.ContainsKey(p.SlotId)).GroupBy(p => (p.RegistrationId, p.Period)).Where(g => g.Count() > 1))
-            conflicts.Add(new
-            {
-                Kind = "DoubleBooked",
-                g.Key.RegistrationId,
-                Camper = Name(g.Key.RegistrationId),
-                Grade = campers.GetValueOrDefault(g.Key.RegistrationId)?.Grade,
-                g.Key.Period,
-                SlotIds = g.Select(p => p.SlotId),
-                Message = $"{Name(g.Key.RegistrationId)} is in {string.Join(" and ", g.Select(p => slot[p.SlotId].Name))} in Period {g.Key.Period}.",
-            });
+        // A camper can't hold two places in one period (a unique index), so conflicts are about slots and grades.
         foreach (var s in Slots.Where(s => bySlot.GetValueOrDefault(s.SlotId)?.Count > s.Capacity))
             conflicts.Add(new
             {
@@ -159,7 +149,6 @@ internal sealed class ScheduleGrid
                             p.RegistrationId,
                             Name = Name(p.RegistrationId),
                             Grade = campers.GetValueOrDefault(p.RegistrationId)?.Grade,
-                            DoubleBooked = Places.Count(x => x.RegistrationId == p.RegistrationId && x.Period == s.Period) > 1,
                             Choices = Choices.Where(c => c.RegistrationId == p.RegistrationId && c.Period == s.Period).OrderBy(c => c.Rank)
                                 .Select(c => Slots.FirstOrDefault(x => x.ActivityId == c.ActivityId)?.Name ?? ""),
                         }).OrderBy(x => x.Name),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, TriangleAlert } from '@lucide/vue'
+import { ArrowLeft, Lock, TriangleAlert } from '@lucide/vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, ApiError } from '@/lib/api'
-import { dateRange } from '@/lib/format'
+import { date, dateRange } from '@/lib/format'
 import ActivityDetailSheet from './ActivityDetailSheet.vue'
 import PeriodPicker from './PeriodPicker.vue'
 import { isFull, periodProblem, toggleRank, useInstead } from './ranking'
@@ -37,8 +37,13 @@ async function load(keepChoices = false) {
 }
 onMounted(() => load())
 
+// Periods staff placed on the schedule stay as they are; the family sees them but can't change them.
+const lockedPlace = (period: number) => data.value?.placed.find((x) => x.period === period && x.locked) ?? null
+const open = computed(() => (data.value?.periods ?? []).filter((p) => !lockedPlace(p.period)))
+const deadline = computed(() => date(data.value?.changeDeadline, { month: 'long', day: 'numeric' }))
+
 const problems = computed(() =>
-  (data.value?.periods ?? [])
+  open.value
     .map((p) => periodProblem(data.value?.firstName ?? '', p, ranked[p.period] ?? []))
     .filter((x): x is string => !!x),
 )
@@ -50,9 +55,9 @@ async function save() {
   if (problems.value.length) return
   saving.value = true
   try {
-    const choices = Object.entries(ranked)
-      .filter(([, ids]) => ids.length)
-      .map(([period, ids]) => ({ period: Number(period), ranked: ids }))
+    const choices = open.value
+      .map((p) => ({ period: p.period, ranked: ranked[p.period] ?? [] }))
+      .filter((c) => c.ranked.length)
     await api.put(`/family/activities/${props.registrationId}`, { choices })
     toast.success(`${data.value?.firstName}'s activities are saved.`)
     router.push('/family')
@@ -92,44 +97,74 @@ const sheetOption = computed(() =>
       <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">Choose activities for {{ data.firstName }}</h1>
       <p class="mt-1 text-muted-foreground">
         {{ dateRange(data.startDate, data.endDate) }} · {{ data.gradeLabel }} · {{ data.block }}.
-        <template v-if="placed">Placed in {{ placed }} of 3 periods. Saving replaces those places.</template>
+        <template v-if="!data.canChange">Activity choices closed on {{ deadline }}.</template>
+        <template v-else-if="placed">Placed in {{ placed }} of 3 periods. Saving replaces those places.</template>
         <template v-else>Rank up to three per period; we place {{ data.firstName }} in the first with room.</template>
+        <template v-if="data.canChange"> You can change them until {{ deadline }}.</template>
       </p>
 
-      <Alert v-if="message" variant="destructive" class="mt-6" aria-live="assertive">
-        <TriangleAlert class="size-4" />
-        <AlertTitle>Not saved</AlertTitle>
-        <AlertDescription>{{ message }}</AlertDescription>
-      </Alert>
+      <template v-if="!data.canChange">
+        <Alert class="mt-6 max-w-2xl">
+          <Lock class="size-4" />
+          <AlertTitle>Activities are set for camp</AlertTitle>
+          <AlertDescription>
+            {{
+              placed
+                ? `${data.firstName}: ${data.placed.map((x) => `Period ${x.period}, ${x.name}`).join(' · ')}.`
+                : `${data.firstName} hasn't been placed yet.`
+            }}
+            Call the camp office if something needs to change.
+          </AlertDescription>
+        </Alert>
+        <div class="mt-6">
+          <Button variant="outline" as-child><RouterLink to="/family">Back to family home</RouterLink></Button>
+        </div>
+      </template>
+      <template v-else>
+        <Alert v-if="message" variant="destructive" class="mt-6" aria-live="assertive">
+          <TriangleAlert class="size-4" />
+          <AlertTitle>Not saved</AlertTitle>
+          <AlertDescription>{{ message }}</AlertDescription>
+        </Alert>
 
-      <div class="mt-6 grid gap-4">
-        <PeriodPicker
-          v-for="p in data.periods"
-          :key="p.period"
-          :period="p"
-          :ranked="ranked[p.period] ?? []"
-          :max-ranks="MAX"
-          :camper-name="data.firstName"
-          :invalid="attempted && !!periodProblem('', p, ranked[p.period] ?? [])"
-          @toggle="(id) => (ranked[p.period] = toggleRank(ranked[p.period] ?? [], id, MAX))"
-          @use-instead="(id) => (ranked[p.period] = useInstead(p, ranked[p.period] ?? [], id))"
-          @details="(id) => (sheet = { activityId: id, period: p.period })"
-        />
-      </div>
+        <div class="mt-6 grid gap-4">
+          <template v-for="p in data.periods" :key="p.period">
+            <Alert v-if="lockedPlace(p.period)" :data-testid="`period-${p.period}`">
+              <Lock class="size-4" />
+              <AlertTitle>Period {{ p.period }} · {{ lockedPlace(p.period)?.name }}</AlertTitle>
+              <AlertDescription>
+                Our staff placed {{ data.firstName }} in {{ lockedPlace(p.period)?.name }}. Call the camp office to
+                change it.
+              </AlertDescription>
+            </Alert>
+            <PeriodPicker
+              v-else
+              :period="p"
+              :ranked="ranked[p.period] ?? []"
+              :max-ranks="MAX"
+              :camper-name="data.firstName"
+              :invalid="attempted && !!periodProblem('', p, ranked[p.period] ?? [])"
+              @toggle="(id) => (ranked[p.period] = toggleRank(ranked[p.period] ?? [], id, MAX))"
+              @use-instead="(id) => (ranked[p.period] = useInstead(p, ranked[p.period] ?? [], id))"
+              @details="(id) => (sheet = { activityId: id, period: p.period })"
+            />
+          </template>
+        </div>
 
-      <Alert v-if="attempted && problems.length" variant="destructive" class="mt-6">
-        <TriangleAlert class="size-4" />
-        <AlertTitle>Before you save</AlertTitle>
-        <AlertDescription
-          ><ul class="list-disc pl-4">
-            <li v-for="p in problems" :key="p">{{ p }}</li>
-          </ul></AlertDescription
-        >
-      </Alert>
-      <div class="mt-6 flex items-center justify-end gap-3">
-        <Button variant="ghost" as-child><RouterLink to="/family">Cancel</RouterLink></Button>
-        <Button size="lg" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save activities' }}</Button>
-      </div>
+        <Alert v-if="attempted && problems.length" variant="destructive" class="mt-6">
+          <TriangleAlert class="size-4" />
+          <AlertTitle>Before you save</AlertTitle>
+          <AlertDescription
+            ><ul class="list-disc pl-4">
+              <li v-for="p in problems" :key="p">{{ p }}</li>
+            </ul></AlertDescription
+          >
+        </Alert>
+        <div class="mt-6 flex items-center justify-end gap-3">
+          <Button variant="ghost" as-child><RouterLink to="/family">Cancel</RouterLink></Button>
+          <Button size="lg" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save activities' }}</Button>
+        </div>
+      </template>
 
       <ActivityDetailSheet
         :activity-id="sheet?.activityId ?? null"

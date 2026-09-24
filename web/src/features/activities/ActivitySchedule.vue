@@ -50,7 +50,7 @@ const tone: Record<CellStatus, string> = {
   'Over capacity': 'border-amber-300 bg-amber-100 text-amber-900',
 }
 const flagged = (c: ScheduleCell, r: ScheduleRow) =>
-  c.campers.filter((p) => p.doubleBooked || (p.grade !== null && (p.grade < r.gradeMin || p.grade > r.gradeMax))).length
+  c.campers.filter((p) => p.grade !== null && (p.grade < r.gradeMin || p.grade > r.gradeMax)).length
 
 // Cell detail
 const open = ref<{ activityId: number; period: number } | null>(null)
@@ -173,19 +173,9 @@ async function confirmAssign() {
           <ul class="divide-y text-sm">
             <li v-for="(c, i) in s.conflicts" :key="i" class="flex flex-wrap items-center justify-between gap-2 py-2">
               <span class="flex min-w-0 items-center gap-2">
-                <Badge
-                  variant="outline"
-                  :class="
-                    c.kind === 'DoubleBooked'
-                      ? 'border-red-200 bg-red-50 text-red-800'
-                      : 'border-amber-200 bg-amber-50 text-amber-800'
-                  "
-                  >{{
-                    { DoubleBooked: 'Double-booked', OverCapacity: 'Over capacity', OutsideGrades: 'Outside grades' }[
-                      c.kind
-                    ]
-                  }}</Badge
-                >
+                <Badge variant="outline" class="border-amber-200 bg-amber-50 text-amber-800">{{
+                  { OverCapacity: 'Over capacity', OutsideGrades: 'Outside grades' }[c.kind]
+                }}</Badge>
                 <span class="min-w-0">{{ c.message }}</span>
               </span>
               <Button size="sm" variant="outline" @click="openSlot(c.slotIds[0] ?? 0)">Review</Button>

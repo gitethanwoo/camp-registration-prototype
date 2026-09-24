@@ -3,7 +3,6 @@ import { MapPin, TriangleAlert, UserRound } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api } from '@/lib/api'
@@ -37,16 +36,6 @@ function targets(c: ScheduleCamper) {
     .map((r) => ({ row: r, cell: r.cells.find((x) => x.period === cell.period) }))
     .filter((x): x is { row: ScheduleRow; cell: ScheduleCell } => !!x.cell && x.cell.assigned < x.cell.capacity)
 }
-/** The other activity a double-booked camper is in this period. */
-const otherBooking = (c: ScheduleCamper) =>
-  props.schedule.rows.find(
-    (r) =>
-      r.activityId !== props.row?.activityId &&
-      r.cells.some(
-        (x) => x.period === props.cell?.period && x.campers.some((p) => p.registrationId === c.registrationId),
-      ),
-  )?.name
-
 async function move(c: ScheduleCamper, toSlotId: string) {
   const cell = props.cell
   if (!cell) return
@@ -66,29 +55,7 @@ async function move(c: ScheduleCamper, toSlotId: string) {
     busy.value = false
   }
 }
-async function keep(c: ScheduleCamper) {
-  const cell = props.cell
-  if (!cell) return
-  busy.value = true
-  try {
-    await api.post(`/admin/ops/sessions/${props.schedule.session.id}/activities/keep`, {
-      registrationId: c.registrationId,
-      period: cell.period,
-      keepSlotId: cell.slotId,
-    })
-    toast.success(`${c.name} stays in ${props.row?.name}; the other booking is removed.`)
-    emit('changed')
-  } catch (e) {
-    toast.error(describe(e, "That didn't save. Refresh and try again."))
-  } finally {
-    busy.value = false
-  }
-}
-const sorted = computed(() =>
-  (props.cell?.campers ?? []).toSorted(
-    (a, b) => Number(b.doubleBooked || outside(b)) - Number(a.doubleBooked || outside(a)),
-  ),
-)
+const sorted = computed(() => (props.cell?.campers ?? []).toSorted((a, b) => Number(outside(b)) - Number(outside(a))))
 </script>
 
 <template>
@@ -129,23 +96,14 @@ const sorted = computed(() =>
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-medium">{{ c.name }}</span>
               <span class="text-sm text-muted-foreground">Grade {{ c.grade ?? '—' }}</span>
-              <Badge v-if="c.doubleBooked" variant="outline" class="border-red-200 bg-red-50 text-red-800"
-                >Double-booked</Badge
-              >
               <Badge v-if="outside(c)" variant="outline" class="border-amber-200 bg-amber-50 text-amber-800"
                 >Outside grades</Badge
               >
             </div>
-            <p v-if="c.doubleBooked" class="text-sm text-red-800">
-              Also in {{ otherBooking(c) ?? 'another activity' }} this period.
-            </p>
             <p v-if="c.choices.length" class="text-xs text-muted-foreground">
               Ranked: <template v-for="(n, i) in c.choices" :key="n">{{ i ? ', ' : '' }}{{ i + 1 }}. {{ n }}</template>
             </p>
             <div v-if="canEdit" class="flex flex-wrap gap-2">
-              <Button v-if="c.doubleBooked" size="sm" variant="outline" :disabled="busy" @click="keep(c)"
-                >Keep in {{ row.name }}</Button
-              >
               <Select :disabled="busy || !targets(c).length" @update:model-value="(v) => move(c, String(v))">
                 <SelectTrigger size="sm" class="w-full sm:w-56" :aria-label="`Move ${c.name}`">
                   <SelectValue :placeholder="targets(c).length ? 'Move to…' : 'No other activity has room'" />

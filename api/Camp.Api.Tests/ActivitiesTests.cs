@@ -245,10 +245,9 @@ public class ActivitiesTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var friendReg = await factory.WithDb(db => db.Registrations.Where(r => r.PersonId == friend.PersonIds[0]).Select(r => r.Id).SingleAsync());
 
         var asker = await NewFamily("Asker", 4);
-        // The check says yes or no and nothing else.
-        var check = await Json(await asker.Client.PostAsJsonAsync($"/api/sessions/{s.SessionId}/cabinmates/check", new { name = "Kid0 Friend", contact = friend.Email }));
-        Assert.True(check.GetProperty("matched").GetBoolean());
-        Assert.False((await Json(await asker.Client.PostAsJsonAsync($"/api/sessions/{s.SessionId}/cabinmates/check", new { name = "Kid0 Friend", contact = "WS-000000" }))).GetProperty("matched").GetBoolean());
+        // There's no way to ask whether a named child is registered; checkout matches silently.
+        var probe = await asker.Client.PostAsJsonAsync($"/api/sessions/{s.SessionId}/cabinmates/check", new { name = "Kid0 Friend", contact = friend.Email });
+        Assert.Equal(HttpStatusCode.NotFound, probe.StatusCode);
 
         var three = new List<CabinmateInput> { new("A B", "a@example.com"), new("C D", "c@example.com"), new("E F", "e@example.com") };
         var tooMany = await CheckoutHttp(asker, s, choices, cabinmates: three);
@@ -280,6 +279,185 @@ public class ActivitiesTests(ApiFactory factory) : IClassFixture<ApiFactory>
         });
     }
 
+    // ── review fixes: seats end with the registration, races, deadlines ────────
+
+    [Fact]
+    public async Task Cancelling_a_registration_gives_back_its_activity_seats_and_cabinmate_requests()
+    {
+        var s = await IsolatedOvernight(capacity: 5);
+        var ids = await ActivityIds();
+        var choices = new List<ActivityChoice> { new(1, [ids["Archery"]]), new(2, [ids["Swimming"]]), new(3, [ids["Crafts"]]) };
+        var friend = await NewFamily("CancelFriend", 4);
+        Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(friend, s, choices)).StatusCode);
+        var code = await factory.WithDb(db => db.Orders.Where(o => o.HouseholdId == friend.HouseholdId).Select(o => o.ConfirmationCode).SingleAsync());
+        var family = await NewFamily("Cancelling", 4);
+        Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(family, s, choices, cabinmates: [new("Kid0", code)])).StatusCode);
+        var reg = await RegOf(family.PersonIds[0]);
+        Assert.Equal(3, await factory.WithDb(db => db.Set<ActivityAssignment>().CountAsync(a => a.RegistrationId == reg)));
+
+        var res = await (await Admin()).PostAsJsonAsync($"/api/admin/registrations/{reg}/cancel", new { reason = "Family plans changed", refundCents = 0 });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        await factory.WithDb(async db =>
+        {
+            Assert.False(await db.Set<ActivityAssignment>().AnyAsync(a => a.RegistrationId == reg));
+            Assert.False(await db.Set<ActivityPreference>().AnyAsync(a => a.RegistrationId == reg));
+            Assert.False(await db.Set<CabinmateRequest>().AnyAsync(c => c.RegistrationId == reg));
+            Assert.False(await db.Set<OpsBuddyRequest>().AnyAsync(b => b.RegistrationId == reg || b.RequestedRegistrationId == reg));
+            return 0;
+        });
+        // Each slot counts only the friend now: one seat back per period.
+        Assert.All(await SlotCounts(s), x => Assert.True(x <= 1));
+        await AssertCountersMatchRows(s);
+    }
+
+    [Fact]
+    public async Task Transferring_to_another_session_gives_back_the_old_sessions_activity_seats()
+    {
+        var from = await IsolatedOvernight(capacity: 5);
+        var to = await IsolatedOvernight(capacity: 5);
+        var ids = await ActivityIds();
+        var family = await NewFamily("Transferring", 4);
+        Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(family, from, [new(1, [ids["Archery"]]), new(2, [ids["Swimming"]])])).StatusCode);
+        var reg = await RegOf(family.PersonIds[0]);
+        var requestId = await factory.WithDb(async db =>
+        {
+            var r = await db.Registrations.SingleAsync(x => x.Id == reg);
+            var t = new Camp.Api.Features.StaffCx.TransferRequest
+            {
+                RegistrationId = reg,
+                HouseholdId = r.HouseholdId,
+                FromSessionId = from.SessionId,
+                FromPoolId = r.PoolId,
+                ToSessionId = to.SessionId,
+                Reason = "Different week",
+                RequestedBy = "Parent",
+                CreatedAt = factory.Clock.GetUtcNow().UtcDateTime,
+                Status = Camp.Api.Features.StaffCx.TransferStatus.Pending,
+            };
+            db.Add(t);
+            await db.SaveChangesAsync();
+            return t.Id;
+        });
+
+        var res = await (await factory.SignInAsStaff()).PostAsJsonAsync($"/api/admin/transfers/{requestId}/approve", new { note = (string?)null });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal(to.SessionId, await factory.WithDb(db => db.Registrations.Where(r => r.Id == reg).Select(r => r.SessionId).SingleAsync()));
+        Assert.False(await factory.WithDb(db => db.Set<ActivityAssignment>().AnyAsync(a => a.RegistrationId == reg)));
+        Assert.All(await SlotCounts(from), x => Assert.Equal(0, x));
+        await AssertCountersMatchRows(from);
+    }
+
+    [Fact]
+    public async Task Deactivating_an_activity_with_placed_campers_is_refused()
+    {
+        var admin = await Admin();
+        var climbing = await factory.WithDb(db => db.Set<Activity>().SingleAsync(a => a.Name == "Climbing"));
+        var res = await admin.PutAsJsonAsync($"/api/admin/setup/activities/{climbing.Id}", FromActivity(climbing) with { IsActive = false });
+        Assert.Contains("isActive", await Errors(res));
+        Assert.True(await factory.WithDb(db => db.Set<Activity>().Where(a => a.Id == climbing.Id).Select(a => a.IsActive).SingleAsync()));
+
+        // An activity nobody is placed in can still be made inactive.
+        var created = await Json(await admin.PostAsJsonAsync("/api/admin/setup/activities", Input("Stargazing")));
+        var id = created.GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutAsJsonAsync($"/api/admin/setup/activities/{id}", Input("Stargazing") with { IsActive = false })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Families_cannot_change_periods_staff_placed()
+    {
+        var s = await IsolatedOvernight(capacity: 5);
+        var ids = await ActivityIds();
+        var family = await NewFamily("StaffPlaced", 4);
+        Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(family, s, [new(1, [ids["Archery"]]), new(2, [ids["Swimming"]]), new(3, [ids["Crafts"]])])).StatusCode);
+        var reg = await RegOf(family.PersonIds[0]);
+        var move = await (await factory.SignInAsStaff()).PostAsJsonAsync($"/api/admin/ops/sessions/{s.SessionId}/activities/move",
+            new { registrationId = reg, fromSlotId = await SlotId(s, s.JuniorsId, "Archery", 1), toSlotId = await SlotId(s, s.JuniorsId, "Canoeing", 1) });
+        Assert.Equal(HttpStatusCode.OK, move.StatusCode);
+
+        var context = await Json(await family.Client.GetAsync($"/api/family/activities/{reg}"));
+        Assert.True(context.GetProperty("canChange").GetBoolean());
+        Assert.True(context.GetProperty("placed").EnumerateArray().Single(p => p.GetProperty("period").GetInt32() == 1).GetProperty("locked").GetBoolean());
+
+        var url = $"/api/family/activities/{reg}";
+        var undo = await family.Client.PutAsJsonAsync(url, new { choices = new[] { new ActivityChoice(1, [ids["Archery"]]), new ActivityChoice(2, [ids["Crafts"]]) } });
+        Assert.Equal(HttpStatusCode.BadRequest, undo.StatusCode);
+        Assert.Contains("Staff placed Kid0 in Canoeing for Period 1", await undo.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, (await family.Client.PutAsJsonAsync(url, new { choices = new[] { new ActivityChoice(2, [ids["Crafts"]]) } })).StatusCode);
+
+        var placed = await Placed(s);
+        Assert.Equal("Canoeing", placed[(family.PersonIds[0], 1)]);
+        Assert.Equal("Crafts", placed[(family.PersonIds[0], 2)]);
+        await AssertCountersMatchRows(s);
+    }
+
+    [Fact]
+    public async Task Family_activity_changes_close_a_week_before_camp()
+    {
+        var s = await IsolatedOvernight(capacity: 5);
+        var ids = await ActivityIds();
+        var family = await NewFamily("LateChange", 4);
+        Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(family, s, [new(1, [ids["Archery"]])])).StatusCode);
+        var reg = await RegOf(family.PersonIds[0]);
+        var today = DateOnly.FromDateTime(factory.Clock.GetUtcNow().UtcDateTime);
+        await factory.WithDb(db => db.Sessions.Where(x => x.Id == s.SessionId)
+            .ExecuteUpdateAsync(x => x.SetProperty(y => y.StartDate, today.AddDays(5)).SetProperty(y => y.EndDate, today.AddDays(10))));
+
+        var context = await Json(await family.Client.GetAsync($"/api/family/activities/{reg}"));
+        Assert.False(context.GetProperty("canChange").GetBoolean());
+        Assert.Equal(today.AddDays(-2).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), context.GetProperty("changeDeadline").GetString());
+        var res = await family.Client.PutAsJsonAsync($"/api/family/activities/{reg}", new { choices = new[] { new ActivityChoice(1, [ids["Crafts"]]) } });
+        Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+        Assert.Contains("closed", await res.Content.ReadAsStringAsync());
+        Assert.Equal("Archery", (await Placed(s))[(family.PersonIds[0], 1)]);
+        var overview = await Json(await family.Client.GetAsync("/api/family/overview"));
+        var item = overview.GetProperty("checklist").EnumerateArray().Single(c => c.GetProperty("href").GetString() == $"/family/activities/{reg}");
+        Assert.Equal("View activities", item.GetProperty("action").GetString());
+        Assert.DoesNotContain("change by", item.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task Concurrent_family_saves_answer_200_or_409_and_never_double_count()
+    {
+        var s = await IsolatedOvernight(capacity: 3);
+        var ids = await ActivityIds();
+        var families = new List<(Family F, int Reg)>();
+        for (var i = 0; i < 4; i++)
+        {
+            var f = await NewFamily($"Race{i}", 4);
+            Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(f, s, [new(1, [ids["Crafts"], ids["Archery"]])])).StatusCode);
+            families.Add((f, await RegOf(f.PersonIds[0])));
+        }
+        // Everyone switches every period at once, in different orders, six times over.
+        var names = new[] { "Archery", "Swimming", "Canoeing" };
+        var saves = families.SelectMany((x, i) => Enumerable.Range(0, 6).Select(k => x.F.Client.PutAsJsonAsync($"/api/family/activities/{x.Reg}", new
+        {
+            choices = Enumerable.Range(1, 3).Select(p => new ActivityChoice(p, [ids[names[(i + k + p) % 3]], ids[names[(i + k + p + 1) % 3]], ids["Crafts"]])),
+        }))).ToList();
+        var results = await Task.WhenAll(saves);
+        foreach (var r in results)
+            Assert.True(r.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict, $"{(int)r.StatusCode}: {await r.Content.ReadAsStringAsync()}");
+        await AssertCountersMatchRows(s);
+        Assert.All(await SlotCounts(s), x => Assert.True(x <= 3));
+    }
+
+    [Fact]
+    public async Task A_waitlisted_camper_gets_no_places_or_saved_choices()
+    {
+        var s = await IsolatedOvernight(capacity: 5);
+        await factory.WithDb(db => db.CapacityPools.Where(p => p.Id == s.PoolId).ExecuteUpdateAsync(x => x.SetProperty(p => p.Capacity, 0)));
+        var ids = await ActivityIds();
+        var family = await NewFamily("Waiting", 4);
+        Assert.Equal(HttpStatusCode.OK, (await CheckoutHttp(family, s, [new(1, [ids["Archery"]])])).StatusCode);
+        await factory.WithDb(async db =>
+        {
+            Assert.True(await db.WaitlistEntries.AnyAsync(w => w.PersonId == family.PersonIds[0] && w.PoolId == s.PoolId));
+            Assert.False(await db.Registrations.AnyAsync(r => r.PersonId == family.PersonIds[0]));
+            return 0;
+        });
+        Assert.Empty(await Placed(s));
+        Assert.All(await SlotCounts(s), x => Assert.Equal(0, x));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     internal sealed record Overnight(int SessionId, int PoolId, int JuniorsId, int SeniorsId);
@@ -290,6 +468,14 @@ public class ActivitiesTests(ApiFactory factory) : IClassFixture<ApiFactory>
     static ActivityInput Input(string name) => new(name, "Outdoor skills", "Something to do at camp.", "Water bottle.", "/images/activities/archery.svg", 3, 8, 24, 8, "", "Field", true);
 
     static ActivityInput FromActivity(Activity a) => new(a.Name, a.Category, a.Description, a.WhatToBring, a.ImageUrl, a.GradeMin, a.GradeMax, a.DefaultCapacity, a.StaffRatio, a.Instructor, a.Space, a.IsActive);
+
+    Task<int> RegOf(int personId) => factory.WithDb(db => db.Registrations.Where(r => r.PersonId == personId).OrderByDescending(r => r.Id).Select(r => r.Id).FirstAsync());
+
+    Task<int> SlotId(Overnight s, int blockId, string activity, int period) => factory.WithDb(db =>
+        db.Set<ActivitySlot>().Where(x => x.SessionId == s.SessionId && x.BlockId == blockId && x.Period == period)
+            .Join(db.Set<Activity>().Where(a => a.Name == activity), x => x.ActivityId, a => a.Id, (x, a) => x.Id).SingleAsync());
+
+    Task<List<int>> SlotCounts(Overnight s) => factory.WithDb(db => db.Set<ActivitySlot>().Where(x => x.SessionId == s.SessionId).Select(x => x.Assigned).ToListAsync());
 
     Task<Dictionary<string, int>> ActivityIds() => factory.WithDb(db => db.Set<Activity>().ToDictionaryAsync(a => a.Name, a => a.Id));
 
@@ -440,8 +626,8 @@ public class ActivitiesScheduleTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.Equal(23, Cell(juniors, "Climbing", 2).GetProperty("assigned").GetInt32());
         Assert.Equal("Over capacity", Cell(seniors, "Swimming", 2).GetProperty("status").GetString());
         var kinds = seniors.GetProperty("conflicts").EnumerateArray().Select(c => c.GetProperty("kind").GetString()).ToList();
-        Assert.Contains("DoubleBooked", kinds);
         Assert.Contains("OverCapacity", kinds);
+        Assert.DoesNotContain("DoubleBooked", kinds); // one place per camper per period is a unique index now
         Assert.Contains("OutsideGrades", juniors.GetProperty("conflicts").EnumerateArray().Select(c => c.GetProperty("kind").GetString()));
 
         // Seeding activities left the canonical readiness numbers alone.
@@ -519,7 +705,7 @@ public class ActivitiesScheduleTests(ApiFactory factory) : IClassFixture<ApiFact
         var diane = await factory.SignInAsStaff();
         var grid = await Json(await diane.GetAsync($"/api/admin/ops/sessions/{id}/activities"));
         var crafts = Cell(grid, "Crafts", 1);
-        var camper = crafts.GetProperty("campers").EnumerateArray().First(c => c.GetProperty("grade").GetInt32() == 3 && !c.GetProperty("doubleBooked").GetBoolean());
+        var camper = crafts.GetProperty("campers").EnumerateArray().First(c => c.GetProperty("grade").GetInt32() == 3);
         var reg = camper.GetProperty("registrationId").GetInt32();
         var from = crafts.GetProperty("slotId").GetInt32();
         var url = $"/api/admin/ops/sessions/{id}/activities/move";
@@ -545,23 +731,25 @@ public class ActivitiesScheduleTests(ApiFactory factory) : IClassFixture<ApiFact
     }
 
     [Fact]
-    public async Task Keeping_one_activity_resolves_a_double_booking_and_is_audited()
+    public async Task Moving_a_camper_out_of_an_over_capacity_slot_resolves_the_conflict()
     {
         var id = await SessionId();
         var diane = await factory.SignInAsStaff();
         var juniors = await Json(await diane.GetAsync($"/api/admin/ops/sessions/{id}/activities"));
         var seniorsId = juniors.GetProperty("blocks")[1].GetProperty("id").GetInt32();
         var grid = await Json(await diane.GetAsync($"/api/admin/ops/sessions/{id}/activities?blockId={seniorsId}"));
-        var conflict = grid.GetProperty("conflicts").EnumerateArray().First(c => c.GetProperty("kind").GetString() == "DoubleBooked");
-        var reg = conflict.GetProperty("registrationId").GetInt32();
-        var keep = Cell(grid, "Climbing", 2).GetProperty("slotId").GetInt32();
+        var swimming = Cell(grid, "Swimming", 2);
+        Assert.Equal(25, swimming.GetProperty("assigned").GetInt32());
+        var camper = swimming.GetProperty("campers")[0].GetProperty("registrationId").GetInt32();
+        var crafts = Cell(grid, "Crafts", 2);
+        Assert.True(crafts.GetProperty("assigned").GetInt32() < crafts.GetProperty("capacity").GetInt32());
 
-        var res = await diane.PostAsJsonAsync($"/api/admin/ops/sessions/{id}/activities/keep", new { registrationId = reg, period = 2, keepSlotId = keep });
+        var res = await diane.PostAsJsonAsync($"/api/admin/ops/sessions/{id}/activities/move",
+            new { registrationId = camper, fromSlotId = swimming.GetProperty("slotId").GetInt32(), toSlotId = crafts.GetProperty("slotId").GetInt32() });
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         var after = await Json(await diane.GetAsync($"/api/admin/ops/sessions/{id}/activities?blockId={seniorsId}"));
-        Assert.DoesNotContain(after.GetProperty("conflicts").EnumerateArray(), c => c.GetProperty("kind").GetString() == "DoubleBooked" && c.GetProperty("registrationId").GetInt32() == reg);
-        Assert.Equal(24, Cell(after, "Swimming", 2).GetProperty("assigned").GetInt32()); // back to capacity
-        Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(e => e.Action == "activities.double_booking_resolved")));
+        Assert.Equal("Full", Cell(after, "Swimming", 2).GetProperty("status").GetString());
+        Assert.DoesNotContain(after.GetProperty("conflicts").EnumerateArray(), c => c.GetProperty("kind").GetString() == "OverCapacity");
         await AssertCountersMatchRows(id);
     }
 
@@ -573,6 +761,7 @@ public class ActivitiesScheduleTests(ApiFactory factory) : IClassFixture<ApiFact
         var item = overview.GetProperty("checklist").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == "activities");
         Assert.False(item.GetProperty("done").GetBoolean());
         Assert.Equal("Choose activities", item.GetProperty("action").GetString());
+        Assert.StartsWith("Not chosen yet · change by ", item.GetProperty("detail").GetString());
         var href = item.GetProperty("href").GetString() ?? "";
         var reg = int.Parse(href.Split('/')[^1], System.Globalization.CultureInfo.InvariantCulture);
 
@@ -595,6 +784,83 @@ public class ActivitiesScheduleTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.True(await factory.WithDb(db => db.Set<ActivityAssignment>().CountAsync(a => a.RegistrationId == reg && a.Source == "Family")) == 3);
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(e => e.Action == "activities.chosen" && e.EntityId == reg.ToString(System.Globalization.CultureInfo.InvariantCulture))));
         await AssertCountersMatchRows(await SessionId());
+    }
+
+    static JsonElement Cell(JsonElement grid, string activity, int period) =>
+        grid.GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("name").GetString() == activity)
+            .GetProperty("cells").EnumerateArray().Single(c => c.GetProperty("period").GetInt32() == period);
+
+    async Task AssertCountersMatchRows(int sessionId) => await factory.WithDb(async db =>
+    {
+        foreach (var slot in await db.Set<ActivitySlot>().Where(x => x.SessionId == sessionId).ToListAsync())
+            Assert.Equal(await db.Set<ActivityAssignment>().CountAsync(a => a.SlotId == slot.Id), slot.Assigned);
+        return 0;
+    });
+
+    static async Task<JsonElement> Json(HttpResponseMessage res)
+    {
+        var text = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{(int)res.StatusCode}: {text}");
+        return JsonDocument.Parse(text).RootElement;
+    }
+}
+
+/// <summary>
+/// Races on the seeded ON Session 3 schedule, on a database of their own: two "Assign from
+/// preferences" at once, and two staff moving the same camper at once.
+/// </summary>
+public class ActivitiesRaceTests(ApiFactory factory) : IClassFixture<ApiFactory>
+{
+    [Fact]
+    public async Task Two_assigns_at_once_place_each_camper_once_per_period()
+    {
+        var id = await OpsTestData.SessionId(factory);
+        var diane = await factory.SignInAsStaff();
+        var alex = await factory.SignInAsStaff("admin", "Alex Morgan");
+        var grid = await Json(await diane.GetAsync($"/api/admin/ops/sessions/{id}/activities"));
+        var blockId = grid.GetProperty("block").GetProperty("id").GetInt32();
+        var pending = grid.GetProperty("pending").GetProperty("places").GetInt32();
+        Assert.True(pending > 0);
+
+        var url = $"/api/admin/ops/sessions/{id}/activities/assign";
+        var results = await Task.WhenAll(diane.PostAsJsonAsync(url, new { blockId }), alex.PostAsJsonAsync(url, new { blockId }));
+        foreach (var r in results)
+            Assert.True(r.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict, $"{(int)r.StatusCode}: {await r.Content.ReadAsStringAsync()}");
+        var placed = 0;
+        foreach (var r in results.Where(r => r.IsSuccessStatusCode))
+            placed += JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement.GetProperty("places").GetInt32();
+        Assert.Equal(pending, placed);
+
+        await factory.WithDb(async db =>
+        {
+            var pairs = await db.Set<ActivityAssignment>().Where(a => a.SessionId == id).GroupBy(a => new { a.RegistrationId, a.Period }).CountAsync(g => g.Count() > 1);
+            Assert.Equal(0, pairs);
+            return 0;
+        });
+        await AssertCountersMatchRows(id);
+    }
+
+    [Fact]
+    public async Task Two_moves_of_the_same_camper_at_once_move_them_once()
+    {
+        var id = await OpsTestData.SessionId(factory);
+        var diane = await factory.SignInAsStaff();
+        var alex = await factory.SignInAsStaff("admin", "Alex Morgan");
+        var grid = await Json(await diane.GetAsync($"/api/admin/ops/sessions/{id}/activities"));
+        var crafts = Cell(grid, "Crafts", 1);
+        var reg = crafts.GetProperty("campers")[0].GetProperty("registrationId").GetInt32();
+        var from = crafts.GetProperty("slotId").GetInt32();
+        var archery = Cell(grid, "Archery", 1).GetProperty("slotId").GetInt32();
+        var swimming = Cell(grid, "Swimming", 1).GetProperty("slotId").GetInt32();
+
+        var url = $"/api/admin/ops/sessions/{id}/activities/move";
+        var results = await Task.WhenAll(
+            diane.PostAsJsonAsync(url, new { registrationId = reg, fromSlotId = from, toSlotId = archery }),
+            alex.PostAsJsonAsync(url, new { registrationId = reg, fromSlotId = from, toSlotId = swimming }));
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Single(results, r => r.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict);
+        Assert.Equal(1, await factory.WithDb(db => db.Set<ActivityAssignment>().CountAsync(a => a.RegistrationId == reg && a.Period == 1)));
+        await AssertCountersMatchRows(id);
     }
 
     static JsonElement Cell(JsonElement grid, string activity, int period) =>

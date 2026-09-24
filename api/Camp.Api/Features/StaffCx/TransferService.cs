@@ -185,6 +185,9 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
             Rebalance(order, siblings.Sum(r => r.BalanceCents) + reg.BalanceCents);
         }
 
+        // Activity places and cabinmate requests belong to the old session's schedule; the family chooses again for the new one.
+        if (from.Id != to.Id) await Activities.ActivityRules.ReleaseAsync(db, [reg.Id], ct);
+
         req.Status = TransferStatus.Approved;
         req.DecidedBy = actor;
         req.DecidedAt = clock.UtcNow();

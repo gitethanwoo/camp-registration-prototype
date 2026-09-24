@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, Info, TriangleAlert } from '@lucide/vue'
+import { Info } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -19,7 +19,6 @@ onMounted(() => {
 function set(i: number, m: Cabinmate) {
   if (current.value) acts.setMate(current.value.id, i, m)
 }
-const match = (personId: number, i: number) => acts.matches[`${personId}:${i}`]
 const incomplete = (m: { name: string; contact: string }) => props.attempted && !m.name.trim() !== !m.contact.trim()
 </script>
 
@@ -44,7 +43,8 @@ const incomplete = (m: { name: string; contact: string }) => props.attempted && 
         <h3 class="font-semibold">{{ current.firstName }}'s requests</h3>
         <p class="text-sm text-muted-foreground">
           Up to {{ limit }} friends in this session. Enter each friend's full name and a parent's email address or the
-          friend's confirmation code (it starts with WS-).
+          friend's confirmation code (it starts with WS-). We look for them when you pay, and keep looking if they
+          register later. To protect every family's privacy, we don't show whether a camper is registered.
         </p>
       </div>
       <div class="space-y-4">
@@ -63,7 +63,6 @@ const incomplete = (m: { name: string; contact: string }) => props.attempted && 
               autocomplete="off"
               :aria-invalid="(incomplete(m) && !m.name.trim()) || undefined"
               @update:model-value="(v) => set(i, { ...m, name: String(v) })"
-              @blur="acts.checkMate(current.id, i)"
             />
           </div>
           <div class="space-y-2">
@@ -74,25 +73,8 @@ const incomplete = (m: { name: string; contact: string }) => props.attempted && 
               autocomplete="off"
               :aria-invalid="(incomplete(m) && !m.contact.trim()) || undefined"
               @update:model-value="(v) => set(i, { ...m, contact: String(v) })"
-              @blur="acts.checkMate(current.id, i)"
             />
           </div>
-          <p
-            v-if="match(current.id, i) === true"
-            class="flex items-start gap-2 text-sm text-emerald-800 sm:col-start-2 sm:col-end-4"
-            role="status"
-          >
-            <CircleCheck class="mt-0.5 size-4 shrink-0" />We found {{ m.name.trim() }} in this session. We'll pass the
-            request to the rooming team.
-          </p>
-          <p
-            v-else-if="match(current.id, i) === false"
-            class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900 sm:col-start-2 sm:col-end-4"
-            role="status"
-          >
-            <TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />Not matched yet. Check the spelling or the
-            email or code. We'll keep the request and match it if {{ m.name.trim() || 'they' }} registers later.
-          </p>
         </fieldset>
       </div>
       <div class="flex gap-3 rounded-lg border bg-muted/30 p-4 text-sm">

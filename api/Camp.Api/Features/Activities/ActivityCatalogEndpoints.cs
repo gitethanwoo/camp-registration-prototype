@@ -70,6 +70,17 @@ public sealed class ActivityCatalogEndpoints : IEndpointModule
                 return SetupResults.Invalid("defaultCapacity",
                     $"{a.Name} already has {tight.Assigned} campers in Period {tight.Period} of an upcoming session. Capacity can't go below that.");
 
+            // O4 and families only see active activities, so campers placed in one would drop out of the counts.
+            if (a.IsActive && !input.IsActive)
+            {
+                var placed = await db.Set<ActivityAssignment>()
+                    .Join(db.Set<ActivitySlot>().Where(s => s.ActivityId == id), x => x.SlotId, s => s.Id, (x, s) => x)
+                    .Join(db.Sessions.Where(s => s.EndDate >= today), x => x.SessionId, s => s.Id, (x, s) => x).CountAsync(ct);
+                if (placed > 0)
+                    return SetupResults.Invalid("isActive",
+                        $"{a.Name} has {placed} camper places in current or upcoming sessions. Move them to other activities on the activity schedule before making it inactive.");
+            }
+
             var before = Snapshot(a);
             Copy(input, a);
             var after = Snapshot(a);

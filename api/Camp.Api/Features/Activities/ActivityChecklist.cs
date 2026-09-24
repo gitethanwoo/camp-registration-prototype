@@ -8,7 +8,7 @@ namespace Camp.Api.Features.Activities;
 /// <summary>F1 checklist rows: one "Activities" item per confirmed camper in a session with an activity schedule.</summary>
 public static class ActivityChecklist
 {
-    public static async Task<List<ChecklistEntry>> ForAsync(CampDbContext db, IReadOnlyList<PaymentOrder> orders, CancellationToken ct = default)
+    public static async Task<List<ChecklistEntry>> ForAsync(CampDbContext db, IReadOnlyList<PaymentOrder> orders, DateOnly today, CancellationToken ct = default)
     {
         // A moved camper's row names the session they now attend; the program is the order's.
         var regs = orders.SelectMany(o => o.Registrations.Select(r => (Reg: r, Program: o.Session.Program.Name)))
@@ -23,15 +23,20 @@ public static class ActivityChecklist
             foreach (var (r, program) in regs.Where(x => x.Reg.SessionId == sessionId))
             {
                 var s = summaries.GetValueOrDefault(r.Id, ActivitySummary.NotChosen);
+                var deadline = ActivityRules.ChangeDeadline(r.Session.StartDate);
+                var open = today <= deadline;
+                var by = open ? $" · change by {deadline.ToString("MMM d", CultureInfo.InvariantCulture)}" : "";
                 var (detail, done) = s.State switch
                 {
-                    "Assigned" => (s.Label, true),
-                    "Partial" => ($"{s.Label} · choose again for the rest", false),
+                    "Assigned" => (s.Label + by, true),
+                    "Partial" => ($"{s.Label} · choose again for the rest{by}", false),
                     "Chosen" => ("Chosen · the camp office is placing campers", false),
-                    _ => ("Not chosen yet", false),
+                    _ => ("Not chosen yet" + by, false),
                 };
+                // After the deadline the camp office places anyone still unplaced; the family can still look.
+                var action = !open ? "View activities" : done ? "Change activities" : "Choose activities";
                 entries.Add(new ChecklistEntry($"activities-{r.Id}", r.Person.FirstName, $"{program} · {r.Session.Name}",
-                    "Activities", detail, done, done ? "Change activities" : "Choose activities", "activities", $"/family/activities/{r.Id}"));
+                    "Activities", detail, done || !open, action, "activities", $"/family/activities/{r.Id}"));
             }
         }
         return entries;

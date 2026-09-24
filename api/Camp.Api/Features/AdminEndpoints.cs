@@ -234,6 +234,8 @@ public static class AdminEndpoints
             }
             r.Status = RegistrationStatus.Cancelled;
             await db.CapacityPools.Where(p => p.Id == r.PoolId && p.Reserved > 0).ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1));
+            // Activity seats, choices and cabinmate requests go with the seat.
+            await Activities.ActivityRules.ReleaseAsync(db, [r.Id], default);
             audit.Record("registration.cancelled", "Registration", id, $"Cancelled {r.Person.FullName}. Refund {CheckoutService.Money(req.RefundCents)}. Reason: {req.Reason}");
             db.OutboxEvents.Add(new OutboxEvent { Type = "RegistrationCancelled", Target = "HubSpot", AggregateId = "reg-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.RefundCents }), CreatedAt = clock.UtcNow() });
             await db.SaveChangesAsync();

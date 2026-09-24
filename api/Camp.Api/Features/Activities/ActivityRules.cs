@@ -1,5 +1,6 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Features.Activities;
@@ -95,6 +96,45 @@ public static class ActivityRules
         return problems;
     }
 
+    /// <summary>Days before a session starts that families can still choose or change activities themselves.</summary>
+    public const int ChangeCutoffDays = 7;
+
+    /// <summary>The last day a family can change activities for a session starting on <paramref name="start"/>.</summary>
+    public static DateOnly ChangeDeadline(DateOnly start) => start.AddDays(-ChangeCutoffDays);
+
+    /// <summary>
+    /// Serializes every change to one session's activity places (checkout, family save, assign, move,
+    /// cancel, transfer) until the caller's transaction ends. Callers take it after any capacity-pool
+    /// claims and before touching slots, so the lock order is always pool → session → slot. Reads made
+    /// after it (the plan for "Assign from preferences", a camper's current place) can't go stale.
+    /// </summary>
+    public static Task LockSessionAsync(CampDbContext db, int sessionId, CancellationToken ct)
+    {
+        var resource = string.Create(CultureInfo.InvariantCulture, $"activities-session-{sessionId}");
+        return db.Database.ExecuteSqlInterpolatedAsync($@"DECLARE @r int;
+EXEC @r = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;
+IF @r < 0 THROW 51000, 'Activity places are busy.', 1;", ct);
+    }
+
+    /// <summary>A deadlock victim (1205) or a lock wait that timed out (51000): worth one retry, then a 409.</summary>
+    public static bool IsBusy(Exception e) =>
+        (e as SqlException ?? e.InnerException as SqlException) is { Number: 1205 or 51000 };
+
+    /// <summary>Runs <paramref name="work"/> (which opens its own transaction); on a deadlock retries once, then answers 409.</summary>
+    public static async Task<IResult> RetryWhenBusyAsync(CampDbContext db, Func<Task<IResult>> work)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try { return await work(); }
+            catch (Exception e) when (IsBusy(e))
+            {
+                db.ChangeTracker.Clear();
+                if (attempt == 2)
+                    return Results.Conflict(new { Title = "Someone else was changing activities at the same moment. Try again." });
+            }
+        }
+    }
+
     /// <summary>Takes one seat if the slot has room. Safe under concurrency: the check and the increment are one statement.</summary>
     public static async Task<bool> ClaimAsync(CampDbContext db, int slotId, CancellationToken ct) =>
         await db.Set<ActivitySlot>().Where(s => s.Id == slotId && s.Assigned < s.Capacity)
@@ -142,10 +182,17 @@ public static class ActivityRules
         return conflicts;
     }
 
-    /// <summary>Gives back every seat and cabinmate request held by these registrations (a declined payment).</summary>
+    /// <summary>
+    /// Gives back every seat, choice and cabinmate request held by these registrations: a declined
+    /// payment, a cancellation, or a transfer to another session. Runs inside the caller's transaction.
+    /// </summary>
     public static async Task ReleaseAsync(CampDbContext db, List<int> registrationIds, CancellationToken ct)
     {
         if (registrationIds.Count == 0) return;
+        var sessions = await db.Set<ActivityAssignment>().Where(a => registrationIds.Contains(a.RegistrationId)).Select(a => a.SessionId)
+            .Union(db.Set<CabinmateRequest>().Where(c => registrationIds.Contains(c.RegistrationId) || (c.MatchedRegistrationId != null && registrationIds.Contains(c.MatchedRegistrationId.Value))).Select(c => c.SessionId))
+            .Distinct().ToListAsync(ct);
+        foreach (var sessionId in sessions.Order()) await LockSessionAsync(db, sessionId, ct);
         var held = await db.Set<ActivityAssignment>().Where(a => registrationIds.Contains(a.RegistrationId)).ToListAsync(ct);
         foreach (var a in held) await ReleaseSeatAsync(db, a.SlotId, ct);
         await db.Set<ActivityAssignment>().Where(a => registrationIds.Contains(a.RegistrationId)).ExecuteDeleteAsync(ct);

@@ -22,8 +22,6 @@ interface Store {
   updatedAt: Ref<Date | null>
   /** Set when checkout answered 409: the campers and periods whose choices all filled. */
   conflicts: Ref<ActivityConflict[]>
-  /** personId:index → whether the friend matched a camper in the session. */
-  matches: Record<string, boolean | undefined>
 }
 
 const stores = new Map<number, Store>()
@@ -49,7 +47,6 @@ export function useActivityDraft(sessionId: number) {
       loadError: ref<string | null>(null),
       updatedAt: ref<Date | null>(null),
       conflicts: ref([]),
-      matches: reactive({}),
     }
     stores.set(sessionId, store)
   }
@@ -93,20 +90,8 @@ export function useActivityDraft(sessionId: number) {
     const list = mates(personId)
     list[index] = mate
     s.draft.cabinmates[personId] = list
-    delete s.matches[`${personId}:${index}`]
     save()
   }
-  async function checkMate(personId: number, index: number) {
-    const m = mates(personId)[index]
-    if (!m?.name.trim() || !m.contact.trim()) return
-    try {
-      const r = await api.post<{ matched: boolean }>(`/sessions/${sessionId}/cabinmates/check`, m)
-      s.matches[`${personId}:${index}`] = r.matched
-    } catch {
-      delete s.matches[`${personId}:${index}`]
-    }
-  }
-
   /** Step errors for R4, per camper and period. The server re-checks at checkout. */
   function activityErrors(people: { id: number; firstName: string }[]) {
     const o = s.options.value
@@ -187,13 +172,11 @@ export function useActivityDraft(sessionId: number) {
     loadError: s.loadError,
     updatedAt: s.updatedAt,
     conflicts: s.conflicts,
-    matches: s.matches,
     refresh,
     ranked,
     setRanked,
     mates,
     setMate,
-    checkMate,
     activityErrors,
     cabinmateErrors,
     payload,

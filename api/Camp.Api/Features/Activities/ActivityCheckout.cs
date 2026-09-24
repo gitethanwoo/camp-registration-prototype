@@ -42,6 +42,7 @@ public static class ActivityCheckout
     public static async Task ApplyAsync(CampDbContext db, Session session, List<Registration> seated, List<Camper> campers, DateTime now, CancellationToken ct)
     {
         if (seated.Count == 0 || !await ActivityRules.OffersAsync(db, session.Id, ct)) return;
+        await ActivityRules.LockSessionAsync(db, session.Id, ct);
         var conflicts = new List<ActivityConflict>();
         foreach (var reg in seated)
         {

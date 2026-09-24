@@ -96,17 +96,19 @@ export interface FamilyActivities {
   endDate: string
   periods: PeriodOptions[]
   choices: { period: number; ranked: number[] }[]
-  placed: { period: number; activityId: number | null; name: string | null }[]
+  placed: { period: number; activityId: number | null; name: string | null; locked: boolean }[]
+  /** Last day the family can change activities (ISO date). */
+  changeDeadline: string
+  canChange: boolean
 }
 
 export type CellStatus = 'Open' | 'Full' | 'Over capacity'
-export type ConflictKind = 'DoubleBooked' | 'OverCapacity' | 'OutsideGrades'
+export type ConflictKind = 'OverCapacity' | 'OutsideGrades'
 
 export interface ScheduleCamper {
   registrationId: number
   name: string
   grade: number | null
-  doubleBooked: boolean
   choices: string[]
 }
 

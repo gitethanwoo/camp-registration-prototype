@@ -8,11 +8,12 @@ using Microsoft.EntityFrameworkCore;
 namespace Camp.Api.Features.Activities;
 
 public record ActivityChoicesInput(List<ActivityChoice> Choices);
-public record CabinmateCheckInput(string Name, string Contact);
 
 /// <summary>
-/// Guest side: P3 activity detail, the R4 choices for campers in the wizard, the R5 match check, and
-/// choosing (or changing) activities after registering from the family home (F1).
+/// Guest side: P3 activity detail, the R4 choices for campers in the wizard, and choosing (or
+/// changing) activities after registering from the family home (F1) until a week before camp.
+/// Cabinmate requests are matched only inside checkout and never reported back, so no one can use
+/// them to find out whether a named child attends a session.
 /// </summary>
 public sealed class ActivityGuestEndpoints : IEndpointModule
 {
@@ -73,17 +74,8 @@ public sealed class ActivityGuestEndpoints : IEndpointModule
             return Results.Ok(new { CabinmateLimit = ActivityPeriods.CabinmateLimit, MaxRanks = ActivityPeriods.MaxRanks, Campers = campers });
         });
 
-        // R5 · does this name and email or code find a camper in the session? Says only yes or no.
-        guest.MapPost("/{id:int}/cabinmates/check", async (int id, CabinmateCheckInput input, CampDbContext db, CurrentUser me, CancellationToken ct) =>
-        {
-            if (string.IsNullOrWhiteSpace(input.Name) || string.IsNullOrWhiteSpace(input.Contact))
-                return Results.ValidationProblem(new Dictionary<string, string[]> { ["contact"] = ["Enter a name and a parent's email or code."] });
-            var match = await Cabinmates.MatchAsync(db, id, me.HouseholdId, input.Name, input.Contact, ct);
-            return Results.Ok(new { Matched = match is not null });
-        });
-
         // F1 → choose activities after registering. The registration must be this household's.
-        family.MapGet("/activities/{registrationId:int}", async (int registrationId, CampDbContext db, CurrentUser me, CancellationToken ct) =>
+        family.MapGet("/activities/{registrationId:int}", async (int registrationId, CampDbContext db, CurrentUser me, TimeProvider clock, CancellationToken ct) =>
         {
             var reg = await FindRegistration(db, me, registrationId, ct);
             if (reg is null) return Results.NotFound();
@@ -106,7 +98,16 @@ public sealed class ActivityGuestEndpoints : IEndpointModule
                 reg.Session.EndDate,
                 Periods = Periods(offered),
                 Choices = prefs.GroupBy(p => p.Period).Select(g => new { Period = g.Key, Ranked = g.OrderBy(p => p.Rank).Select(p => p.ActivityId) }),
-                Placed = placed.Select(a => new { a.Period, offered.FirstOrDefault(o => o.SlotId == a.SlotId)?.ActivityId, Name = offered.FirstOrDefault(o => o.SlotId == a.SlotId)?.Name }),
+                Placed = placed.Select(a => new
+                {
+                    a.Period,
+                    offered.FirstOrDefault(o => o.SlotId == a.SlotId)?.ActivityId,
+                    Name = offered.FirstOrDefault(o => o.SlotId == a.SlotId)?.Name,
+                    // Staff placed the camper here; the family can't change this period.
+                    Locked = a.Source == StaffSource,
+                }),
+                ChangeDeadline = ActivityRules.ChangeDeadline(reg.Session.StartDate),
+                CanChange = clock.Today() <= ActivityRules.ChangeDeadline(reg.Session.StartDate),
             });
         });
 
@@ -114,29 +115,42 @@ public sealed class ActivityGuestEndpoints : IEndpointModule
         {
             var reg = await FindRegistration(db, me, registrationId, ct);
             if (reg is null) return Results.NotFound();
+            var deadline = ActivityRules.ChangeDeadline(reg.Session.StartDate);
+            if (clock.Today() > deadline)
+                return Results.Conflict(new { Title = $"Activity choices closed on {deadline:MMMM d}. Call the camp office to change {reg.Person.FirstName}'s activities." });
             var block = await ActivityRules.BlockForAsync(db, reg.SessionId, reg.Grade, ct);
             if (block is null) return Results.NotFound();
-            var offered = await ActivityRules.SlotsAsync(db, block.Id, reg.Grade, ct);
             var choices = input.Choices ?? [];
-            var problems = ActivityRules.Check(reg.PersonId, reg.Person.FirstName, reg.Grade, offered, choices, null);
-            if (choices.Count == 0) problems.Add(("choices", "Rank at least one activity."));
-            if (problems.Count > 0)
-                return Results.ValidationProblem(problems.GroupBy(p => p.Key).ToDictionary(g => g.Key, g => g.Select(p => p.Message).Distinct().ToArray()));
 
-            await using var tx = await db.Database.BeginTransactionAsync(ct);
-            var conflicts = await ActivityRules.ApplyAsync(db, reg.Id, reg.SessionId, reg.PersonId, reg.Person.FirstName, offered, choices, "Family", clock.UtcNow(), ct);
-            if (conflicts.Count > 0)
+            return await ActivityRules.RetryWhenBusyAsync(db, async () =>
             {
-                await tx.RollbackAsync(ct);
-                return new ActivityFullException(conflicts).ToResult();
-            }
-            audit.Record("activities.chosen", "Registration", reg.Id,
-                $"{reg.Person.FullName}'s family chose activities for Period {string.Join(", ", choices.Select(c => c.Period).Order())}.");
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-            return Results.Ok(new { Saved = true });
+                await using var tx = await db.Database.BeginTransactionAsync(ct);
+                await ActivityRules.LockSessionAsync(db, reg.SessionId, ct);
+                var offered = await ActivityRules.SlotsAsync(db, block.Id, reg.Grade, ct);
+                var problems = ActivityRules.Check(reg.PersonId, reg.Person.FirstName, reg.Grade, offered, choices, null);
+                if (choices.Count == 0) problems.Add(("choices", "Rank at least one activity."));
+                // Periods staff placed stay as staff set them.
+                var locked = await db.Set<ActivityAssignment>().AsNoTracking().Where(a => a.RegistrationId == reg.Id && a.Source == StaffSource)
+                    .Join(db.Set<ActivitySlot>(), a => a.SlotId, s => s.Id, (a, s) => new { a.Period, s.ActivityId })
+                    .Join(db.Set<Activity>(), x => x.ActivityId, a => a.Id, (x, a) => new { x.Period, a.Name }).ToListAsync(ct);
+                foreach (var l in locked.Where(l => choices.Any(c => c.Period == l.Period)))
+                    problems.Add(("choices", $"Staff placed {reg.Person.FirstName} in {l.Name} for Period {l.Period}. Call the camp office to change it."));
+                if (problems.Count > 0)
+                    return Results.ValidationProblem(problems.GroupBy(p => p.Key).ToDictionary(g => g.Key, g => g.Select(p => p.Message).Distinct().ToArray()));
+
+                var conflicts = await ActivityRules.ApplyAsync(db, reg.Id, reg.SessionId, reg.PersonId, reg.Person.FirstName, offered, choices, "Family", clock.UtcNow(), ct);
+                if (conflicts.Count > 0) return new ActivityFullException(conflicts).ToResult();
+                audit.Record("activities.chosen", "Registration", reg.Id,
+                    $"{reg.Person.FullName}'s family chose activities for Period {string.Join(", ", choices.Select(c => c.Period).Order())}.");
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+                return Results.Ok(new { Saved = true });
+            });
         });
     }
+
+    /// <summary>The <see cref="ActivityAssignment.Source"/> of a place staff set on O4.</summary>
+    public const string StaffSource = "Staff";
 
     static Task<Registration?> FindRegistration(CampDbContext db, CurrentUser me, int id, CancellationToken ct) =>
         db.Registrations.Include(r => r.Person).Include(r => r.Session).ThenInclude(s => s.Program)

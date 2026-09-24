@@ -16,7 +16,7 @@ interface Cell {
   period: number
   assigned: number
   capacity: number
-  campers: { registrationId: number; name: string; grade: number | null; doubleBooked: boolean }[]
+  campers: { registrationId: number; name: string; grade: number | null }[]
 }
 interface Grid {
   block: { id: number; name: string }
@@ -53,7 +53,7 @@ async function fillClimbingPeriod2(browser: Browser) {
         from: r.cells.find((x) => x.period === 2)?.slotId ?? 0,
       })),
     )
-    .filter(({ c }) => (c.grade ?? 0) >= 4 && !c.doubleBooked)
+    .filter(({ c }) => (c.grade ?? 0) >= 4)
     .slice(0, open)
   expect(movers.length).toBe(open)
   for (const { c, from } of movers) {
@@ -136,8 +136,8 @@ test('Pastor Dave registers a camper, sees an activity fill, takes the next choi
   await expect(page.getByText("cabins aren't guaranteed")).toBeVisible()
   await page.getByLabel("Friend's full name").first().fill(friend.name)
   await page.getByLabel("Parent's email or friend code").first().fill(friend.code)
-  await page.getByLabel("Friend's full name").nth(1).click()
-  await expect(page.getByText(`We found ${friend.name} in this session`)).toBeVisible()
+  // Matching is silent: the page never says whether a camper is registered.
+  await expect(page.getByText("we don't show whether a camper is registered")).toBeVisible()
   await page.getByRole('button', { name: 'Continue' }).click()
 
   // Health (CampDoc for Overnight Camp), waivers, review, payment.
@@ -194,13 +194,18 @@ test('Diane opens the schedule builder, reviews conflicts and assigns from prefe
   await expect(page.getByText(/^Placed \d+ periods? for \d+ Juniors campers?/)).toBeVisible()
   await expect(page.getByText('Everyone who chose has a place.')).toBeVisible()
 
-  // Seniors: resolve the seeded double booking by keeping the camper in Climbing.
+  // Seniors: staff moved one camper too many into Swimming; move one of them to an activity with room.
   await page.getByRole('tab', { name: /Seniors/ }).click()
-  await expect(page.getByRole('button', { name: /^Swimming, Period 2: 25 of 24, Over capacity/ })).toBeVisible()
-  await page.getByRole('button', { name: /^Climbing, Period 2:/ }).click()
+  await page.getByRole('button', { name: /^Swimming, Period 2: 25 of 24, Over capacity/ }).click()
   const sheet = page.getByRole('dialog')
-  await sheet.getByRole('button', { name: 'Keep in Climbing' }).click()
-  await expect(page.getByText(/stays in Climbing; the other booking is removed/)).toBeVisible()
-  await page.keyboard.press('Escape')
+  await sheet
+    .getByRole('combobox', { name: /^Move / })
+    .first()
+    .click()
+  await page.getByRole('option').first().click()
+  await expect(page.getByText(/^Moved .+ in Period 2\.$/)).toBeVisible()
+  await expect(sheet.getByText('24 / 24')).toBeVisible()
+  await sheet.getByRole('button', { name: 'Close' }).click()
+  await expect(sheet).toBeHidden()
   await expect(page.getByRole('button', { name: /^Swimming, Period 2: 24 of 24, Full/ })).toBeVisible()
 })

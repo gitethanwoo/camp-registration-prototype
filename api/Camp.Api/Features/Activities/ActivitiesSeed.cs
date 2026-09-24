@@ -137,7 +137,6 @@ public sealed class ActivitiesSeed : ISeedModule
 
         var juniors = blocks.Single(b => b.Name == "Juniors");
         var seniors = blocks.Single(b => b.Name == "Seniors");
-        var assignedIn = (ActivitySlot s) => assignments.Where(a => a.SlotId == s.Id).ToList();
         Camper Who(ActivityAssignment a) => campers.Single(c => c.RegistrationId == a.RegistrationId);
 
         // Juniors' Climbing in Period 2 has one seat left: staff moved campers in from other activities.
@@ -151,7 +150,7 @@ public sealed class ActivitiesSeed : ISeedModule
             count[climbing.Id]++;
         }
 
-        // Seniors' Swimming in Period 2 is at 25 / 24, and one of its campers is also in Climbing.
+        // Seniors' Swimming in Period 2 is at 25 / 24 (staff moved one camper too many in) for O4 to resolve.
         var swimming = SlotOf(seniors, "Swimming", 2);
         foreach (var a in assignments.Where(a => a.Period == 2 && a.SlotId != swimming.Id && slots.Single(s => s.Id == a.SlotId).BlockId == seniors.Id).ToList())
         {
@@ -161,8 +160,6 @@ public sealed class ActivitiesSeed : ISeedModule
             a.Source = "Staff";
             count[swimming.Id]++;
         }
-        var twice = assignedIn(swimming).First(a => a.Source == "Staff");
-        Place(Who(twice), SlotOf(seniors, "Climbing", 2), "Staff");
 
         // A grade 3 camper in Horseback (grades 5–8) for Period 3.
         var young = assignments.First(a => a.Period == 3 && Who(a).Grade == 3);

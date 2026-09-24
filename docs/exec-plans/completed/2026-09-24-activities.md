@@ -28,6 +28,7 @@ After this plan:
 - [x] (2026-09-24 19:40Z) Milestone 2: web slice `web/src/features/activities/` (K8 catalog and editor sheet, O4 schedule with block tabs, cell sheet, keep and move, assign preview; R4 `ActivityStep` with just-filled notice and suggested next choice; P3 page and sheet; R5 `CabinmateStep`; family route `/family/activities/:registrationId`), seven local SVGs in `web/public/images/activities/`, O1 filter and column from the new `activity` shape, F1 "Choose activities" / "Change activities" item. API tweaks: the family activities GET returns `sessionId` (for the P3 sheet) and O4 rows carry `gradeMin`/`gradeMax` (to offer only moves that fit the camper's grade). `e2e/activities.spec.ts` (3 tests) passes on a fresh database.
 - [x] (2026-09-24 20:30Z) Milestone 3: `e2e/activities.spec.ts`, full gates, screenshots at 1440×1000 and 390×844, seven-pass review. Review fixes: R4 periods stacked with two option columns (the three-column layout squeezed names and overlapped the "Just filled" badge), the info line wraps on phones, the P3 sheet's "Select for {name}" footer is sticky so it shows on a phone without scrolling, and O1's Activities cell wraps instead of clipping.
 - [x] (2026-09-24 20:40Z) Milestone 4: plan completed with `node scripts/complete-exec-plan.mjs activities`.
+- [x] (2026-09-24 23:30Z) Addendum, independent review fixes (8 findings). (1) Cancel (`AdminEndpoints` cancel) and an approved transfer to another session (`TransferService`) now call `ActivityRules.ReleaseAsync`, which gives back seats and deletes assignments, preferences and cabinmate requests (made by or matched to the camper). (2) Unique index on `ActivityAssignment (RegistrationId, Period)` (migration `ActivityPlacesUnique`); "Assign from preferences" and the family save take a session lock and re-plan inside the transaction. (3) Staff moves update the row only `WHERE Id = @id AND SlotId = @from` and release the old seat only when exactly one row changed, otherwise 409. (4) K8 refuses to make an activity inactive while current or upcoming sessions have campers placed in it. (5) The R5 `/cabinmates/check` endpoint and its "We found…" message are removed; matching happens silently at checkout. (6) Families can change activities until 7 days before the session starts; the family page and the F1 item state the date, and periods staff placed are locked for the family. (7) Busy saves (deadlock 1205 or lock timeout) retry once, then answer 409, never 500; checkout takes the same session lock. (8) The earlier note that waitlisted campers keep their choices was wrong; corrected below. `ActivitiesTests.cs` 27 tests (18 → 27 plus updates); `npm run test:api` 247.
 
 ## Surprises & Discoveries
 
@@ -42,7 +43,7 @@ After this plan:
 - Decision: Slot counts are a counter column `ActivitySlot.Assigned` changed only by conditional SQL (`UPDATE … SET Assigned = Assigned + 1 WHERE Id = @id AND Assigned < Capacity`), the same pattern Checkout uses for `CapacityPool.Reserved`. Slots left = capacity − assigned.
   Rationale: concurrency-safe with no oversell and no extra locking. There is no database check constraint so the seed can show one over-capacity slot as a conflict for O4 to resolve.
   Date/Author: 2026-09-24 / Claude
-- Decision: Activity choices are optional in the checkout request on the server; the wizard requires a first choice in every period. Waitlisted campers keep their choices but get no assignment. When a payment is declined and the registration is cancelled, its activity seats are released.
+- Decision: Activity choices are optional in the checkout request on the server; the wizard requires a first choice in every period. Waitlisted campers get no assignment and their choices are not stored (corrected 2026-09-24 addendum: a waitlist entry has no registration to hang them on; the family chooses at checkout when offered a seat, or later from F1). When a registration ends (payment declined, staff cancel, or transfer to another session), its activity seats are released.
   Rationale: existing ON checkout tests and other slices post no choices; a family that skips can choose later from the family home.
   Date/Author: 2026-09-24 / Claude
 - Decision: Friend code is the friend's order confirmation code (`WS-XXXXXX`). A request matches a confirmed or payment-pending registration in the same session by the friend's name (full name, or first name when it's unique in that household) and either the household's or an adult's email, or the order's confirmation code. A matched request is stored as `CabinmateRequest` and mirrored to `OpsBuddyRequest`; an unmatched request is stored and matched when the friend registers later.
@@ -60,6 +61,18 @@ After this plan:
 - Decision: R4 stacks the three periods, with each period's activities in two columns, instead of the concept's three period columns side by side.
   Rationale: the wizard's step card sits beside the order summary (about 700px wide at 1440), so three columns left about 200px per period and the names, slots left and "Just filled" badge wrapped and overlapped (seen in the review screenshots).
   Date/Author: 2026-09-24 / Claude
+- Decision (addendum): One session-level lock (`sp_getapplock` on `activities-session-{id}`, transaction-owned, 15 s timeout) serializes every write to a session's activity places: checkout, family save, assign, move, and release on decline/cancel/transfer. Lock order is always capacity pool → session lock → slot. Deadlock (1205) or lock timeout gets one retry, then 409 "Someone else was changing activities at the same moment."
+  Rationale: the review showed concurrent assigns double-booking, concurrent moves corrupting counters and concurrent family saves returning 500. Per-session locking is cheap at camp scale and keeps each writer's plan valid; the unique index and conditional updates are the backstop.
+  Date/Author: 2026-09-24 / Claude
+- Decision (addendum): Unique index on `(RegistrationId, Period)`. The seeded double booking and the O4 "Keep in …" action (`/keep` endpoint) are removed, since the database can no longer hold one. The demo conflict is now over capacity: staff moved one camper too many into Seniors' Swimming Period 2 (25 / 24), which O4 resolves with a move. Outside-grades stays (Juniors Horseback Period 3).
+  Rationale: a camper in two places at once was only reachable through the race the review found; the constraint is the real guard.
+  Date/Author: 2026-09-24 / Claude
+- Decision (addendum): Removed the R5 cabinmate "check" endpoint. The step now says we look for the friend when you pay and keep looking if they register later, and that we don't show whether a camper is registered.
+  Rationale: the endpoint let any signed-in family probe whether a named child was registered in a session.
+  Date/Author: 2026-09-24 / Claude
+- Decision (addendum): Families can change activities until 7 days before the session starts (`ActivityRules.ChangeDeadline`). The family page says "You can change them until {date}", F1 shows "… · change by {date}", and after the date the page shows the places read-only with "Call the camp office", F1 says "View activities". Periods where `Source = Staff` are shown locked on the family page and refused by the PUT.
+  Rationale: staff build the schedule the week before camp; late family changes would undo their moves.
+  Date/Author: 2026-09-24 / Claude
 - Decision: Shared-file edits (recorded as they land): see Artifacts and Notes.
   Rationale: the task lists which shared files this slice may touch.
   Date/Author: 2026-09-24 / Claude
@@ -69,12 +82,13 @@ After this plan:
 - 2026-09-24 Milestone 1: `npm run test:api` → 238 passed, 0 failed. Spot-check with the conditional `Assigned < Capacity` removed from `ActivityRules.ClaimAsync`, `ActivityRules.ReleaseAsync` removed from the decline branch of `FinalizeAsync`, and the household filter neutralised in the family activities route: 6 of 18 activity tests fail (concurrency, 409, ranked fallback, staff move, decline, other household), then pass again once restored.
 
 - 2026-09-24 Milestone 2–3: `npm run lint`, `npm run typecheck`, `npm run check:api` pass (pre-commit hook on every commit). `npm run test:api` → 238 passed. Full Playwright suite on the isolated stack (`E2E_BASE_URL=http://localhost:5191`, one worker), each run on a freshly dropped and reseeded database: 67 passed, then 67 passed again (64 before + 3 activities tests), after the review fixes.
+- 2026-09-24 Addendum: `npm run lint`, `npm run typecheck`, `npm run check:api` pass. `npm run test:api` → 247 passed, 0 failed. Each fix spot-checked by reverting it and running its test, which then fails: cancel release, transfer release, assign lock + re-plan (`ActivitiesRaceTests.Two_assigns_at_once_place_each_camper_once_per_period`), move lock + conditional update (`Two_moves_of_the_same_camper_at_once_move_them_once`), deactivation guard, staff-placed lock, change deadline, family-save lock and retry (a 500 appears), and the restored probe endpoint (404 expected). Full Playwright suite on the isolated stack, fresh database each run: 67 passed, then 67 passed again.
 - Seven-pass review (spec coverage, data tie-out, concurrency and audit, copy, accessibility names, phone layout, concept comparison) against the K8, O4, R4, P3 and R5 concepts, using screenshots in `/private/tmp/claude-501/-Users-ethanwoo-dev-easyllama-speed-extension/81c4aaa7-fed6-4df5-a1f4-d7149ffc6a20/scratchpad/activities-shots/`. O4 tie-out on the fresh seed: Juniors 76 placed + 7 chose, not placed + 7 not chosen = 90 per period; Seniors 80 + 8 + 8 = 96; 90 + 96 = 186. O1 still reads 186 / 9 / 159 / 27.
 
 ## Outcomes & Retrospective
 
 - Delivered K8, O4, R4, P3, R5, the family activities route and F1 item, and O1/O5 reading the new assignments, on ON Session 3 with two age blocks. Seats are claimed in the checkout transaction with a conditional update, so no slot oversells, and a full choice returns 409 with alternatives that R4 shows as "Just filled".
-- Deferred: cancellations, transfers and waitlist promotions from other slices don't release or claim activity seats yet (only a declined payment does); O3 rooming shows matched cabinmate requests but unmatched ones are only re-checked when the friend registers through checkout; the seeded preferences are repetitive (many seniors rank Climbing, Horseback, Crafts) and could be varied; activity photos are simple local SVG illustrations.
+- Deferred: O3 rooming shows matched cabinmate requests but unmatched ones are only re-checked when the friend registers through checkout; the seeded preferences are repetitive (many seniors rank Climbing, Horseback, Crafts) and could be varied; activity photos are simple local SVG illustrations.
 - Lesson: the wizard's step card is narrower than the concepts assume; check new wizard steps at 1440 with the order summary beside them.
 
 ## Context and Orientation
@@ -91,7 +105,7 @@ Relevant existing code:
 
 ## Plan of Work
 
-1. API slice under `api/Camp.Api/Features/Activities/`: `ActivityEntities.cs` (Activity, ActivityBlock, ActivitySlot, ActivityPreference, ActivityAssignment, CabinmateRequest and their configurations), `ActivityService.cs` (slots left, choice validation, assignment with ranked fallback, release, cabinmate matching), `ActivityCatalogEndpoints.cs` (K8), `ActivityScheduleEndpoints.cs` (O4), `ActivityGuestEndpoints.cs` (P3, R4 context, R5 check, family post-registration choice), `ActivitiesSeed.cs` (Order 175, after Ops).
+1. API slice under `api/Camp.Api/Features/Activities/`: `ActivityEntities.cs` (Activity, ActivityBlock, ActivitySlot, ActivityPreference, ActivityAssignment, CabinmateRequest and their configurations), `ActivityService.cs` (slots left, choice validation, assignment with ranked fallback, release, cabinmate matching), `ActivityCatalogEndpoints.cs` (K8), `ActivityScheduleEndpoints.cs` (O4), `ActivityGuestEndpoints.cs` (P3, R4 context, family post-registration choice), `ActivitiesSeed.cs` (Order 175, after Ops).
 2. Shared edits: Checkout (choices and cabinmates on the request; assignment inside the seat transaction; 409 exception; release on decline), GuestEndpoints (register-context flags; 409 mapping), Ops (O1 and O5 read the new assignments; `OpsPlacement.Activity` removed), Family overview (activity checklist items), Register.vue (two extra steps rendered by slice components).
 3. Migration `Activities`.
 4. Web slice under `web/src/features/activities/`.
@@ -126,7 +140,10 @@ Shared-file edits:
 
 - `api/Camp.Api/Features/Checkout.cs`: `CheckoutParticipant` gains optional `Activities` and `Cabinmates`; activity/cabinmate validation errors merge into the existing error dictionary; `ActivityCheckout.ApplyAsync` runs inside the seat transaction before commit (throws `ActivityFullException` → rollback); the decline branch of `FinalizeAsync` calls `ActivityRules.ReleaseAsync`.
 - `api/Camp.Api/Features/GuestEndpoints.cs`: checkout maps `ActivityFullException` to 409; register-context adds `activities` (true when the session has activity blocks).
-- `api/Camp.Api/Features/Family/FamilyEndpoints.cs`: overview checklist concatenates `ActivityChecklist.ForAsync`.
+- `api/Camp.Api/Features/Family/FamilyEndpoints.cs`: overview checklist concatenates `ActivityChecklist.ForAsync` (addendum: passes `today` for the change deadline).
+- `api/Camp.Api/Features/AdminEndpoints.cs` (addendum): staff cancel calls `ActivityRules.ReleaseAsync` after the pool release.
+- `api/Camp.Api/Features/StaffCx/TransferService.cs` (addendum): approving a transfer to a different session calls `ActivityRules.ReleaseAsync` inside the transfer transaction.
+- `api/Camp.Api/Data/Migrations/20260924173148_ActivityPlacesUnique.cs` (addendum): unique index on `ActivityAssignments (RegistrationId, Period)`.
 - `api/Camp.Api/Features/Ops/OpsEntities.cs` and `OpsSeed.cs`: `OpsPlacement.Activity` and its seeded names removed (the migration drops the column).
 - `api/Camp.Api/Features/Ops/ReadinessEndpoints.cs`: O1 `activities` filter list and roster `activity` (now `{ names, state, label }`) come from `ActivityReadModel`.
 - `api/Camp.Api/Features/Ops/CheckInEndpoints.cs`: O5 `activity` label comes from `ActivityReadModel`.
