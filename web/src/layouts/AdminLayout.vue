@@ -189,9 +189,7 @@ function choose(id: number) {
           class="ml-auto text-muted-foreground"
           title="Search every ministry by name, email, or phone"
         >
-          <RouterLink to="/admin/registrations?all=1"
-            ><Search /><span class="hidden sm:inline">Search families</span></RouterLink
-          >
+          <RouterLink to="/admin/search"><Search /><span class="hidden sm:inline">Search families</span></RouterLink>
         </Button>
       </header>
       <div class="min-w-0 flex-1 p-4 md:p-6">
