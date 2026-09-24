@@ -11,8 +11,6 @@ internal static class Fin
     public const int GraceDays = 7;
     public const int MaxAttempts = 3;
 
-    public static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
-
     public static string Money(int cents) =>
         (cents / 100m).ToString(cents % 100 == 0 ? "C0" : "C2", CultureInfo.GetCultureInfo("en-US"));
 

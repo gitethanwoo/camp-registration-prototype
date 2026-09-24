@@ -4,6 +4,7 @@ using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -188,7 +189,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("can't refund more", await rising.Content.ReadAsStringAsync());
 
         // A plan can't put an installment in the past.
-        var pastPlan = await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 10000, tiers) with { PlanInstallments = 3, BalanceDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1) });
+        var pastPlan = await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 10000, tiers) with { PlanInstallments = 3, BalanceDueDate = factory.Clock.Today().AddMonths(1) });
         Assert.Equal(HttpStatusCode.BadRequest, pastPlan.StatusCode);
         Assert.Contains("which has passed", await pastPlan.Content.ReadAsStringAsync());
 

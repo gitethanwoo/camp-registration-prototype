@@ -44,11 +44,11 @@ public sealed class InvoiceEndpoints : IEndpointModule
             });
         });
 
-        host.MapPost("/{id:int}/pay", async (int id, InvoicePayRequest req, CampDbContext db, StaffUser staff, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct) =>
+        host.MapPost("/{id:int}/pay", async (int id, InvoicePayRequest req, CampDbContext db, StaffUser staff, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct, TimeProvider clock) =>
         {
             var member = await HostScope.MemberAsync(db, staff, ct);
             if (member is null) return HostScope.NotLinkedResult();
-            var result = await new InvoicePaymentService(db, gateway, audit).PayAsync(member.HostOrganizationId, id, req, staff.Actor, ct);
+            var result = await new InvoicePaymentService(db, gateway, audit, clock).PayAsync(member.HostOrganizationId, id, req, staff.Actor, ct);
             return result.Outcome switch
             {
                 InvoicePayOutcome.Succeeded => Results.Ok(result),

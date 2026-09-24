@@ -1,5 +1,6 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -96,7 +97,7 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
         });
 
         // Starts a new draft from the live text. One open draft per template at a time.
-        setup.MapPost("/waivers/{id:int}/drafts", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPost("/waivers/{id:int}/drafts", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var t = await db.WaiverTemplates.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
@@ -112,7 +113,7 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
                 ChangeNote = "",
                 Status = WaiverVersionStatus.Draft,
                 CreatedBy = staff.Actor,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             };
             db.Set<WaiverVersion>().Add(draft);
             try { await db.SaveChangesAsync(ct); }
@@ -142,7 +143,7 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
             return Results.Ok();
         });
 
-        setup.MapPost("/waiver-versions/{vid:int}/submit", async (int vid, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPost("/waiver-versions/{vid:int}/submit", async (int vid, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var v = await db.Set<WaiverVersion>().FirstOrDefaultAsync(x => x.Id == vid, ct);
             if (v is null) return Results.NotFound();
@@ -154,25 +155,25 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
             v.Status = WaiverVersionStatus.PendingApproval;
             v.SubmittedBy = staff.Actor;
             v.SubmittedByEmail = staff.Email;
-            v.SubmittedAt = DateTime.UtcNow;
+            v.SubmittedAt = clock.UtcNow();
             audit.Record(db, "waiver.submitted", "WaiverTemplate", t.Id, $"Sent version {v.Version} of {t.Title} for approval: {v.ChangeNote}");
             await db.SaveChangesAsync(ct);
             return Results.Ok();
         });
 
-        setup.MapPost("/waiver-versions/{vid:int}/approve", async (int vid, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPost("/waiver-versions/{vid:int}/approve", async (int vid, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var v = await db.Set<WaiverVersion>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == vid, ct);
             if (v is null) return Results.NotFound();
             if (v.Status != WaiverVersionStatus.PendingApproval) return SetupResults.Conflict("This version isn't waiting for approval.");
             if (ApprovalBlock(v, staff) is { } block) return SetupResults.Forbidden(block);
 
-            var today = SetupResults.Today;
+            var today = clock.Today();
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             // Conditional: two admins approving at once publish it once.
             var won = await db.Set<WaiverVersion>().Where(x => x.Id == vid && x.Status == WaiverVersionStatus.PendingApproval)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, WaiverVersionStatus.Published).SetProperty(x => x.EffectiveDate, today)
-                    .SetProperty(x => x.ApprovedBy, staff.Actor).SetProperty(x => x.ApprovedAt, DateTime.UtcNow), ct);
+                    .SetProperty(x => x.ApprovedBy, staff.Actor).SetProperty(x => x.ApprovedAt, clock.UtcNow()), ct);
             if (won == 0) return SetupResults.Conflict("Someone else already handled this version.");
             await db.Set<WaiverVersion>().Where(x => x.WaiverTemplateId == v.WaiverTemplateId && x.Id != vid && x.Status == WaiverVersionStatus.Published)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, WaiverVersionStatus.Archived).SetProperty(x => x.RetiredDate, today), ct);

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,11 +24,11 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
     {
         var family = app.MapGroup("/api/family").RequireAuthorization(Policies.Family);
 
-        family.MapGet("/access", async (CampDbContext db, CurrentUser me) =>
+        family.MapGet("/access", async (CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
             var household = await db.Households.Include(h => h.Members).AsNoTracking().SingleAsync(h => h.Id == me.HouseholdId);
-            var season = await FamilyReadModel.SeasonYearAsync(db);
-            var now = DateTime.UtcNow;
+            var season = await FamilyReadModel.SeasonYearAsync(db, clock);
+            var now = clock.UtcNow();
             var invitations = await db.Set<HouseholdInvitation>()
                 .Where(i => i.HouseholdId == me.HouseholdId && i.Status == InvitationStatus.Pending)
                 .OrderBy(i => i.CreatedAt).AsNoTracking().ToListAsync();
@@ -82,7 +83,7 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
             };
         });
 
-        family.MapPost("/invitations", async (InviteRequest req, CampDbContext db, CurrentUser me, IAuditLog audit) =>
+        family.MapPost("/invitations", async (InviteRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, TimeProvider clock) =>
         {
             var household = await db.Households.Include(h => h.Members).SingleAsync(h => h.Id == me.HouseholdId);
             if (Self(household, me)?.Role != Primary) return OnlyPrimary(household);
@@ -98,7 +99,7 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"{email} already has access to this household."] });
             if (await SignsInElsewhere(db, me.HouseholdId, email))
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [ElsewhereMessage(email)] });
-            var pending = await db.Set<HouseholdInvitation>().AnyAsync(i => i.HouseholdId == me.HouseholdId && i.Status == InvitationStatus.Pending && i.Email == email && i.ExpiresAt > DateTime.UtcNow);
+            var pending = await db.Set<HouseholdInvitation>().AnyAsync(i => i.HouseholdId == me.HouseholdId && i.Status == InvitationStatus.Pending && i.Email == email && i.ExpiresAt > clock.UtcNow());
             if (pending)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"You already invited {email}. Cancel that invitation to send a new one."] });
 
@@ -110,8 +111,8 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
                 Email = email,
                 InvitedBy = me.Name,
                 Status = InvitationStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow + InvitationLifetime,
+                CreatedAt = clock.UtcNow(),
+                ExpiresAt = clock.UtcNow() + InvitationLifetime,
             };
             db.Add(invitation);
             audit.Record("household.invited", "Household", me.HouseholdId, $"{me.Name} invited {invitation.FirstName} {invitation.LastName} ({email}) as a co-owner.");
@@ -122,7 +123,7 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
                 Target = "HubSpot",
                 AggregateId = $"household-{me.HouseholdId}",
                 PayloadJson = JsonSerializer.Serialize(new { to = email, invitedBy = me.Name, household = household.Name }),
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
             await db.SaveChangesAsync();
             return Results.Created($"/api/family/invitations/{invitation.Id}", new { invitation.Id, invitation.Email, invitation.ExpiresAt });

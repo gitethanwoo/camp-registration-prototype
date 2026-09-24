@@ -2,6 +2,7 @@ using System.Net.Mail;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,11 +28,11 @@ public sealed class FamilyEndpoints : IEndpointModule
         var family = app.MapGroup("/api/family").RequireAuthorization(Policies.Family);
 
         // F1 · members, upcoming registrations, payment plans, and one checklist across all kids (FR-3, FR-27).
-        family.MapGet("/overview", async (CampDbContext db, CurrentUser me) =>
+        family.MapGet("/overview", async (CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
-            var season = await FamilyReadModel.SeasonYearAsync(db);
+            var season = await FamilyReadModel.SeasonYearAsync(db, clock);
             var household = await db.Households.Include(h => h.Members).AsNoTracking().SingleAsync(h => h.Id == me.HouseholdId);
-            var today = FamilyReadModel.Today;
+            var today = clock.Today();
             var upcoming = (await FamilyReadModel.Orders(db, me.HouseholdId).AsNoTracking().ToListAsync())
                 .Where(o => o.Session.EndDate >= today && FamilyReadModel.Active(o).Count > 0)
                 .OrderBy(o => o.Session.StartDate).ToList();
@@ -100,18 +101,18 @@ public sealed class FamilyEndpoints : IEndpointModule
         });
 
         // F2 · one member, with what the page needs to explain locked fields.
-        family.MapGet("/members/{id:int}", async (int id, CampDbContext db, CurrentUser me) =>
+        family.MapGet("/members/{id:int}", async (int id, CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
             var m = await db.People.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.HouseholdId == me.HouseholdId);
             if (m is null) return Results.NotFound();
-            var season = await FamilyReadModel.SeasonYearAsync(db);
-            var registeredFor = await ActiveRegistrationNames(db, m.Id);
-            return Results.Ok(ToProfile(m, season, registeredFor));
+            var season = await FamilyReadModel.SeasonYearAsync(db, clock);
+            var registeredFor = await ActiveRegistrationNames(db, m.Id, clock);
+            return Results.Ok(ToProfile(m, season, registeredFor, clock));
         });
 
-        family.MapPost("/members", async (MemberRequest req, CampDbContext db, CurrentUser me, IAuditLog audit) =>
+        family.MapPost("/members", async (MemberRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, TimeProvider clock) =>
         {
-            var errors = Validate(req);
+            var errors = Validate(req, clock);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
             var first = req.FirstName.Trim();
             var dob = req.DateOfBirth ?? default;
@@ -126,17 +127,17 @@ public sealed class FamilyEndpoints : IEndpointModule
             db.People.Add(person);
             audit.Record("member.added", "Household", me.HouseholdId, $"{me.Name} added {person.FullName} to the household.");
             await db.SaveChangesAsync();
-            var season = await FamilyReadModel.SeasonYearAsync(db);
-            return Results.Created($"/api/family/members/{person.Id}", ToProfile(person, season, []));
+            var season = await FamilyReadModel.SeasonYearAsync(db, clock);
+            return Results.Created($"/api/family/members/{person.Id}", ToProfile(person, season, [], clock));
         });
 
-        family.MapPut("/members/{id:int}", async (int id, MemberRequest req, CampDbContext db, CurrentUser me, IAuditLog audit) =>
+        family.MapPut("/members/{id:int}", async (int id, MemberRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, TimeProvider clock) =>
         {
             var person = await db.People.FirstOrDefaultAsync(p => p.Id == id && p.HouseholdId == me.HouseholdId);
             if (person is null) return Results.NotFound();
             if (req.IsAdult != person.IsAdult)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["isAdult"] = ["A child can't be changed to an adult here. Contact us to set up their own account."] });
-            var errors = Validate(req);
+            var errors = Validate(req, clock);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
             // The primary owner's email is how sign-in finds who may manage access; it isn't edited here.
             if (person.Role == HouseholdAccessEndpoints.Primary && !string.Equals(Blank(req.Email), person.Email, StringComparison.OrdinalIgnoreCase))
@@ -144,7 +145,7 @@ public sealed class FamilyEndpoints : IEndpointModule
             if (await EmailTaken(db, me.HouseholdId, person.Id, req) is { } taken) return taken;
 
             // Placement (pool and grade) was chosen from these; changing them would leave a camper in the wrong group.
-            var registeredFor = await ActiveRegistrationNames(db, person.Id);
+            var registeredFor = await ActiveRegistrationNames(db, person.Id, clock);
             var placementChanged = !person.IsAdult && (req.DateOfBirth != person.DateOfBirth || req.Gender != person.Gender);
             if (registeredFor.Count > 0 && placementChanged)
                 return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -155,7 +156,7 @@ public sealed class FamilyEndpoints : IEndpointModule
             Apply(person, req);
             audit.Record("member.updated", "Person", person.Id, $"{me.Name} updated {person.FullName}'s profile.");
             await db.SaveChangesAsync();
-            return Results.Ok(ToProfile(person, await FamilyReadModel.SeasonYearAsync(db), registeredFor));
+            return Results.Ok(ToProfile(person, await FamilyReadModel.SeasonYearAsync(db, clock), registeredFor, clock));
         });
     }
 
@@ -173,17 +174,17 @@ public sealed class FamilyEndpoints : IEndpointModule
             : null;
     }
 
-    static async Task<List<string>> ActiveRegistrationNames(CampDbContext db, int personId)
+    static async Task<List<string>> ActiveRegistrationNames(CampDbContext db, int personId, TimeProvider clock)
     {
-        var today = FamilyReadModel.Today;
+        var today = clock.Today();
         return await db.Registrations
             .Where(r => r.PersonId == personId && r.Status != RegistrationStatus.Cancelled && r.Session.EndDate >= today)
             .Select(r => r.Session.Program.Name).Distinct().ToListAsync();
     }
 
-    static object ToProfile(Person m, int season, List<string> registeredFor)
+    static object ToProfile(Person m, int season, List<string> registeredFor, TimeProvider clock)
     {
-        var today = FamilyReadModel.Today;
+        var today = clock.Today();
         var age = m.DateOfBirth == default ? (int?)null : FamilyReadModel.AgeOn(m.DateOfBirth, today);
         return new
         {
@@ -222,12 +223,12 @@ public sealed class FamilyEndpoints : IEndpointModule
 
     static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
-    static Dictionary<string, string[]> Validate(MemberRequest req)
+    static Dictionary<string, string[]> Validate(MemberRequest req, TimeProvider clock)
     {
         var errors = new Dictionary<string, string[]>();
         if (string.IsNullOrWhiteSpace(req.FirstName)) errors["firstName"] = ["Enter a first name."];
         if (string.IsNullOrWhiteSpace(req.LastName)) errors["lastName"] = ["Enter a last name."];
-        var today = FamilyReadModel.Today;
+        var today = clock.Today();
         if (req.DateOfBirth is not { } dob)
         {
             // Adults' birthdays don't place anyone, so they're optional.

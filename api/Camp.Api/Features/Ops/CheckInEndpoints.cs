@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -69,7 +70,7 @@ public sealed class CheckInEndpoints : IEndpointModule
             });
         }).RequireAuthorization(Policies.Staff);
 
-        ops.MapPost("/check-in/{registrationId:int}", async (int registrationId, CheckInRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        ops.MapPost("/check-in/{registrationId:int}", async (int registrationId, CheckInRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             // Two tablets can scan the same camper at once: the registration row is locked before the
             // "already checked in" check, so the second request waits, sees the first, and gets the 409.
@@ -90,7 +91,7 @@ public sealed class CheckInEndpoints : IEndpointModule
                 });
 
             var placement = await OpsReadModel.PlacementFor(db, reg, ct);
-            placement.CheckedInAt = DateTime.UtcNow;
+            placement.CheckedInAt = clock.UtcNow();
             placement.CheckedInBy = staff.Actor;
             placement.CheckInOverride = blockers.Count > 0 ? reason : null;
             if (blockers.Count > 0)
@@ -102,7 +103,7 @@ public sealed class CheckInEndpoints : IEndpointModule
             return Results.Ok(new { placement.CheckedInAt, placement.CheckedInBy, Override = placement.CheckInOverride });
         }).RequireAuthorization(Policies.Cet);
 
-        ops.MapPost("/check-out/{registrationId:int}", async (int registrationId, CheckOutRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        ops.MapPost("/check-out/{registrationId:int}", async (int registrationId, CheckOutRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             // Same lock as check-in, so two adults can't both be recorded as picking up one camper.
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -118,7 +119,7 @@ public sealed class CheckInEndpoints : IEndpointModule
             if (!req.IdChecked) return OpsResults.Invalid("idChecked", $"Check {adult.Name}'s photo ID before releasing {camper.FirstName}.");
 
             var placement = await OpsReadModel.PlacementFor(db, reg, ct);
-            placement.CheckedOutAt = DateTime.UtcNow;
+            placement.CheckedOutAt = clock.UtcNow();
             placement.CheckedOutBy = staff.Actor;
             placement.PickedUpBy = $"{adult.Name} ({adult.Relationship})";
             audit.Record("ops.checked_out", "Registration", reg.Id, $"Released {camper.Name} to {placement.PickedUpBy}; photo ID checked.");

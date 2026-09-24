@@ -1,5 +1,6 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Features.Family;
@@ -16,15 +17,13 @@ public static class FamilyReadModel
     /// <summary>Days a family has to retry a failed installment (Program Policies: retries after 3 and 7 days).</summary>
     public const int GraceDays = 7;
 
-    public static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
-
     /// <summary>
     /// The camp season grades are shown for: the year of the next published session. Grades change
     /// on Sept 1, so "Grade 6" only means something next to a year ("Grade 6 in fall 2028").
     /// </summary>
-    public static async Task<int> SeasonYearAsync(CampDbContext db)
+    public static async Task<int> SeasonYearAsync(CampDbContext db, TimeProvider clock)
     {
-        var today = Today;
+        var today = clock.Today();
         var next = await db.Sessions.Where(s => s.Program.IsPublished && s.StartDate >= today)
             .OrderBy(s => s.StartDate).Select(s => (DateOnly?)s.StartDate).FirstOrDefaultAsync();
         return (next ?? today).Year;

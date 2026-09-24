@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Camp.Api.Domain;
 using Camp.Api.Features.Finance;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Tests;
@@ -31,7 +32,7 @@ public class FinanceConcurrencyTests(ApiFactory factory) : IClassFixture<ApiFact
                 BatchId = batch.Id,
                 Kind = SettlementLineKind.Payment,
                 ProcessorRef = $"fsv_race{i}",
-                TransactedAt = DateTime.UtcNow,
+                TransactedAt = factory.Clock.UtcNow(),
                 AmountCents = each,
                 Description = "Virtual terminal payment",
                 CardholderName = "Dana Mitchell",

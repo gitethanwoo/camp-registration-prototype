@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Camp.Api.Domain;
 using Camp.Api.Features.Admittance;
+using Camp.Api.Features.Polish;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -181,7 +182,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (family, _) = await NewCouple("Lapsed");
         var id = await Apply(family, sessionId);
         await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(x => x.Id == id)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, DateTime.UtcNow.AddDays(-1))));
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, factory.Clock.UtcNow().AddDays(-1))));
         var staff = await factory.SignInAsStaff();
         var captures = _gateway.CaptureCount;
 
@@ -220,7 +221,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (family, _) = await NewCouple("Release");
         var id = await Apply(family, sessionId);
         await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(x => x.Id == id)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, DateTime.UtcNow.AddDays(-1))));
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, factory.Clock.UtcNow().AddDays(-1))));
         var staff = await factory.SignInAsStaff();
         (await staff.PostAsync($"/api/admin/admittance/applications/{id}/approve", null)).EnsureSuccessStatusCode();
         var claimed = await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(a => a.Id == id).Select(a => a.PoolId).SingleAsync());
@@ -242,7 +243,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (family, _) = await NewCouple("Reauth");
         var id = await Apply(family, sessionId);
         await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(x => x.Id == id)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, DateTime.UtcNow.AddDays(-1))));
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, factory.Clock.UtcNow().AddDays(-1))));
         var authorized = _gateway.AuthorizeCount;
         var voided = _gateway.VoidCount;
 
@@ -255,7 +256,7 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(_gateway.AuthorizeCount - authorized, _gateway.VoidCount - voided);
         var app = await factory.WithDb(db => db.Set<AdmittanceApplication>().AsNoTracking().SingleAsync(a => a.Id == id));
         Assert.Equal(HoldStatus.Authorized, app.Hold);
-        Assert.True(app.AuthorizationExpiresAt > DateTime.UtcNow);
+        Assert.True(app.AuthorizationExpiresAt > factory.Clock.UtcNow());
     }
 
     [Fact]

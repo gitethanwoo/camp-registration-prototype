@@ -3,6 +3,7 @@ using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features.Family;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -24,10 +25,10 @@ public sealed class PlanExceptionEndpoints : IEndpointModule
     {
         var g = app.MapGroup("/api/admin/finance/plan-exceptions").RequireAuthorization(Policies.Finance);
 
-        g.MapGet("", async (CampDbContext db, int? programId, CancellationToken ct) =>
+        g.MapGet("", async (CampDbContext db, int? programId, TimeProvider clock, CancellationToken ct) =>
         {
             var rows = await Load(db, programId, null, ct);
-            var today = Fin.Today;
+            var today = clock.Today();
             var views = rows.Select(r => Row(r, today)).OrderBy(r => r.DaysToPolicyAction).ThenBy(r => r.Family).ToList();
             var programs = await db.Programs.AsNoTracking().Where(p => p.Sessions.Any()).OrderBy(p => p.Name).Select(p => new { p.Id, p.Name }).ToListAsync(ct);
             return Results.Ok(new
@@ -44,11 +45,11 @@ public sealed class PlanExceptionEndpoints : IEndpointModule
             });
         });
 
-        g.MapGet("/{installmentId:int}", async (int installmentId, CampDbContext db, CancellationToken ct) =>
+        g.MapGet("/{installmentId:int}", async (int installmentId, CampDbContext db, TimeProvider clock, CancellationToken ct) =>
         {
             var r = (await Load(db, null, installmentId, ct)).FirstOrDefault();
             if (r is null) return Results.NotFound();
-            var today = Fin.Today;
+            var today = clock.Today();
             var order = await db.Orders.AsNoTracking().Include(o => o.Installments).Include(o => o.Household).ThenInclude(h => h.Members)
                 .SingleAsync(o => o.Id == r.Installment.OrderId, ct);
             var card = await db.Set<FinanceCardOnFile>().AsNoTracking().FirstOrDefaultAsync(c => c.OrderId == order.Id, ct);
@@ -73,7 +74,7 @@ public sealed class PlanExceptionEndpoints : IEndpointModule
             });
         });
 
-        g.MapPost("/{installmentId:int}/retry", async (int installmentId, PlanRetryRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CancellationToken ct) =>
+        g.MapPost("/{installmentId:int}/retry", async (int installmentId, PlanRetryRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var key = req.IdempotencyKey?.Trim();
             if (string.IsNullOrEmpty(key) || key.Length > 80) return Fin.Invalid("idempotencyKey", "Missing request key. Reload the page and try again.");
@@ -84,7 +85,7 @@ public sealed class PlanExceptionEndpoints : IEndpointModule
             var card = await db.Set<FinanceCardOnFile>().AsNoTracking().FirstOrDefaultAsync(c => c.OrderId == order.Id, ct);
             if (card is null) return Fin.Conflict("There's no card on file for this plan. Contact the family so they can pay from their account.");
 
-            var service = new BalancePaymentService(db, gateway, audit);
+            var service = new BalancePaymentService(db, gateway, audit, clock);
             var result = await service.PayAsync(order.HouseholdId, order.ConfirmationCode, new PayRequest($"fn3-{key}", Fin.ChargeToken(gateway, card), installment.Sequence), ct);
             db.ChangeTracker.Clear();
             if (result.Outcome is PayOutcome.AlreadyProcessing or PayOutcome.Invalid or PayOutcome.NotFound)
@@ -95,7 +96,7 @@ public sealed class PlanExceptionEndpoints : IEndpointModule
             var money = Fin.Money(result.AmountCents);
             if (result.Outcome is PayOutcome.Succeeded or PayOutcome.NothingOwed)
             {
-                failure.ResolvedAt = DateTime.UtcNow;
+                failure.ResolvedAt = clock.UtcNow();
                 failure.NextRetryOn = null;
                 audit.Record("installment.retry_succeeded", "Installment", id, result.Outcome == PayOutcome.Succeeded
                     ? $"Retried now: {money} charged to {card.Brand} ending {result.CardLast4 ?? card.Last4}."
@@ -121,22 +122,22 @@ public sealed class PlanExceptionEndpoints : IEndpointModule
             });
         });
 
-        g.MapPost("/{installmentId:int}/contact", async (int installmentId, CampDbContext db, IAuditLog audit, CancellationToken ct) =>
+        g.MapPost("/{installmentId:int}/contact", async (int installmentId, CampDbContext db, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var r = (await Load(db, null, installmentId, ct)).FirstOrDefault();
             if (r is null) return Results.NotFound();
             var failure = await FailureFor(db, installmentId, ct);
-            if (failure.LastContactedAt is { } last && DateTime.UtcNow - last < ContactCooldown)
+            if (failure.LastContactedAt is { } last && clock.UtcNow() - last < ContactCooldown)
                 return Fin.Conflict($"This family was emailed at {last:h:mm tt} UTC. Wait a few minutes before sending another.");
             var graceEnd = r.FailedOn.AddDays(Fin.GraceDays);
-            failure.LastContactedAt = DateTime.UtcNow;
+            failure.LastContactedAt = clock.UtcNow();
             db.OutboxEvents.Add(new OutboxEvent
             {
                 Type = "InstallmentFailedReminder",
                 Target = "HubSpot",
                 AggregateId = r.ConfirmationCode,
                 PayloadJson = JsonSerializer.Serialize(new { r.ConfirmationCode, r.Email, r.Installment.Sequence, amountCents = r.Installment.AmountCents, graceEnds = graceEnd }),
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
             audit.Record("installment.family_contacted", "Installment", installmentId,
                 $"HubSpot emailed {r.Email}: installment {r.Installment.Sequence} ({Fin.Money(r.Installment.AmountCents)}) needs a new card by {Fin.Day(graceEnd)}.");

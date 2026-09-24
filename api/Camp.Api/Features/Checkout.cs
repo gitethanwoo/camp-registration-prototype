@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,7 @@ public class CheckoutValidationException(Dictionary<string, string[]> errors) : 
     public Dictionary<string, string[]> Errors { get; } = errors;
 }
 
-public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<CheckoutService> log)
+public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<CheckoutService> log, TimeProvider clock)
 {
     public async Task<CheckoutResult> CheckoutAsync(int householdId, string actor, CheckoutRequest req, CancellationToken ct)
     {
@@ -95,7 +96,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
         var discount = string.IsNullOrWhiteSpace(req.DiscountCode) ? null
             : await db.DiscountCodes.FirstOrDefaultAsync(d => d.Code == req.DiscountCode.Trim().ToUpper(), ct);
         // K5: a code outside its rule's scope, dates or cap reads as invalid.
-        discount = await DiscountRuleGate.UsableAsync(db, discount, session, ct);
+        discount = await DiscountRuleGate.UsableAsync(db, discount, session, clock, ct);
         if (!string.IsNullOrWhiteSpace(req.DiscountCode) && discount is not { Status: DiscountStatus.Approved })
             throw Invalid("discountCode", Pricing.InvalidCodeMessage);
 
@@ -110,7 +111,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             PaymentOption = req.PaymentOption,
             DiscountCode = discount?.Code,
             Status = OrderStatus.Pending,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         };
         var seated = new List<Registration>();
         var waitlisted = new List<WaitlistEntry>();
@@ -156,12 +157,12 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                         },
                         AnswersJson = JsonSerializer.Serialize(Merge(input.Answers, req.HouseholdAnswers)),
                         HealthJson = session.Program.HealthMechanism == HealthMechanism.Embedded ? JsonSerializer.Serialize(input.Health) : null,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = clock.UtcNow(),
                     };
                     foreach (var w in session.Program.Waivers)
                     {
                         var sig = req.Waivers.First(s => s.WaiverId == w.Id && (!w.PerParticipant || s.PersonId == person.Id));
-                        reg.WaiverAcceptances.Add(new WaiverAcceptance { WaiverTemplateId = w.Id, Version = w.Version, SignerName = sig.SignerName.Trim(), AcceptedAt = DateTime.UtcNow });
+                        reg.WaiverAcceptances.Add(new WaiverAcceptance { WaiverTemplateId = w.Id, Version = w.Version, SignerName = sig.SignerName.Trim(), AcceptedAt = clock.UtcNow() });
                     }
                     db.Registrations.Add(reg);
                     seated.Add(reg);
@@ -179,7 +180,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                         OrderId = order.Id,
                         Position = position,
                         Status = WaitlistStatus.Waiting,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = clock.UtcNow(),
                     };
                     db.WaitlistEntries.Add(entry);
                     await db.SaveChangesAsync(ct);
@@ -238,7 +239,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             ProcessorRef = result.ProcessorRef,
             CardLast4 = result.CardLast4,
             Reason = result.DeclineReason,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         });
 
         if (result.Succeeded)
@@ -313,10 +314,10 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
     }
 
     void Audit(string actor, string action, string type, object id, string detail) =>
-        db.AuditEvents.Add(new AuditEvent { Actor = actor, Action = action, EntityType = type, EntityId = id.ToString()!, Detail = detail, CreatedAt = DateTime.UtcNow });
+        db.AuditEvents.Add(new AuditEvent { Actor = actor, Action = action, EntityType = type, EntityId = id.ToString()!, Detail = detail, CreatedAt = clock.UtcNow() });
 
     void Outbox(string type, string target, string aggregateId, object payload) =>
-        db.OutboxEvents.Add(new OutboxEvent { Type = type, Target = target, AggregateId = aggregateId, PayloadJson = JsonSerializer.Serialize(payload), CreatedAt = DateTime.UtcNow });
+        db.OutboxEvents.Add(new OutboxEvent { Type = type, Target = target, AggregateId = aggregateId, PayloadJson = JsonSerializer.Serialize(payload), CreatedAt = clock.UtcNow() });
 
     static CheckoutValidationException Invalid(string key, string msg) => new(new() { [key] = [msg] });
 

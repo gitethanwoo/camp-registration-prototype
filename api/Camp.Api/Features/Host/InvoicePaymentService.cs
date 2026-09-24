@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +20,7 @@ public sealed record InvoicePayResult(InvoicePayOutcome Outcome, int AmountCents
 /// transaction; charge the card with the payment's key; then claim the Pending row with a
 /// conditional update and record the result. A repeated key returns the first result.
 /// </summary>
-public sealed class InvoicePaymentService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit)
+public sealed class InvoicePaymentService(CampDbContext db, IPaymentGateway gateway, IAuditLog audit, TimeProvider clock)
 {
     static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(2);
 
@@ -44,7 +45,7 @@ public sealed class InvoicePaymentService(CampDbContext db, IPaymentGateway gate
             IdempotencyKey = key,
             Status = HostPaymentStatus.Pending,
             PaidBy = paidBy,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow(),
         };
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
@@ -101,7 +102,7 @@ public sealed class InvoicePaymentService(CampDbContext db, IPaymentGateway gate
                 Target = "HubSpot",
                 AggregateId = invoice.Number,
                 PayloadJson = JsonSerializer.Serialize(new { invoice.Number, amountCents = payment.AmountCents, payment.PaidBy }),
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             });
         }
         else
@@ -115,7 +116,7 @@ public sealed class InvoicePaymentService(CampDbContext db, IPaymentGateway gate
     /// <summary>A payment left Pending (the process died mid-charge) would block the invoice; ask the processor and finish it.</summary>
     async Task ReconcileStaleAsync(int invoiceId, CancellationToken ct)
     {
-        var cutoff = DateTime.UtcNow - StaleAfter;
+        var cutoff = clock.UtcNow() - StaleAfter;
         var stale = await db.Set<HostInvoicePayment>().AsNoTracking()
             .Where(p => p.InvoiceId == invoiceId && p.Status == HostPaymentStatus.Pending && p.CreatedAt < cutoff)
             .Select(p => new { p.Id, p.IdempotencyKey }).ToListAsync(ct);

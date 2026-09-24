@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -168,7 +169,7 @@ public sealed class RoomingEndpoints : IEndpointModule
         }).RequireAuthorization(Policies.Cet);
 
         // Marks the rooming reviewed now; campers who left the session give their beds back.
-        ops.MapPost("/sessions/{id:int}/rooming/review", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        ops.MapPost("/sessions/{id:int}/rooming/review", async (int id, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             if (!await db.Set<OpsCabin>().AnyAsync(c => c.SessionId == id, ct)) return Results.NotFound();
             var review = await db.Set<OpsRoomingReview>().FirstOrDefaultAsync(r => r.SessionId == id, ct);
@@ -177,7 +178,7 @@ public sealed class RoomingEndpoints : IEndpointModule
                 review = new OpsRoomingReview { SessionId = id };
                 db.Set<OpsRoomingReview>().Add(review);
             }
-            review.ReviewedAt = DateTime.UtcNow;
+            review.ReviewedAt = clock.UtcNow();
             review.ReviewedBy = staff.Actor;
             var stale = await StalePlacements(db, id).ToListAsync(ct);
             foreach (var p in stale)

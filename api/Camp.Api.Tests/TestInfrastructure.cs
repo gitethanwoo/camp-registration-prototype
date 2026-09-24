@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
@@ -23,7 +24,15 @@ public class ApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Default", ConnectionString);
+        // Every test class starts its clock at the same instant, so date rules don't drift with the real calendar.
+        builder.UseSetting("Demo:Now", Now.ToString("O", CultureInfo.InvariantCulture));
     }
+
+    /// <summary>Where the app's clock starts in tests: registration season for the seeded 2028 camps.</summary>
+    public static readonly DateTimeOffset Now = new(2028, 3, 2, 15, 0, 0, TimeSpan.Zero);
+
+    /// <summary>The app's clock. Read "now" from here in tests, never from <c>DateTime.UtcNow</c>.</summary>
+    public TimeProvider Clock => Services.GetRequiredService<TimeProvider>();
 
     /// <summary>An HTTP client signed in as a guest. The household is matched by email, or created.</summary>
     public Task<HttpClient> SignInAsFamily(string email = Seed.JohnsonEmail, string firstName = "Maria", string lastName = "Johnson") =>

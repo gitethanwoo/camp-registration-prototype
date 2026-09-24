@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Features.StaffCx;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -29,13 +30,13 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
     {
         var setup = app.MapGroup("/api/admin/setup").RequireAuthorization(Policies.Admin);
 
-        setup.MapGet("/discount-rules", async (CampDbContext db, CancellationToken ct) =>
+        setup.MapGet("/discount-rules", async (CampDbContext db, CancellationToken ct, TimeProvider clock) =>
         {
             var all = await Load(db, ct);
             var sessions = await SessionPrices(db, ct);
             var programs = await db.Programs.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name, ct);
             var uses = await UsesByCode(db, ct);
-            var rows = all.Select(x => ToRow(x, sessions, programs, uses)).ToList();
+            var rows = all.Select(x => ToRow(x, sessions, programs, uses, clock)).ToList();
             return Results.Ok(new
             {
                 Counts = new
@@ -58,7 +59,7 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
         setup.MapPost("/discount-rules/preview", async (DiscountPreviewInput req, CampDbContext db, CancellationToken ct) =>
             Results.Ok(await Preview(db, req, ct)));
 
-        setup.MapPost("/discount-rules", async (DiscountRuleInput req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPost("/discount-rules", async (DiscountRuleInput req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var code = req.Code?.Trim().ToUpperInvariant() ?? "";
             var errors = await Validate(db, req, null, ct);
@@ -78,7 +79,7 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
                 MaxUses = req.MaxUses,
                 Stackable = req.Stackable,
                 CreatedBy = staff.Actor,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow(),
             };
             db.Set<DiscountRule>().Add(rule);
             await db.SaveChangesAsync(ct);
@@ -89,7 +90,7 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
             return Results.Ok(new { discount.Id });
         });
 
-        setup.MapPut("/discount-rules/{codeId:int}", async (int codeId, DiscountRuleInput req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
+        setup.MapPut("/discount-rules/{codeId:int}", async (int codeId, DiscountRuleInput req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct) =>
         {
             var discount = await db.DiscountCodes.FirstOrDefaultAsync(d => d.Id == codeId, ct);
             if (discount is null) return Results.NotFound();
@@ -112,7 +113,7 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
             if (rule is null)
             {
                 // A code from before rules existed gets its first rule; its past uses count toward the cap.
-                rule = new DiscountRule { DiscountCodeId = codeId, Uses = used, CreatedBy = staff.Actor, CreatedAt = DateTime.UtcNow };
+                rule = new DiscountRule { DiscountCodeId = codeId, Uses = used, CreatedBy = staff.Actor, CreatedAt = clock.UtcNow() };
                 db.Set<DiscountRule>().Add(rule);
             }
             discount.Kind = req.Kind;
@@ -181,9 +182,9 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
         await db.Sessions.Where(s => s.Id == sessionId).Select(s => (int?)s.ProgramId).FirstOrDefaultAsync(ct);
 
     /// <summary>"Active", "Pending approval" or "Inactive", with the reason in words.</summary>
-    static (string Status, string Reason) StatusOf(Loaded x, int uses)
+    static (string Status, string Reason) StatusOf(Loaded x, int uses, TimeProvider clock)
     {
-        var today = SetupResults.Today;
+        var today = clock.Today();
         if (x.Request is { Decision: ReviewDecision.Rejected } rejected) return ("Inactive", $"Rejected by {rejected.ReviewedBy} in Discount approvals.");
         if (x.Code.Status == DiscountStatus.PendingApproval)
             return ("Pending approval", $"Requested by {x.Request?.RequestedBy ?? x.Code.CreatedBy}. It reads as an invalid code to families until it's approved in Discount approvals.");
@@ -198,11 +199,11 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
     sealed record Row(int Id, string Code, string Name, string Kind, int Value, string Description, int? ProgramId, int? SessionId, string Scope,
         DateOnly? ValidFrom, DateOnly? ValidTo, int? MaxUses, int Uses, bool Stackable, string Status, string StatusReason, string Source, bool Editable, bool HasRule, bool Active);
 
-    static Row ToRow(Loaded x, Dictionary<int, Session> sessions, Dictionary<int, string> programs, Dictionary<string, int> usesByCode)
+    static Row ToRow(Loaded x, Dictionary<int, Session> sessions, Dictionary<int, string> programs, Dictionary<string, int> usesByCode, TimeProvider clock)
     {
         var t = TermsOf(x);
         var uses = x.Rule?.Uses ?? usesByCode.GetValueOrDefault(x.Code.Code);
-        var (status, reason) = StatusOf(x, uses);
+        var (status, reason) = StatusOf(x, uses, clock);
         var scope = t.SessionId is { } sid && sessions.TryGetValue(sid, out var s)
             ? $"{programs.GetValueOrDefault(s.ProgramId)} · {s.Name}"
             : t.ProgramId is { } pid ? $"{programs.GetValueOrDefault(pid)}, all sessions" : "All programs";

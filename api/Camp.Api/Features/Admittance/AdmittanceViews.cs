@@ -1,5 +1,6 @@
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Microsoft.EntityFrameworkCore;
 
 namespace Camp.Api.Features.Admittance;
@@ -89,9 +90,9 @@ public static class AdmittanceViews
         };
     }
 
-    public static async Task<object> FamilyList(CampDbContext db, int householdId)
+    public static async Task<object> FamilyList(CampDbContext db, int householdId, TimeProvider clock)
     {
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var apps = await db.Set<AdmittanceApplication>().Where(a => a.HouseholdId == householdId).WithPeople().AsNoTracking().ToListAsync();
         return apps.OrderByDescending(a => a.UpdatedAt).Select(a => new
         {
@@ -105,11 +106,11 @@ public static class AdmittanceViews
         });
     }
 
-    public static async Task<object?> FamilyStatus(CampDbContext db, int householdId, int id)
+    public static async Task<object?> FamilyStatus(CampDbContext db, int householdId, int id, TimeProvider clock)
     {
         var a = await db.Set<AdmittanceApplication>().Where(x => x.Id == id && x.HouseholdId == householdId).WithPeople().AsNoTracking().FirstOrDefaultAsync();
         if (a is null) return null;
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var code = a.OrderId is null ? null : await db.Orders.Where(o => o.Id == a.OrderId).Select(o => o.ConfirmationCode).FirstOrDefaultAsync();
         return new
         {
@@ -135,14 +136,14 @@ public static class AdmittanceViews
 
     // ── Staff ───────────────────────────────────────────────────────────────
 
-    public static async Task<object> StaffSessions(CampDbContext db)
+    public static async Task<object> StaffSessions(CampDbContext db, TimeProvider clock)
     {
         var sessions = await db.Sessions.Where(s => s.Program.Type == ProgramType.Admittance)
             .Include(s => s.Program).ThenInclude(p => p.Ministry).Include(s => s.Pools).AsNoTracking().ToListAsync();
         var pending = await db.Set<AdmittanceApplication>().Where(a => AdmittanceApplication.Pending.Contains(a.Stage))
             .GroupBy(a => a.SessionId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
         // Upcoming sessions first: the queue opens on the first one, and a past retreat has nothing to review.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today();
         return sessions.OrderBy(s => s.EndDate < today).ThenBy(s => s.StartDate).Select(s => new
         {
             Session = SessionInfo(s),
@@ -152,12 +153,12 @@ public static class AdmittanceViews
         });
     }
 
-    public static async Task<object?> Queue(CampDbContext db, int sessionId)
+    public static async Task<object?> Queue(CampDbContext db, int sessionId, TimeProvider clock)
     {
         var s = await db.Sessions.Include(x => x.Program).ThenInclude(p => p.Ministry).Include(x => x.Pools).AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == sessionId && x.Program.Type == ProgramType.Admittance);
         if (s is null) return null;
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var apps = await db.Set<AdmittanceApplication>().Where(a => a.SessionId == sessionId && a.Stage != ApplicationStage.Draft)
             .Include(a => a.Applicant).Include(a => a.Household).AsNoTracking().ToListAsync();
         int Count(params ApplicationStage[] stages) => apps.Count(a => stages.Contains(a.Stage));
@@ -191,11 +192,11 @@ public static class AdmittanceViews
         };
     }
 
-    public static async Task<object?> StaffDetail(CampDbContext db, int id)
+    public static async Task<object?> StaffDetail(CampDbContext db, int id, TimeProvider clock)
     {
         var a = await db.Set<AdmittanceApplication>().Where(x => x.Id == id && x.Stage != ApplicationStage.Draft).WithPeople().AsNoTracking().FirstOrDefaultAsync();
         if (a is null) return null;
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var answers = AdmittanceService.Answers(a);
         var key = id.ToString(CultureInfo.InvariantCulture);
         var history = await db.AuditEvents.Where(e => e.EntityType == "AdmittanceApplication" && e.EntityId == key)

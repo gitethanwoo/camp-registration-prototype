@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -158,7 +159,7 @@ public sealed class ReconciliationEndpoints : IEndpointModule
     public sealed record Candidate(string ConfirmationCode, string Household, string? Payer, List<string> Campers, string Program, string Session,
         DateOnly StartDate, DateOnly EndDate, int BalanceCents, bool NameMatches, bool CanTake);
 
-    static async Task<IResult> Resolve(int id, ResolveLineRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct)
+    static async Task<IResult> Resolve(int id, ResolveLineRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, TimeProvider clock, CancellationToken ct)
     {
         var note = req.Note?.Trim();
         if (string.IsNullOrEmpty(note)) return Fin.Invalid("note", "Add an audit note saying how you know.");
@@ -193,7 +194,7 @@ public sealed class ReconciliationEndpoints : IEndpointModule
         }
 
         // Claim the line; of two people resolving it at once, the second changes nothing.
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var claimed = await db.Set<SettlementLine>().Where(l => l.Id == id && l.Status == SettlementLineStatus.Unmatched)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(l => l.Status, SettlementLineStatus.Resolved)
@@ -234,17 +235,17 @@ public sealed class ReconciliationEndpoints : IEndpointModule
         }
         await db.SaveChangesAsync(ct);
 
-        var journal = await CreateJournalWhenReconciled(db, line.Batch, audit, ct);
+        var journal = await CreateJournalWhenReconciled(db, line.Batch, audit, clock, ct);
         await tx.CommitAsync(ct);
         return Results.Ok(new { Journal = journal });
     }
 
     /// <summary>Once no line in the batch is unmatched, queue its journal for Oracle Fusion.</summary>
-    static async Task<string?> CreateJournalWhenReconciled(CampDbContext db, SettlementBatch batch, IAuditLog audit, CancellationToken ct)
+    static async Task<string?> CreateJournalWhenReconciled(CampDbContext db, SettlementBatch batch, IAuditLog audit, TimeProvider clock, CancellationToken ct)
     {
         if (await db.Set<SettlementLine>().AnyAsync(l => l.BatchId == batch.Id && l.Status == SettlementLineStatus.Unmatched, ct)) return null;
         if (await db.Set<JournalBatch>().AnyAsync(j => j.SettlementBatchId == batch.Id, ct)) return null;
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var journal = new JournalBatch { Reference = $"JRN-{batch.SettledOn:yyyy-MM-dd}", SettlementBatchId = batch.Id, CreatedAt = now, Status = JournalStatus.Pending };
         journal.Events.Add(new JournalEvent { Status = JournalStatus.Pending, Detail = "Export created and queued for Oracle Fusion.", Actor = "System", At = now });
         db.Add(journal);

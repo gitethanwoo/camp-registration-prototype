@@ -2,6 +2,7 @@ using System.Text;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -63,7 +64,7 @@ public sealed class AuditLogEndpoints : IEndpointModule
             return Results.Ok(new { e.Id, e.CreatedAt, e.Actor, e.Action, Category = CategoryOf(e.Action), What = ActionLabel(e.Action), e.EntityType, e.EntityId, e.Detail, Changes = changes });
         });
 
-        audit.MapGet("/export", async (string? category, string? actor, DateOnly? from, DateOnly? to, string? q, CampDbContext db, IAuditLog log, CancellationToken ct) =>
+        audit.MapGet("/export", async (string? category, string? actor, DateOnly? from, DateOnly? to, string? q, CampDbContext db, IAuditLog log, TimeProvider clock, CancellationToken ct) =>
         {
             var rows = await Filter(db, category, actor, from, to, q).OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
                 .Take(MaxExportRows).AsNoTracking().ToListAsync(ct);
@@ -73,7 +74,7 @@ public sealed class AuditLogEndpoints : IEndpointModule
                     .Append("\r\n");
             log.Record("audit.exported", "AuditLog", "export", $"Exported {rows.Count} audit rows.");
             await db.SaveChangesAsync(ct);
-            return Results.File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", $"audit-log-{SetupResults.Today:yyyy-MM-dd}.csv");
+            return Results.File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", $"audit-log-{clock.Today():yyyy-MM-dd}.csv");
         });
     }
 

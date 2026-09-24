@@ -1,6 +1,7 @@
 using System.Text;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +15,7 @@ namespace Camp.Api.Features.Finance;
 /// payments so far, and the Oracle Fusion journal batch for each (in <see cref="FinanceSettlementSeed"/>,
 /// which runs last so every slice's payments settle). Nothing here touches another slice's program or session.
 /// </summary>
-public sealed class FinanceSeed : ISeedModule
+public sealed class FinanceSeed(TimeProvider clock) : ISeedModule
 {
     public const string ProgramSlug = "family-camp";
     public const string MitchellEmail = "dana.mitchell@example.com";
@@ -37,7 +38,7 @@ public sealed class FinanceSeed : ISeedModule
         var johnson = await db.Households.Include(h => h.Members).FirstOrDefaultAsync(h => h.Email == Seed.JohnsonEmail, ct);
         if (wsc is null || johnson is null) return;
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow();
         var rng = new Random(6006);
 
         var program = new CampProgram
@@ -420,7 +421,7 @@ public sealed class FinanceSeed : ISeedModule
 /// seeds (setup's, at 900, adds last summer's Family Weekend payments), so no seeded payment reads as
 /// "captured, not yet settled" on FN2.
 /// </summary>
-public sealed class FinanceSettlementSeed : ISeedModule
+public sealed class FinanceSettlementSeed(TimeProvider clock) : ISeedModule
 {
     public int Order => 1000;
 
@@ -429,6 +430,6 @@ public sealed class FinanceSettlementSeed : ISeedModule
         db.ChangeTracker.Clear();
         if (await db.Set<SettlementBatch>().AnyAsync(ct)) return;
         if (!await db.Programs.AnyAsync(p => p.Slug == FinanceSeed.ProgramSlug, ct)) return;
-        await FinanceSeed.SeedSettlements(db, DateOnly.FromDateTime(DateTime.UtcNow), new Random(6007), ct);
+        await FinanceSeed.SeedSettlements(db, clock.Today(), new Random(6007), ct);
     }
 }

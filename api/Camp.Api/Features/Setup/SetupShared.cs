@@ -22,8 +22,6 @@ internal static class SetupResults
     public static string Date(DateOnly d) => d.ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
 
     public static string Date(DateTime? d) => d is null ? "Not set" : d.Value.ToString("MMM d, yyyy h:mm tt", CultureInfo.InvariantCulture);
-
-    public static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 }
 
 /// <summary>Records an audit row plus the before and after values K12 shows.</summary>

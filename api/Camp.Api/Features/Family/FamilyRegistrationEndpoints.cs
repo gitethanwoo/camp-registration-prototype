@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -18,9 +19,9 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
 
         // F4 · every registration across ministries, upcoming / past / cancelled (FR-50). One card per
         // order, because one checkout is one card, one payment plan, and one confirmation number.
-        family.MapGet("", async (CampDbContext db, CurrentUser me) =>
+        family.MapGet("", async (CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
-            var today = FamilyReadModel.Today;
+            var today = clock.Today();
             var orders = await FamilyReadModel.Orders(db, me.HouseholdId).AsNoTracking().ToListAsync();
             var waitlist = await db.WaitlistEntries.Where(w => w.HouseholdId == me.HouseholdId && w.OrderId != null)
                 .Include(w => w.Person).AsNoTracking().ToListAsync();
@@ -75,14 +76,14 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
         });
 
         // F5 · one registration (order) as the family sees it: participants, checklist, money (FR-27, FR-42, FR-50).
-        family.MapGet("/{code}", async (string code, CampDbContext db, CurrentUser me) =>
+        family.MapGet("/{code}", async (string code, CampDbContext db, CurrentUser me, TimeProvider clock) =>
         {
             var o = await FamilyReadModel.Orders(db, me.HouseholdId).AsNoTracking().FirstOrDefaultAsync(x => x.ConfirmationCode == code);
             if (o is null) return Results.NotFound();
             var program = o.Session.Program;
             var money = FamilyReadModel.Money(o);
             var household = await db.Households.AsNoTracking().SingleAsync(h => h.Id == me.HouseholdId);
-            var today = FamilyReadModel.Today;
+            var today = clock.Today();
 
             return Results.Ok(new
             {
@@ -138,7 +139,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
         });
 
         // F5 · sign a waiver that's still missing, e.g. after a new version was published.
-        family.MapPost("/{code}/waivers", async (string code, SignWaiverRequest req, CampDbContext db, CurrentUser me, IAuditLog audit) =>
+        family.MapPost("/{code}/waivers", async (string code, SignWaiverRequest req, CampDbContext db, CurrentUser me, IAuditLog audit, TimeProvider clock) =>
         {
             var o = await db.Orders.Include(x => x.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Waivers)
                 .Include(x => x.Registrations).ThenInclude(r => r.WaiverAcceptances)
@@ -156,7 +157,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
             if (targets.Count == 0) return Results.Conflict(new { error = $"{waiver.Title} is already signed." });
 
             foreach (var r in targets)
-                r.WaiverAcceptances.Add(new WaiverAcceptance { WaiverTemplateId = waiver.Id, Version = waiver.Version, SignerName = req.SignerName.Trim(), AcceptedAt = DateTime.UtcNow });
+                r.WaiverAcceptances.Add(new WaiverAcceptance { WaiverTemplateId = waiver.Id, Version = waiver.Version, SignerName = req.SignerName.Trim(), AcceptedAt = clock.UtcNow() });
             audit.Record("waiver.signed", "PaymentOrder", o.Id, $"{req.SignerName.Trim()} signed {waiver.Title} v{waiver.Version} for {FamilyReadModel.Participants(targets.Select(r => r.Person.FirstName))}.");
             await db.SaveChangesAsync();
             return Results.Ok(new { Signed = targets.Count });
@@ -231,9 +232,9 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
             });
         });
 
-        family.MapPost("/{code}/pay", async (string code, PayRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
+        family.MapPost("/{code}/pay", async (string code, PayRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct, TimeProvider clock) =>
         {
-            var result = await new BalancePaymentService(db, gateway, audit).PayAsync(me.HouseholdId, code, req, ct);
+            var result = await new BalancePaymentService(db, gateway, audit, clock).PayAsync(me.HouseholdId, code, req, ct);
             return result.Outcome switch
             {
                 PayOutcome.Succeeded => Results.Ok(result),
