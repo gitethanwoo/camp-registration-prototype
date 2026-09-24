@@ -112,7 +112,7 @@ const openId = ref<number | null>(null)
             WorkOS
           </span>
           <span v-else-if="data" class="text-foreground">Not synced yet.</span>
-          <Button size="sm" variant="outline" :disabled="syncing || !data" @click="sync()">
+          <Button size="sm" variant="outline" class="text-foreground" :disabled="syncing || !data" @click="sync()">
             <RefreshCw :class="syncing && 'animate-spin'" />{{ syncing ? 'Syncing…' : 'Sync now' }}
           </Button>
         </div>
@@ -172,6 +172,7 @@ const openId = ref<number | null>(null)
           <div class="mt-1 text-sm text-muted-foreground md:hidden">
             {{ r.roleLabel }} · {{ r.ministry?.name ?? 'All ministries' }}
           </div>
+          <AccessBadge class="mt-1 sm:hidden" :on="r.healthAccess" :muted="r.status === 'Revoked'" />
         </template>
         <template #cell-sync="{ row: r }">
           <template v-if="r.status === 'Revoked'">

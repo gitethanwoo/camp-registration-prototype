@@ -118,10 +118,10 @@ async function pick(p: HealthProgram) {
 // The selected program's row stays highlighted while its settings are open.
 const picked = (p: HealthProgram) => (p.id === selectedId.value ? 'bg-muted' : '')
 const columns: ColumnDef<HealthProgram>[] = [
-  { accessorKey: 'name', header: 'Program', meta: { cellClass: picked } },
-  { accessorKey: 'location', header: 'Location', meta: { class: 'hidden xl:table-cell', cellClass: picked } },
+  { accessorKey: 'name', header: 'Program', meta: { class: 'whitespace-normal', cellClass: picked } },
+  { accessorKey: 'location', header: 'Location', meta: { class: 'hidden 2xl:table-cell', cellClass: picked } },
   { id: 'mechanism', header: 'Collection method', meta: { class: 'hidden sm:table-cell', cellClass: picked } },
-  { id: 'viewers', header: 'Can view details', meta: { cellClass: picked } },
+  { id: 'viewers', header: 'Can view details', meta: { class: 'whitespace-normal', cellClass: picked } },
 ]
 const roleLabel = (slug: string) => data.value?.roles.find((r) => r.slug === slug)?.label ?? slug
 </script>
@@ -140,8 +140,8 @@ const roleLabel = (slug: string) => data.value?.roles.find((r) => r.slug === slu
       ><AlertDescription>{{ error }}</AlertDescription></Alert
     >
 
-    <div v-else class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] lg:items-start">
-      <Card>
+    <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] lg:items-start">
+      <Card class="min-w-0">
         <CardHeader>
           <CardTitle>Programs</CardTitle>
           <CardDescription
@@ -174,7 +174,7 @@ const roleLabel = (slug: string) => data.value?.roles.find((r) => r.slug === slu
         </CardContent>
       </Card>
 
-      <div ref="editor" class="scroll-mt-20">
+      <div ref="editor" class="min-w-0 scroll-mt-20">
         <Card v-if="selected">
           <CardHeader>
             <CardTitle class="text-lg">{{ selected.name }}</CardTitle>

@@ -23,6 +23,9 @@ public sealed class AccessEndpoints : IEndpointModule
 
     public const string CampDocUrl = "https://app.campdoc.com/";
 
+    // One sync at a time: two tabs opening K11 together must not revoke (and audit) the same person twice.
+    static readonly SemaphoreSlim SyncGate = new(1, 1);
+
     static readonly JsonSerializerOptions HealthJson = new() { PropertyNameCaseInsensitive = true };
 
     public void Map(IEndpointRouteBuilder app)
@@ -61,9 +64,17 @@ public sealed class AccessEndpoints : IEndpointModule
                 return Results.Json(new { error = $"{e.Message} No one's access changed. Try Sync now again in a minute." },
                     statusCode: StatusCodes.Status502BadGateway);
             }
-            var run = await StaffSync.ReconcileAsync(db, audit, members, staff.Actor, time.GetUtcNow().UtcDateTime, ct);
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(run);
+            await SyncGate.WaitAsync(ct);
+            try
+            {
+                var run = await StaffSync.ReconcileAsync(db, audit, members, staff.Actor, time.GetUtcNow().UtcDateTime, ct);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(run);
+            }
+            finally
+            {
+                SyncGate.Release();
+            }
         });
 
         admin.MapGet("/staff/{id:int}", async (int id, CampDbContext db, CancellationToken ct) =>

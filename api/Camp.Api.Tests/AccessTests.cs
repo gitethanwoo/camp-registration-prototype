@@ -369,6 +369,27 @@ public class AccessSyncTests(AccessSyncTests.Factory factory) : IClassFixture<Ac
     }
 
     [Fact]
+    public async Task Syncs_started_together_revoke_and_audit_once()
+    {
+        var alex = await factory.SignInAsStaff("admin", "Alex Morgan");
+        factory.Directory.Down = false;
+        factory.Directory.Members.Clear();
+        factory.Directory.Members.AddRange([
+            ("user_test_admin@winshape.example", "admin@winshape.example", "Alex", "Morgan", "admin"),
+            ("user_temp", "temp.helper@winshape.example", "Terry", "Helper", "cet"),
+        ]);
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync("/api/access/staff/sync", null)).StatusCode);
+        var terry = await factory.WithDb(db => db.Set<StaffMember>().Where(m => m.Email == "temp.helper@winshape.example").Select(m => m.Id).SingleAsync());
+
+        // Two tabs open K11 at once after Terry leaves the organization.
+        factory.Directory.Members.RemoveAt(1);
+        var results = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => alex.PostAsync("/api/access/staff/sync", null)));
+        Assert.All(results, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        var revocations = await factory.WithDb(db => db.AuditEvents.CountAsync(a => a.Action == "staff.revoked" && a.EntityType == "StaffMember" && a.EntityId == terry.ToString(CultureInfo.InvariantCulture)));
+        Assert.Equal(1, revocations);
+    }
+
+    [Fact]
     public async Task A_failed_sync_changes_no_one()
     {
         var alex = await factory.SignInAsStaff("admin", "Alex Morgan");
