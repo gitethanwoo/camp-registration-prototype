@@ -1,10 +1,10 @@
 # Wave 2 integration: setup, finance, ops and host on one stack
 
 - Plan Type: ExecPlan
-- Status: In progress
+- Status: Completed
 - Owner: Claude (wave 2 integrator)
 - Started: 2026-09-24
-- Completed: —
+- Completed: 2026-09-24
 
 > Maintain this file in accordance with `docs/PLANS.md`.
 
@@ -22,8 +22,9 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - [x] (2026-09-24 07:30Z) Setup and finance both seeded a program with slug `family-camp`; setup's is renamed "Family Weekend" (see Decision Log). 6 SetupTests failures fixed.
 - [x] (2026-09-24 07:39Z) Cross-slice fixes: shared `money()` prints two decimals whenever there are cents; Family Camp published; admittance submit and group checkout refuse an unpublished program; transfers keep a scholarship and drop a session-scoped code; `PUT /api/admin/pools` is admin-only; the sidebar hides role-restricted entries.
 - [x] (2026-09-24 07:39Z) `npm run test:api` 171/171.
-- [ ] Gates and two full e2e runs on a fresh stack.
-- [ ] Persona click-through at 1440×1000 and 390×844.
+- [x] (2026-09-24 07:50Z) Settlement seeding moved after setup's seed (FN2 showed setup's seeded payments as unsettled).
+- [x] (2026-09-24 08:05Z) Gates pass; two full e2e runs on a fresh stack, 49 and 49.
+- [x] (2026-09-24 08:15Z) Persona click-through at 1440×1000 and 390×844 (Alex, Marcus, Maria, Diane, Grace, Sam, Pastor Dave): 74 screenshots, no sideways scroll, no 5xx or page errors, sidebar entries match each role.
 
 ## Surprises & Discoveries
 
@@ -58,6 +59,9 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - Decision: Dates stay as they are. Seeds describe summer 2028; anything done live is stamped with the real clock (2026). No demo clock.
   Rationale: a demo clock is a cross-cutting change to every `DateTime.UtcNow` in every slice, and seeded rows would still disagree with anything the presenter does live, only in a different direction. Shifting seeded program years is off the table because the specs and concept screens name 2028 dates. What a presenter will see: host invoice "Paid Sep 24, 2026" on an invoice issued Feb 1, 2028; live check-ins dated 2026 beside seeded 2028 ones (ops already keeps its seeded check-ins at session start); audit rows in 2026. These read as "today" in the demo, which is what they are.
   Date/Author: 2026-09-24 / Claude
+- Decision: Fiserv settlement batches are seeded by a new `FinanceSettlementSeed` (Order 1000) instead of at the end of `FinanceSeed` (200).
+  Rationale: the batches are built from every payment that exists at seed time, so they have to run after every seed that adds payments. Setup's runs at 900.
+  Date/Author: 2026-09-24 / Claude
 - Decision: The shared `money()` prints whole dollars without decimals ("$475") and any amount with cents with two ("$427.50"). No per-slice formatter.
   Rationale: `maximumFractionDigits: 2, minimumFractionDigits: 0` printed "$25,627.5". `slice/finance` itself uses the shared helper; the duplicate `money.ts` exists only in the unmerged 5eb385e.
   Date/Author: 2026-09-24 / Claude
@@ -68,11 +72,21 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - (2026-09-24) Fresh stack: `__EFMigrationsHistory` lists Initial, Wave1, Wave2; `sys.triggers` has `TR_AuditEvents_Immutable`; `DELETE TOP(1) FROM AuditEvents` fails with "Audit rows can't be changed or deleted."
 - (2026-09-24) After the cross-slice fixes: `npm run test:api` 171 passed, 0 failed; `npm run lint` and `npm run typecheck` pass.
 - (2026-09-24) First full e2e on a fresh stack (before the settlement seed change): `npx playwright test` 49 passed.
+- (2026-09-24) Final: `npm run verify:precommit` pass; `npm run test:api` 171 passed, 0 failed; after `docker compose down -v && docker compose up -d --build`, no seeded payment is unsettled, and `npx playwright test` gives 49 passed, then 49 passed again straight after.
+- (2026-09-24) Click-through: sidebars read Alex (all groups), Marcus (no Setup editors, no transfer or duplicate queues; Finance shown), Diane (no Setup editors, no Finance), Grace (host shell only; `/admin` sends her to `/host`). Marcus opening `/admin/setup/programs` by URL gets setup's "for admins" message. `/admin/session` shows capacity as plain numbers to Diane and Marcus. FN2 shows "$56.25" and "$2,193.75". Grace's paid invoice reads "Paid Sep 24, 2026" beside "Issued Feb 1, 2028", as the dates decision expects.
 - (2026-09-24) The three new API tests (admittance unpublished, group checkout unpublished, transfer scholarship and scoped code) fail with the service changes reverted (3 of 3) and pass with them.
 
 ## Outcomes & Retrospective
 
-Not finished.
+Wave 2 is one working product on branch `wave2`, with one `Wave2` migration that carries setup's audit trigger. The only real merge collision was in data, not code: two slices seeded the same program slug, and the second seed quietly skipped its demo program. That cost six API tests, and nothing in the file diff showed it. Beyond that, the cross-slice work was about agreement between slices: checkout, admittance and groups now apply the same publish rule; transfers respect both setup's rule scope and finance's awards; the sidebar and the capacity endpoint match the API policies; and money prints the same everywhere. No e2e assertion was weakened, and the suite needed no changes to pass on the combined seed.
+
+Left open:
+- 5eb385e (finance review fixes: a lock on FN2 Resolve plus a concurrency test, FN2 phone layout, FN4 paging, a slice-local `money.ts`) is on the finance worktree but not on `slice/finance`, so it isn't in `wave2`. This session wasn't allowed to merge it. If it's merged, drop its `money.ts` in favour of the shared `money()`, which now prints the same output.
+- Family Camp has no waiver template (finance seeded none). It's published now, so a family can register for it without signing one.
+- Setup's "Family Weekend" has two sessions, one of them past, and is still pending approval; the setup spec approves it.
+- The dates decision stands: seeded 2028, live actions stamped 2026.
+- There's no role guard on routes; restricted pages opened by URL show their own 403 message.
+- Wave 1 carry-overs are unchanged (split orders on F1 and F4, the account menu loading only on mount, David Johnson not being an emulator persona).
 
 ## Context and Orientation
 
@@ -109,10 +123,10 @@ From `/Users/ethanwoo/dev/camp-registration-prototype`:
 
 ## Validation and Acceptance
 
-- [ ] `npm run verify:precommit`
-- [ ] `npm run test:api`
-- [ ] `npx playwright test` on a fresh stack, twice in a row
-- [ ] Persona click-through at 1440 and 390 wide
+- [x] `npm run verify:precommit` (pass)
+- [x] `npm run test:api` (171/171)
+- [x] `npx playwright test` on a fresh stack, twice in a row (49, 49)
+- [x] Persona click-through at 1440 and 390 wide (pass)
 
 ## Idempotence and Recovery
 
@@ -120,7 +134,7 @@ The migration is regenerated from `main`'s snapshot, so rerunning the steps prod
 
 ## Artifacts and Notes
 
-Screenshots from the click-through are in the session scratchpad (`wave2-shots/`), not the repo.
+Commits on `wave2`: the four `--no-ff` slice merges, 0846885 (Wave2 migration, one Family Camp), b06ba93 (cross-slice fixes), cc7a140 (settlement seed order), and the commit that completes this plan. Screenshots from the click-through are in the session scratchpad (`wave2-shots/`), not the repo.
 
 ## Interfaces and Dependencies
 
