@@ -182,8 +182,9 @@ const dot: Record<JournalStatus, string> = {
     >
       <SheetContent v-if="selected" class="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle class="flex items-center gap-2 font-mono"
-            >{{ selected.reference }} <StatusBadge :status="detail?.status ?? selected.status"
+          <SheetTitle class="flex items-center gap-2"
+            ><span class="font-mono">{{ selected.reference }}</span>
+            <StatusBadge :status="detail?.status ?? selected.status"
           /></SheetTitle>
           <SheetDescription
             >{{ date(selected.settledOn) }} · Fiserv settlement {{ selected.settlementReference }}</SheetDescription

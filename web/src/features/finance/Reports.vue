@@ -31,7 +31,9 @@ const preset = ref<'30' | '90' | 'ytd' | 'custom'>('90')
 const customFrom = ref('')
 const customTo = ref('')
 
-const iso = (d: Date) => d.toISOString().slice(0, 10)
+// Local calendar dates, so an evening in Georgia doesn't roll the range into tomorrow (UTC).
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const range = computed(() => {
   const today = new Date()
   if (preset.value === 'custom') return { from: customFrom.value, to: customTo.value }
