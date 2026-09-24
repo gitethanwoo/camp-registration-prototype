@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -90,6 +91,8 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
 
         var discount = string.IsNullOrWhiteSpace(req.DiscountCode) ? null
             : await db.DiscountCodes.FirstOrDefaultAsync(d => d.Code == req.DiscountCode.Trim().ToUpper(), ct);
+        // K5: a code outside its rule's scope, dates or cap reads as invalid.
+        discount = await DiscountRuleGate.UsableAsync(db, discount, session, ct);
         if (!string.IsNullOrWhiteSpace(req.DiscountCode) && discount is not { Status: DiscountStatus.Approved })
             throw Invalid("discountCode", Pricing.InvalidCodeMessage);
 
@@ -121,6 +124,9 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                 var winner = await db.Orders.AsNoTracking().SingleAsync(o => o.IdempotencyKey == req.IdempotencyKey, ct);
                 return new(winner.ConfirmationCode, winner.Status, winner.DeclineReason);
             }
+            // K5 usage cap: taken in this transaction, so two orders can't both take the last use.
+            if (discount is not null && !await DiscountRuleGate.ClaimAsync(db, discount.Id, ct))
+                throw Invalid("discountCode", Pricing.InvalidCodeMessage);
 
             foreach (var (person, pool, input) in placements)
             {
@@ -185,7 +191,11 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             order.TotalCents = quote.TotalCents;
             order.DueTodayCents = quote.DueTodayCents;
             order.PaymentOption = quote.PaymentOption;
-            if (seated.Count == 0) order.Status = OrderStatus.Waitlisted;
+            if (seated.Count == 0)
+            {
+                order.Status = OrderStatus.Waitlisted;
+                if (discount is not null) await DiscountRuleGate.ReleaseAsync(db, discount.Code, ct);
+            }
 
             foreach (var w in waitlisted)
             {
@@ -260,6 +270,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             }
             await db.WaitlistEntries.Where(w => w.OrderId == order.Id && w.Status == WaitlistStatus.Waiting)
                 .ExecuteUpdateAsync(s => s.SetProperty(w => w.Status, WaitlistStatus.Removed), ct);
+            await DiscountRuleGate.ReleaseAsync(db, order.DiscountCode, ct);
             Audit(actor, "payment.declined", "PaymentOrder", order.Id, $"Charge of {Money(order.DueTodayCents)} declined; {order.Registrations.Count} seat(s) released.");
         }
         await db.SaveChangesAsync(ct);

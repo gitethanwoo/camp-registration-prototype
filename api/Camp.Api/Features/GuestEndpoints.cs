@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -165,6 +166,7 @@ public static class GuestEndpoints
             var people = await db.People.Where(p => req.PersonIds.Contains(p.Id) && p.HouseholdId == me.HouseholdId).AsNoTracking().ToListAsync();
             var code = req.DiscountCode?.Trim().ToUpper();
             var discount = string.IsNullOrEmpty(code) ? null : await db.DiscountCodes.AsNoTracking().FirstOrDefaultAsync(d => d.Code == code);
+            discount = await DiscountRuleGate.UsableAsync(db, discount, s); // K5 scope, dates and cap
             return Results.Ok(Pricing.Build(s, people.OrderBy(p => req.PersonIds.IndexOf(p.Id)).ToList(), req.PaymentOption, discount, code));
         });
 
