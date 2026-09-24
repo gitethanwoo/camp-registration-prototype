@@ -41,7 +41,7 @@ function pick(option: string, on: boolean | 'indeterminate') {
 <template>
   <div :class="['space-y-2', wide && 'sm:col-span-2']">
     <Label :id="labelId" :for="grouped ? undefined : fieldId" class="leading-snug"
-      >{{ q.label }}<span v-if="q.required" class="text-destructive" aria-hidden="true"> *</span></Label
+      ><span>{{ q.label }}<span v-if="q.required" class="text-destructive" aria-hidden="true"> *</span></span></Label
     >
     <p v-if="q.helpText" :id="helpId" class="text-sm text-muted-foreground">{{ q.helpText }}</p>
 
