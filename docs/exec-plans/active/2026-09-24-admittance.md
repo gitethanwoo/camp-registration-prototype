@@ -21,9 +21,9 @@ To see it: run the API and Vite (see Concrete Steps), sign in as `maria.johnson@
 ## Progress
 
 - [x] (2026-09-24 15:00Z) Read AGENTS.md, QUALITY.md, PLANS.md, the wave plan, screen cards R2, F7, C6, the concept PNGs, and the existing checkout, gateway, seed, and pages. Wrote this plan.
-- [ ] Gateway: authorize, capture, and void on `IPaymentGateway` and the fake.
-- [ ] API: entity, EF configuration, migration `Admittance`, service, guest and staff endpoints, seed module.
-- [ ] API integration tests in `api/Camp.Api.Tests/AdmittanceTests.cs`.
+- [x] (2026-09-24 16:10Z) Gateway: authorize, capture, and void on `IPaymentGateway` and the fake.
+- [x] (2026-09-24 16:40Z) API: entity, EF configuration, migration `Admittance`, service, guest and staff endpoints, seed module.
+- [x] (2026-09-24 17:00Z) API integration tests in `api/Camp.Api.Tests/AdmittanceTests.cs` (12 tests; full suite 28/28).
 - [ ] Web: R2 application wizard, F7 status page, C6 review queue, and the Apply entry point on the program page.
 - [ ] Playwright spec `e2e/admittance.spec.ts`.
 - [ ] Seven-pass self-review with desktop and phone screenshots compared to the concepts.
@@ -35,6 +35,8 @@ To see it: run the API and Vite (see Concrete Steps), sign in as `maria.johnson@
   Evidence: `api/Camp.Api/Data/Seed.cs`, `Reserved = 31`. The slice seed adds 31 approved applications with real registrations and paid orders so that count is a real row count, and it does not touch `Reserved`.
 - Observation: `PendingPaymentReconciler` finalizes any `PaymentOrder` left in `Pending` for two minutes by looking up a charge under the order's idempotency key. An order that only holds an authorization would be "declined" by it.
   Evidence: `api/Camp.Api/Integrations/Workers.cs`. So the authorization lives on the application row, and a `PaymentOrder` is created only when the card is captured.
+- Observation: two staff approving the same application at once could both reach the capture step (one sees it already Approved and retries the capture). The capture key made it one charge at the gateway, but the second order insert hit the unique idempotency key and returned 500.
+  Evidence: `Two_staff_approving_at_once_capture_once_and_claim_one_seat` failed with a 500. The service now treats that insert failure as "the other approval finished" and returns success. The same run caught `ApproveAsync` reporting `captured: true` for a lapsed hold.
 
 ## Decision Log
 
