@@ -7,8 +7,12 @@ namespace Camp.Api.Features.Groups;
 /// <summary>Draft while the leader builds the roster; Confirmed once the group is paid for.</summary>
 public enum GroupStatus { Draft, Confirmed }
 
-/// <summary>Where an attendee's withdrawal request stands. The leader approves the refund (G2).</summary>
-public enum WithdrawalStatus { None, Requested, Approved, Declined }
+/// <summary>
+/// Where an attendee's withdrawal request stands. The leader approves the refund (G2).
+/// Refunding is the short claim held while the refund is with the processor, so a second
+/// approve (double-click, retry, another tab) can't refund twice or free a second seat.
+/// </summary>
+public enum WithdrawalStatus { None, Requested, Approved, Declined, Refunding }
 
 /// <summary>
 /// One group registration for a cohort session (FR-35), made by a leader for a list of attendees.

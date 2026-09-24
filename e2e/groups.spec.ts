@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { expect, signInAs, test } from './fixtures'
 
 // Slice 3 · groups and cohorts. Pastor Dave registers a church group for the Emerging Leaders
@@ -17,6 +18,7 @@ test('a group leader registers a roster, an attendee completes forms by link, an
   await signInAs(page, 'pastorDave', '/programs/emerging-leaders-cohort')
   await page.getByRole('button', { name: 'Register your group' }).click()
   await expect(page.getByRole('heading', { name: 'Attendee roster' })).toBeVisible()
+  await expectNoSideScroll(page)
 
   await page.getByLabel('Group name').fill(`Youth leaders ${run}`)
   await page.getByLabel('Attendee 1 name').fill(first)
@@ -59,7 +61,11 @@ test('a group leader registers a roster, an attendee completes forms by link, an
   const guest = await browser.newContext()
   const attendee = await guest.newPage()
   await attendee.goto(link)
-  await expect(attendee.getByRole('heading', { name: 'Completing forms for Emerging Leaders Cohort' })).toBeVisible()
+  await expect(
+    attendee.getByRole('heading', {
+      name: 'Completing forms for Emerging Leaders Cohort',
+    }),
+  ).toBeVisible()
   await expect(attendee.getByText('Dave Kim registered you for the Emerging Leaders Cohort')).toBeVisible()
   await expect(attendee.getByText(second)).toHaveCount(0) // sees only their own record
 
@@ -110,3 +116,19 @@ test('the seeded group shows its completion numbers and a pending withdrawal @ph
   await expect(page.getByText('Noah Bennett').filter({ visible: true })).toBeVisible()
   await expect(page.getByText('Alex Chen')).toHaveCount(0)
 })
+
+test('the roster page has no sideways scroll at phone width @phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await signInAs(page, 'pastorDave', '/programs/emerging-leaders-cohort')
+  await page.getByRole('button', { name: 'Register your group' }).click()
+  await expect(page.getByRole('heading', { name: 'Attendee roster' })).toBeVisible()
+  await expectNoSideScroll(page)
+})
+
+async function expectNoSideScroll(page: Page) {
+  const { scroll, client } = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }))
+  expect(scroll).toBeLessThanOrEqual(client)
+}

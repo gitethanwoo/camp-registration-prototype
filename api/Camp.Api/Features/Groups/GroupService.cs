@@ -94,6 +94,9 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
         var prior = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.IdempotencyKey == req.IdempotencyKey && o.HouseholdId == householdId, ct);
         if (prior is not null) return Outcome(groupId, prior);
 
+        // A payment interrupted after its seat claim may since have been settled by the reconciler.
+        await ReconcileAsync(householdId, groupId, ct);
+
         var group = await db.Set<GroupRegistration>().Include(g => g.Attendees).Include(g => g.Session).ThenInclude(s => s.Pools)
             .Include(g => g.Session).ThenInclude(s => s.Program)
             .FirstOrDefaultAsync(g => g.Id == groupId && g.LeaderHouseholdId == householdId, ct)
@@ -155,11 +158,24 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
         }
 
         // Step 2: charge. The processor and SQL can't share a transaction; seats stay held meanwhile.
-        var result = await gateway.ChargeAsync(req.CardToken, order.DueTodayCents, req.IdempotencyKey, ct);
+        // From here on the request's token is ignored: a leader closing the tab mid-charge must not
+        // strand a Pending order with the seats claimed.
+        var none = CancellationToken.None;
+        var result = await gateway.ChargeAsync(req.CardToken, order.DueTodayCents, req.IdempotencyKey, none);
 
         // Step 3: confirm or compensate.
-        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        await using (var tx = await db.Database.BeginTransactionAsync(none))
         {
+            // Finalize only if nobody else did (the reconciler picks up Pending orders after two minutes).
+            var finalized = await db.Orders.Where(o => o.Id == order.Id && o.Status == OrderStatus.Pending)
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, result.Succeeded ? OrderStatus.Paid : OrderStatus.Declined), none);
+            if (finalized == 0)
+            {
+                await tx.RollbackAsync(none);
+                db.ChangeTracker.Clear();
+                await ReconcileAsync(householdId, group.Id, none);
+                return Outcome(group.Id, await db.Orders.AsNoTracking().SingleAsync(o => o.Id == order.Id, none));
+            }
             db.PaymentOperations.Add(new PaymentOperation
             {
                 OrderId = order.Id,
@@ -193,15 +209,71 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
                 order.DeclineReason = result.DeclineReason;
                 // The in-flight marker was set with ExecuteUpdate, so clear it the same way.
                 await db.Set<GroupRegistration>().Where(g => g.Id == group.Id)
-                    .ExecuteUpdateAsync(s => s.SetProperty(g => g.OrderId, (int?)null), ct);
+                    .ExecuteUpdateAsync(s => s.SetProperty(g => g.OrderId, (int?)null), none);
                 await db.CapacityPools.Where(p => p.Id == pool.Id && p.Reserved >= count)
-                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - count), ct);
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - count), none);
                 audit.Record("group.payment_declined", "GroupRegistration", group.Id, $"Charge of {Money(order.TotalCents)} declined; {count} seats released.");
             }
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            await db.SaveChangesAsync(none);
+            await tx.CommitAsync(none);
         }
         return Outcome(group.Id, order);
+    }
+
+    /// <summary>
+    /// Heals a Draft group whose payment was interrupted between the seat claim and step 3 and then
+    /// settled elsewhere (the shared PendingPaymentReconciler only knows about Registration rows).
+    /// Paid: confirm the group and send the links. Declined: release the seats and unlock the
+    /// roster. A conditional update picks one winner, so parallel calls can't heal twice.
+    /// </summary>
+    public async Task ReconcileAsync(int householdId, int groupId, CancellationToken ct)
+    {
+        var stuck = await db.Set<GroupRegistration>().AsNoTracking()
+            .Where(g => g.Id == groupId && g.LeaderHouseholdId == householdId && g.Status == GroupStatus.Draft
+                && g.OrderId != null && g.Order!.Status != OrderStatus.Pending)
+            .Select(g => new { OrderId = g.OrderId!.Value, g.Order!.Status, g.Order.TotalCents, g.Order.ConfirmationCode, Seats = g.Attendees.Count })
+            .FirstOrDefaultAsync(ct);
+        if (stuck is null) return;
+
+        var none = CancellationToken.None;
+        var now = DateTime.UtcNow;
+        await using var tx = await db.Database.BeginTransactionAsync(none);
+        var groups = db.Set<GroupRegistration>().Where(g => g.Id == groupId && g.Status == GroupStatus.Draft && g.OrderId == stuck.OrderId);
+        var won = stuck.Status == OrderStatus.Paid
+            ? await groups.ExecuteUpdateAsync(s => s.SetProperty(g => g.Status, GroupStatus.Confirmed).SetProperty(g => g.ConfirmedAt, now), none)
+            : await groups.ExecuteUpdateAsync(s => s.SetProperty(g => g.OrderId, (int?)null), none);
+        if (won == 0)
+        {
+            await tx.RollbackAsync(none);
+            return;
+        }
+        var group = await db.Set<GroupRegistration>().Include(g => g.Attendees).Include(g => g.Session).ThenInclude(s => s.Program)
+            .SingleAsync(g => g.Id == groupId, none);
+        if (stuck.Status == OrderStatus.Paid)
+        {
+            group.Status = GroupStatus.Confirmed;
+            group.ConfirmedAt = now;
+            var sent = 0;
+            foreach (var a in group.Attendees.Where(a => a.Email is not null))
+            {
+                IssueLink(group, a);
+                sent++;
+            }
+            audit.Record("group.confirmed", "GroupRegistration", group.Id,
+                $"{group.Name}: interrupted payment settled as paid ({Money(stuck.TotalCents)}); {stuck.Seats} attendees confirmed, {sent} secure links sent.");
+            Outbox("GroupRegistrationConfirmed", stuck.ConfirmationCode, new { stuck.ConfirmationCode, group = group.Name, attendees = stuck.Seats });
+        }
+        else
+        {
+            group.OrderId = null;
+            var pool = await db.CapacityPools.Where(p => p.SessionId == group.SessionId).OrderBy(p => p.SortOrder).Select(p => p.Id).FirstAsync(none);
+            await db.CapacityPools.Where(p => p.Id == pool && p.Reserved >= stuck.Seats)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - stuck.Seats), none);
+            audit.Record("group.payment_declined", "GroupRegistration", group.Id,
+                $"Interrupted payment of {Money(stuck.TotalCents)} was not completed; {stuck.Seats} seats released and the roster unlocked.");
+        }
+        await db.SaveChangesAsync(none);
+        await tx.CommitAsync(none);
     }
 
     static GroupCheckoutResult Outcome(int groupId, PaymentOrder o) =>
@@ -281,7 +353,7 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
     public void RequestWithdrawal(GroupAttendee a, WithdrawalRequest req)
     {
         if (!a.IsActive) throw GroupValidationException.One("attendee", "You've already been withdrawn from this group.");
-        if (a.Withdrawal == WithdrawalStatus.Requested) throw GroupValidationException.One("attendee", "Your withdrawal request is already with your group leader.");
+        if (a.Withdrawal is WithdrawalStatus.Requested or WithdrawalStatus.Refunding) throw GroupValidationException.One("attendee", "Your withdrawal request is already with your group leader.");
         var reason = req.Reason?.Trim();
         if (reason is { Length: > 1000 }) throw GroupValidationException.One("reason", "Keep the reason under 1,000 characters.");
         a.Withdrawal = WithdrawalStatus.Requested;
@@ -294,20 +366,42 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
 
     // ── Withdrawals (G2) ────────────────────────────────────────────────────
 
-    /// <summary>Refunds one attendee's share to the leader's card and releases their seat.</summary>
+    /// <summary>
+    /// Refunds one attendee's share to the leader's card and releases their seat. The request is
+    /// claimed first with a conditional UPDATE (Requested → Refunding), so only one of two parallel
+    /// approves reaches the processor; the loser gets "no withdrawal request waiting".
+    /// </summary>
     public async Task ApproveWithdrawalAsync(GroupRegistration group, GroupAttendee a, CancellationToken ct)
     {
-        if (a.Withdrawal != WithdrawalStatus.Requested || !a.IsActive)
+        var claimed = await db.Set<GroupAttendee>()
+            .Where(x => x.Id == a.Id && x.GroupId == group.Id && x.IsActive && x.Withdrawal == WithdrawalStatus.Requested)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Withdrawal, WithdrawalStatus.Refunding), ct);
+        if (claimed == 0)
             throw GroupValidationException.One("attendee", $"{a.Name} has no withdrawal request waiting.");
-        var order = await db.Orders.Include(o => o.Operations).SingleAsync(o => o.Id == group.OrderId, ct);
-        var charge = order.Operations.First(o => o.Kind == PaymentKind.Charge && o.Succeeded);
-        var share = order.TotalCents / group.Attendees.Count;
-        var refunded = order.Operations.Where(o => o.Kind == PaymentKind.Refund && o.Succeeded).Sum(o => o.AmountCents);
-        if (refunded + share > charge.AmountCents)
-            throw GroupValidationException.One("attendee", "This refund would exceed what was charged. Contact WinShape to finish it.");
 
-        var result = await gateway.RefundAsync(charge.ProcessorRef, share, ct);
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Past the claim, a client abort must not leave the attendee stuck in Refunding.
+        var none = CancellationToken.None;
+        GatewayResult result;
+        PaymentOperation charge;
+        int share;
+        PaymentOrder order;
+        try
+        {
+            order = await db.Orders.Include(o => o.Operations).SingleAsync(o => o.Id == group.OrderId, none);
+            charge = order.Operations.First(o => o.Kind == PaymentKind.Charge && o.Succeeded);
+            share = order.TotalCents / group.Attendees.Count;
+            var refunded = order.Operations.Where(o => o.Kind == PaymentKind.Refund && o.Succeeded).Sum(o => o.AmountCents);
+            if (refunded + share > charge.AmountCents)
+                throw GroupValidationException.One("attendee", "This refund would exceed what was charged. Contact WinShape to finish it.");
+            result = await gateway.RefundAsync(charge.ProcessorRef, share, none);
+        }
+        catch
+        {
+            await ReleaseClaimAsync(a.Id);
+            throw;
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync(none);
         db.PaymentOperations.Add(new PaymentOperation
         {
             OrderId = order.Id,
@@ -321,30 +415,42 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
         });
         if (!result.Succeeded)
         {
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            await db.SaveChangesAsync(none);
+            await tx.CommitAsync(none);
+            await ReleaseClaimAsync(a.Id);
             throw GroupValidationException.One("attendee", "The refund didn't go through. Nothing changed; try again in a few minutes.");
         }
+        // Only the claim winner gets here, so the seat is released exactly once. If this save fails
+        // after the refund, the attendee stays in Refunding (never re-claimable), so a retry can't
+        // refund again; staff finish it from the processor record.
         a.IsActive = false;
         a.Withdrawal = WithdrawalStatus.Approved;
         a.WithdrawalResolvedAt = DateTime.UtcNow;
-        var pool = await db.CapacityPools.Where(p => p.SessionId == group.SessionId).OrderBy(p => p.SortOrder).Select(p => p.Id).FirstAsync(ct);
+        var pool = await db.CapacityPools.Where(p => p.SessionId == group.SessionId).OrderBy(p => p.SortOrder).Select(p => p.Id).FirstAsync(none);
         await db.CapacityPools.Where(p => p.Id == pool && p.Reserved > 0)
-            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1), none);
         audit.Record("group.withdrawal_approved", "GroupAttendee", a.Id, $"{a.Name} withdrawn from {group.Name}; {Money(share)} refunded to card ending {charge.CardLast4}; seat released.");
         Outbox("GroupWithdrawalApproved", $"group-{group.Id}", new { to = a.Email, attendee = a.Name, refundCents = share });
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        await db.SaveChangesAsync(none);
+        await tx.CommitAsync(none);
     }
 
-    public void DeclineWithdrawal(GroupRegistration group, GroupAttendee a)
+    Task<int> ReleaseClaimAsync(int attendeeId) =>
+        db.Set<GroupAttendee>().Where(x => x.Id == attendeeId && x.Withdrawal == WithdrawalStatus.Refunding)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Withdrawal, WithdrawalStatus.Requested), CancellationToken.None);
+
+    /// <summary>Keeps the attendee on the group. Conditional, so it can't race an approve that's refunding.</summary>
+    public async Task DeclineWithdrawalAsync(GroupRegistration group, GroupAttendee a, CancellationToken ct)
     {
-        if (a.Withdrawal != WithdrawalStatus.Requested || !a.IsActive)
+        var now = DateTime.UtcNow;
+        var declined = await db.Set<GroupAttendee>()
+            .Where(x => x.Id == a.Id && x.GroupId == group.Id && x.IsActive && x.Withdrawal == WithdrawalStatus.Requested)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Withdrawal, WithdrawalStatus.Declined).SetProperty(x => x.WithdrawalResolvedAt, now), ct);
+        if (declined == 0)
             throw GroupValidationException.One("attendee", $"{a.Name} has no withdrawal request waiting.");
-        a.Withdrawal = WithdrawalStatus.Declined;
-        a.WithdrawalResolvedAt = DateTime.UtcNow;
         audit.Record("group.withdrawal_declined", "GroupAttendee", a.Id, $"{group.LeaderName} kept {a.Name} on {group.Name}; no refund.");
         Outbox("GroupWithdrawalDeclined", $"group-{group.Id}", new { to = a.Email, attendee = a.Name });
+        await db.SaveChangesAsync(ct);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

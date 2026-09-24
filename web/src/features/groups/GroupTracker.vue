@@ -121,7 +121,9 @@ async function resend(ids: number[]) {
   if (sending.value || !ids.length) return
   sending.value = true
   try {
-    const res = await api.post<ResendResult>(`/groups/${props.id}/resend`, { attendeeIds: ids })
+    const res = await api.post<ResendResult>(`/groups/${props.id}/resend`, {
+      attendeeIds: ids,
+    })
     sentLinks.value = res.sent
     skipped.value = res.skipped
     linksOpen.value = true
@@ -154,10 +156,13 @@ async function saveEmail() {
   savingEmail.value = true
   emailError.value = null
   try {
-    const res = await api.put<{ id: number; email: string; link: SentLink | null }>(
-      `/groups/${props.id}/attendees/${a.id}/email`,
-      { email: emailValue.value },
-    )
+    const res = await api.put<{
+      id: number
+      email: string
+      link: SentLink | null
+    }>(`/groups/${props.id}/attendees/${a.id}/email`, {
+      email: emailValue.value,
+    })
     emailFor.value = null
     if (res.link) {
       sentLinks.value = [res.link]
@@ -208,14 +213,25 @@ const share = computed(() => group.value?.pricePerAttendeeCents ?? 0)
 
 const columns: ColumnDef<Attendee>[] = [
   { id: 'select', header: '', meta: { class: 'w-10' } },
-  { accessorKey: 'name', header: 'Attendee', meta: { cellClass: 'font-medium' } },
-  { accessorKey: 'email', header: 'Email', meta: { cellClass: 'text-muted-foreground' } },
+  {
+    accessorKey: 'name',
+    header: 'Attendee',
+    meta: { cellClass: 'font-medium' },
+  },
+  {
+    accessorKey: 'email',
+    header: 'Email',
+    meta: { cellClass: 'text-muted-foreground' },
+  },
   { accessorKey: 'formStatus', header: 'Forms' },
   {
     accessorKey: 'linkSentAt',
     header: 'Link sent',
     cell: ({ row }) => (row.original.linkSentAt ? dateTime(row.original.linkSentAt) : '—'),
-    meta: { class: 'hidden xl:table-cell', cellClass: 'whitespace-nowrap text-muted-foreground' },
+    meta: {
+      class: 'hidden xl:table-cell',
+      cellClass: 'whitespace-nowrap text-muted-foreground',
+    },
   },
   { id: 'actions', header: '', meta: { class: 'w-44 text-right' } },
 ]
@@ -234,7 +250,9 @@ const columns: ColumnDef<Attendee>[] = [
 
     <div v-else-if="!group" class="space-y-4">
       <Skeleton class="h-10 w-72" />
-      <div class="grid grid-cols-3 gap-3"><Skeleton v-for="i in 3" :key="i" class="h-24 rounded-xl" /></div>
+      <div class="grid grid-cols-3 gap-3">
+        <Skeleton v-for="i in 3" :key="i" class="h-24 rounded-xl" />
+      </div>
       <Skeleton class="h-96 rounded-xl" />
     </div>
 
@@ -245,7 +263,8 @@ const columns: ColumnDef<Attendee>[] = [
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            {{ group.program.name }} · {{ dateRange(group.session.startDate, group.session.endDate) }}
+            {{ group.program.name }} ·
+            {{ dateRange(group.session.startDate, group.session.endDate) }}
           </p>
           <h1 class="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">Attendee completion</h1>
           <p class="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground">
@@ -413,7 +432,9 @@ const columns: ColumnDef<Attendee>[] = [
             <p class="flex flex-wrap items-center gap-2 font-medium">
               {{ a.name }} <StatusBadge :status="a.formStatus" />
             </p>
-            <p v-if="a.email" class="truncate text-sm text-muted-foreground">{{ a.email }}</p>
+            <p v-if="a.email" class="truncate text-sm text-muted-foreground">
+              {{ a.email }}
+            </p>
             <p v-else class="flex items-center gap-1 text-sm text-amber-700">
               <MailWarning class="size-3.5" />No email
             </p>
@@ -517,17 +538,26 @@ const columns: ColumnDef<Attendee>[] = [
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{{ emailFor?.email ? 'Update email' : 'Add email' }}</DialogTitle>
-          <DialogDescription>We'll send {{ emailFor?.name }} a new secure link at this address.</DialogDescription>
+          <DialogDescription v-if="emailFor?.formStatus === 'Complete'"
+            >{{ emailFor?.name }} has already completed their forms, so no new link is sent.</DialogDescription
+          >
+          <DialogDescription v-else
+            >We'll send {{ emailFor?.name }} a new secure link at this address.</DialogDescription
+          >
         </DialogHeader>
         <form class="space-y-2" @submit.prevent="saveEmail">
           <Label for="attendee-email">Email</Label>
           <Input id="attendee-email" v-model="emailValue" type="email" :aria-invalid="!!emailError" />
-          <p v-if="emailError" class="text-sm text-destructive">{{ emailError }}</p>
+          <p v-if="emailError" class="text-sm text-destructive">
+            {{ emailError }}
+          </p>
         </form>
         <DialogFooter>
           <Button variant="outline" @click="emailFor = null">Cancel</Button>
           <Button :disabled="savingEmail || !emailValue.trim()" @click="saveEmail">
-            <Loader2 v-if="savingEmail" class="size-4 animate-spin" />Save and send link
+            <Loader2 v-if="savingEmail" class="size-4 animate-spin" />{{
+              emailFor?.formStatus === 'Complete' ? 'Save email' : 'Save and send link'
+            }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -539,7 +569,7 @@ const columns: ColumnDef<Attendee>[] = [
           <AlertDialogTitle>Withdraw {{ approving?.name }} and refund {{ money(share) }}?</AlertDialogTitle>
           <AlertDialogDescription>
             The refund goes to the card ending {{ group?.payment?.cardLast4 }}, their seat is released, and their link
-            stops working. This can't be undone.
+            only shows that they've been withdrawn. This can't be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

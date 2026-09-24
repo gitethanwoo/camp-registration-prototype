@@ -250,6 +250,110 @@ public class GroupsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Parallel_approvals_refund_once_and_release_one_seat()
+    {
+        var (id, sessionId, _) = await PaidGroup(("Ana Ruiz", "ana@example.com"), ("Ben Ode", "ben@example.com"), ("Cara Dunn", "cara@example.com"));
+        using var dave = await Dave();
+        var ben = await factory.WithDb(db => db.Set<GroupAttendee>().Where(a => a.GroupId == id && a.Name == "Ben Ode").Select(a => a.Id).SingleAsync());
+        var sent = await (await dave.PostAsJsonAsync($"/api/groups/{id}/resend", new { AttendeeIds = new[] { ben } })).Content.ReadFromJsonAsync<ResendResult>();
+        using var anonymous = factory.CreateClient();
+        await anonymous.PostAsJsonAsync($"/api/group-links/{sent!.Sent.Single().Link["/g/".Length..]}/withdrawal", new { Reason = "Double-click" });
+        var before = await Reserved(sessionId);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => dave.PostAsync($"/api/groups/{id}/attendees/{ben}/withdrawal/approve", null)));
+
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.NoContent);
+        Assert.All(results.Where(r => r.StatusCode != HttpStatusCode.NoContent), r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
+        var refunds = await factory.WithDb(async db =>
+        {
+            var orderId = await db.Set<GroupRegistration>().Where(g => g.Id == id).Select(g => g.OrderId).SingleAsync();
+            return await db.PaymentOperations.CountAsync(o => o.Kind == PaymentKind.Refund && o.OrderId == orderId);
+        });
+        Assert.Equal(1, refunds);
+        Assert.Equal(before - 1, await Reserved(sessionId));
+        Assert.Equal(45000, (await dave.GetFromJsonAsync<JsonElement>($"/api/groups/{id}")).GetProperty("payment").GetProperty("refundedCents").GetInt32());
+    }
+
+    [Fact]
+    public async Task Leader_closing_the_tab_mid_charge_still_confirms_the_group()
+    {
+        var sessionId = await IsolatedCohortSession(capacity: 10);
+        using var dave = await Dave();
+        var id = await CreateGroup(dave, sessionId, ("Ana Ruiz", "ana@example.com"), ("Ben Ode", "ben@example.com"));
+
+        // The fake processor takes 400ms; the client gives up well before that.
+        using (var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150)))
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dave.PostAsJsonAsync($"/api/groups/{id}/checkout", new { IdempotencyKey = $"g-{Guid.NewGuid()}", CardToken = Card("4242424242424242") }, cts.Token));
+
+        var status = "";
+        for (var i = 0; i < 40 && status != "Confirmed"; i++)
+        {
+            await Task.Delay(100);
+            status = (await dave.GetFromJsonAsync<JsonElement>($"/api/groups/{id}")).GetProperty("status").GetString()!;
+        }
+        Assert.Equal("Confirmed", status);
+        Assert.Equal(2, await Reserved(sessionId));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_group_stranded_by_an_interrupted_payment_heals_once_the_order_is_settled(bool paid)
+    {
+        var sessionId = await IsolatedCohortSession(capacity: 10);
+        using var dave = await Dave();
+        var id = await CreateGroup(dave, sessionId, ("Ana Ruiz", "ana@example.com"), ("Ben Ode", "ben@example.com"));
+
+        // What the shared reconciler leaves behind: the order settled, the group still Draft holding it and its seats.
+        await factory.WithDb(async db =>
+        {
+            var g = await db.Set<GroupRegistration>().SingleAsync(x => x.Id == id);
+            var order = new PaymentOrder
+            {
+                HouseholdId = g.LeaderHouseholdId,
+                SessionId = sessionId,
+                IdempotencyKey = $"g-{Guid.NewGuid()}",
+                ConfirmationCode = paid ? "WS-TESTPD" : "WS-TESTDC",
+                PaymentOption = PaymentOption.Full,
+                SubtotalCents = 90000,
+                TotalCents = 90000,
+                DueTodayCents = 90000,
+                Status = paid ? OrderStatus.Paid : OrderStatus.Declined,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-3),
+            };
+            order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Charge, AmountCents = 90000, Succeeded = paid, ProcessorRef = "fsv_test", CardLast4 = "4242", CreatedAt = DateTime.UtcNow });
+            db.Orders.Add(order);
+            await db.SaveChangesAsync();
+            g.OrderId = order.Id;
+            await db.CapacityPools.Where(p => p.SessionId == sessionId).ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, 2));
+            await db.SaveChangesAsync();
+            return 0;
+        });
+
+        var views = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => dave.GetFromJsonAsync<JsonElement>($"/api/groups/{id}")));
+        var detail = await dave.GetFromJsonAsync<JsonElement>($"/api/groups/{id}");
+
+        var links = await factory.WithDb(db => db.OutboxEvents.CountAsync(e => e.Type == "GroupFormLink" && e.AggregateId == $"group-{id}"));
+        if (paid)
+        {
+            Assert.Equal("Confirmed", detail.GetProperty("status").GetString());
+            Assert.Equal(2, links); // healed once, even with parallel reads
+            Assert.Equal(2, await Reserved(sessionId));
+        }
+        else
+        {
+            Assert.Equal("Draft", detail.GetProperty("status").GetString());
+            Assert.Equal(0, links);
+            Assert.Equal(0, await Reserved(sessionId));
+            // The roster is unlocked and a retry goes through.
+            var retry = await dave.PostAsJsonAsync($"/api/groups/{id}/checkout", new { IdempotencyKey = $"g-{Guid.NewGuid()}", CardToken = Card("4242424242424242") });
+            Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+            Assert.Equal(2, await Reserved(sessionId));
+        }
+        Assert.All(views, v => Assert.True(v.GetProperty("status").GetString() is "Draft" or "Confirmed"));
+    }
+
+    [Fact]
     public async Task Declining_a_withdrawal_keeps_the_attendee_and_the_money()
     {
         var (id, sessionId, _) = await PaidGroup(("Ana Ruiz", "ana@example.com"));

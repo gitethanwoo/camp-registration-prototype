@@ -31,7 +31,12 @@ const props = defineProps<{ token: string }>()
 const view = ref<LinkView | null>(null)
 const invalid = ref<string | null>(null)
 
-const form = reactive({ email: '', phone: '', signerName: '', answers: {} as Record<string, string> })
+const form = reactive({
+  email: '',
+  phone: '',
+  signerName: '',
+  answers: {} as Record<string, string>,
+})
 const accepted = reactive<Record<number, boolean>>({})
 const errors = ref<Record<string, string[]>>({})
 const submitting = ref(false)
@@ -57,7 +62,7 @@ onMounted(async () => {
 
 const done = computed(() => view.value?.attendee.formStatus === 'Complete' && !editing.value)
 const withdrawn = computed(() => view.value && !view.value.attendee.isActive)
-const requested = computed(() => view.value?.attendee.withdrawal === 'Requested')
+const requested = computed(() => ['Requested', 'Refunding'].includes(view.value?.attendee.withdrawal ?? ''))
 const err = (k: string) => errors.value[k]?.[0]
 
 async function submit() {
@@ -70,7 +75,10 @@ async function submit() {
       phone: form.phone || null,
       signerName: form.signerName,
       answers: form.answers,
-      waivers: view.value.waivers.map((w) => ({ waiverId: w.id, accepted: !!accepted[w.id] })),
+      waivers: view.value.waivers.map((w) => ({
+        waiverId: w.id,
+        accepted: !!accepted[w.id],
+      })),
     })
     hydrate(v)
     editing.value = false
@@ -207,12 +215,16 @@ async function requestWithdrawal() {
                   autocomplete="email"
                   :aria-invalid="!!err('email')"
                 />
-                <p v-if="err('email')" class="text-sm text-destructive">{{ err('email') }}</p>
+                <p v-if="err('email')" class="text-sm text-destructive">
+                  {{ err('email') }}
+                </p>
               </div>
               <div class="space-y-2">
                 <Label for="l-phone">Mobile phone <span class="text-muted-foreground">(optional)</span></Label>
                 <Input id="l-phone" v-model="form.phone" type="tel" autocomplete="tel" :aria-invalid="!!err('phone')" />
-                <p v-if="err('phone')" class="text-sm text-destructive">{{ err('phone') }}</p>
+                <p v-if="err('phone')" class="text-sm text-destructive">
+                  {{ err('phone') }}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -250,7 +262,9 @@ async function requestWithdrawal() {
                   v-model="form.answers[q.key]"
                   :aria-invalid="!!err(`answers.${q.key}`)"
                 />
-                <p v-if="err(`answers.${q.key}`)" class="text-sm text-destructive">{{ err(`answers.${q.key}`) }}</p>
+                <p v-if="err(`answers.${q.key}`)" class="text-sm text-destructive">
+                  {{ err(`answers.${q.key}`) }}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -269,7 +283,9 @@ async function requestWithdrawal() {
                   >
                 </div>
                 <ScrollArea class="h-40 rounded-md border bg-muted/20">
-                  <p class="p-4 text-sm leading-relaxed whitespace-pre-line">{{ w.body }}</p>
+                  <p class="p-4 text-sm leading-relaxed whitespace-pre-line">
+                    {{ w.body }}
+                  </p>
                 </ScrollArea>
                 <div class="flex items-start gap-2">
                   <Checkbox
@@ -282,7 +298,9 @@ async function requestWithdrawal() {
                     >I have read and agree to the {{ w.title }}.</Label
                   >
                 </div>
-                <p v-if="err(`waivers.${w.id}`)" class="text-sm text-destructive">{{ err(`waivers.${w.id}`) }}</p>
+                <p v-if="err(`waivers.${w.id}`)" class="text-sm text-destructive">
+                  {{ err(`waivers.${w.id}`) }}
+                </p>
               </div>
               <div class="max-w-sm space-y-2">
                 <Label for="l-signer">Type your full name to sign</Label>
@@ -292,7 +310,9 @@ async function requestWithdrawal() {
                   autocomplete="name"
                   :aria-invalid="!!err('signerName')"
                 />
-                <p v-if="err('signerName')" class="text-sm text-destructive">{{ err('signerName') }}</p>
+                <p v-if="err('signerName')" class="text-sm text-destructive">
+                  {{ err('signerName') }}
+                </p>
               </div>
             </CardContent>
           </Card>

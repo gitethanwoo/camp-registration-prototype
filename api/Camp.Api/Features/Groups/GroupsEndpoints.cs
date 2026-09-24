@@ -81,10 +81,12 @@ public sealed class GroupsEndpoints : IEndpointModule
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        leader.MapGet("/{id:int}", async (int id, CampDbContext db, CurrentUser me) =>
+        leader.MapGet("/{id:int}", async (int id, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
         {
+            // Settles a payment that was interrupted and then finished by the reconciler.
+            await new GroupService(db, gateway, audit).ReconcileAsync(me.HouseholdId, id, ct);
             var g = await Groups(db).Include(x => x.Order).ThenInclude(o => o!.Operations)
-                .AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.LeaderHouseholdId == me.HouseholdId);
+                .AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.LeaderHouseholdId == me.HouseholdId, ct);
             return g is null ? Results.NotFound() : Results.Ok(Detail(g));
         });
 
@@ -170,15 +172,14 @@ public sealed class GroupsEndpoints : IEndpointModule
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }
         });
 
-        leader.MapPost("/{id:int}/attendees/{aid:int}/withdrawal/decline", async (int id, int aid, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me) =>
+        leader.MapPost("/{id:int}/attendees/{aid:int}/withdrawal/decline", async (int id, int aid, CampDbContext db, IPaymentGateway gateway, IAuditLog audit, CurrentUser me, CancellationToken ct) =>
         {
             var g = await LeaderGroup(db, id, me);
             var a = g?.Attendees.FirstOrDefault(x => x.Id == aid);
             if (g is null || a is null) return Results.NotFound();
             try
             {
-                new GroupService(db, gateway, audit).DeclineWithdrawal(g, a);
-                await db.SaveChangesAsync();
+                await new GroupService(db, gateway, audit).DeclineWithdrawalAsync(g, a, ct);
                 return Results.NoContent();
             }
             catch (GroupValidationException e) { return Results.ValidationProblem(e.Errors); }

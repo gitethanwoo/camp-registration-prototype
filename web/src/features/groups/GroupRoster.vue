@@ -132,11 +132,17 @@ async function save(): Promise<boolean> {
   saving.value = true
   fieldErrors.value = {}
   formError.value = null
-  const body = { name: groupName.value, attendees: rows.value.map((r) => ({ name: r.name, email: r.email })) }
+  const body = {
+    name: groupName.value,
+    attendees: rows.value.map((r) => ({ name: r.name, email: r.email })),
+  }
   try {
     if (groupId.value) await api.put(`/groups/${groupId.value}/roster`, body)
     else {
-      const res = await api.post<{ id: number }>('/groups', { ...body, sessionId: ctx.value.session.id })
+      const res = await api.post<{ id: number }>('/groups', {
+        ...body,
+        sessionId: ctx.value.session.id,
+      })
       groupId.value = res.id
       router.replace(`/groups/${res.id}/roster`)
     }
@@ -190,7 +196,17 @@ async function pay() {
   payErrors.value = []
   try {
     const { token } = await api.post<{ token: string }>('/fiserv-sandbox/tokenize', { cardNumber: card.value.number })
-    await api.post(`/groups/${saved.value.id}/checkout`, { idempotencyKey, cardToken: token })
+    const result = await api.post<{ status: string }>(`/groups/${saved.value.id}/checkout`, {
+      idempotencyKey,
+      cardToken: token,
+    })
+    if (result.status === 'Pending') {
+      // A repeat of a submit that's still with the processor: same key, so no second charge.
+      payErrors.value = [
+        'Your payment is still going through. Wait a moment and select Pay again; you won’t be charged twice.',
+      ]
+      return
+    }
     const links = saved.value.attendees.filter((a) => a.email).length
     toast.success(`Paid. We emailed secure links to ${links} ${links === 1 ? 'attendee' : 'attendees'}.`)
     router.replace(`/groups/${saved.value.id}`)
@@ -271,7 +287,8 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
         <section class="min-w-0 space-y-6">
           <div>
             <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              {{ ctx.program.ministry }} {{ ctx.program.name }} · {{ ctx.session.name }}
+              {{ ctx.program.ministry }} {{ ctx.program.name }} ·
+              {{ ctx.session.name }}
             </p>
             <h1 class="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
               {{ step === 'attendees' ? 'Attendee roster' : 'Review and pay' }}
@@ -301,8 +318,9 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
             <Alert v-if="otherGroups.length">
               <Info class="size-4" />
               <AlertTitle
-                >You already have {{ otherGroupsAll.length === 1 ? 'a group' : `${otherGroupsAll.length} groups` }} in
-                this session</AlertTitle
+                >You already have
+                {{ otherGroupsAll.length === 1 ? 'a group' : `${otherGroupsAll.length} groups` }}
+                in this session</AlertTitle
               >
               <AlertDescription>
                 <span>
@@ -337,13 +355,14 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
                 ref="fileInput"
                 type="file"
                 accept=".csv,.txt,text/csv,text/plain"
-                class="sr-only"
+                class="hidden"
                 tabindex="-1"
                 aria-hidden="true"
                 @change="onFile"
               />
               <p class="ml-auto text-sm text-muted-foreground" aria-live="polite">
-                {{ filled.length }} {{ filled.length === 1 ? 'attendee' : 'attendees'
+                {{ filled.length }}
+                {{ filled.length === 1 ? 'attendee' : 'attendees'
                 }}<template v-if="missingEmail"> · {{ missingEmail }} without an email</template>
               </p>
             </div>
@@ -369,7 +388,9 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
                       placeholder="Full name"
                       autocomplete="off"
                     />
-                    <p v-if="errorFor(i, 'name')" class="text-xs text-destructive">{{ errorFor(i, 'name') }}</p>
+                    <p v-if="errorFor(i, 'name')" class="text-xs text-destructive">
+                      {{ errorFor(i, 'name') }}
+                    </p>
                   </div>
                   <div class="col-start-1 row-start-2 space-y-1 md:col-start-auto md:row-start-auto">
                     <Input
@@ -380,7 +401,9 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
                       placeholder="name@example.com"
                       autocomplete="off"
                     />
-                    <p v-if="errorFor(i, 'email')" class="text-xs text-destructive">{{ errorFor(i, 'email') }}</p>
+                    <p v-if="errorFor(i, 'email')" class="text-xs text-destructive">
+                      {{ errorFor(i, 'email') }}
+                    </p>
                     <p v-else-if="r.name.trim() && !r.email.trim()" class="text-xs text-muted-foreground">
                       No email yet: they won't get a link until you add one.
                     </p>
@@ -424,8 +447,9 @@ const current = computed(() => (step.value === 'attendees' ? 1 : 2))
             <Alert v-if="saved.counts.noEmail">
               <MailWarning class="size-4" />
               <AlertTitle
-                >{{ saved.counts.noEmail }} {{ saved.counts.noEmail === 1 ? 'attendee has' : 'attendees have' }} no
-                email</AlertTitle
+                >{{ saved.counts.noEmail }}
+                {{ saved.counts.noEmail === 1 ? 'attendee has' : 'attendees have' }}
+                no email</AlertTitle
               >
               <AlertDescription
                 >Their seats are included, but they won't get a link until you add an email from your
