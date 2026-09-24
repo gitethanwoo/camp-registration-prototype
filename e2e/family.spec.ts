@@ -8,7 +8,8 @@ import { expect, signInAs, test } from './fixtures'
 /** Goes through the existing registration wizard for Day Camp and lands on the confirmation. */
 async function registerForDayCamp(page: Page, kids: string[], option: 'Pay deposit' | 'Payment plan') {
   await page.goto('/programs/day-camp-atlanta')
-  await page.getByRole('button', { name: 'Register', exact: true }).click()
+  // Day Camp has two sessions in the combined seed (staff-cx adds June week 2); the demo uses the first.
+  await page.getByRole('button', { name: 'Register for June week', exact: true }).click()
   await expect(page).toHaveURL(/\/register\/\d+/)
 
   for (const kid of kids) await page.getByRole('checkbox', { name: `Register ${kid}` }).click()
@@ -106,17 +107,23 @@ test('Maria registers Avery and Mia on the plan, a declined card changes nothing
   await expect(plan).toContainText('Avery and Mia')
   await expect(plan).toContainText('$450 remaining')
 
-  // F4 → F5: the new registration next to the 2026 retreat.
+  // F4 → F5: the new registration is upcoming, the 2026 retreat is past. The admittance spec may
+  // already have added Maria's fall retreat to Upcoming, so check each section's own cards.
   await page.goto('/family/registrations')
-  await expect(page.getByRole('heading', { name: 'Upcoming (1)' })).toBeVisible()
+  const upcoming = page.getByRole('region', { name: /^Upcoming/ })
+  const past = page.getByRole('region', { name: /^Past/ })
+  await expect(upcoming.getByRole('link', { name: /View details for Day Camp/ })).toHaveCount(1)
+  await expect(upcoming).toContainText('3 × $150 payment plan')
+  await expect(upcoming).not.toContainText('Spring Marriage Retreat')
   await expect(page.getByRole('heading', { name: 'Past (1)' })).toBeVisible()
+  await expect(past).toContainText('Spring Marriage Retreat')
   await expect(page.getByRole('heading', { name: 'Cancelled (0)' })).toBeVisible()
-  await expect(page.getByText('Spring Marriage Retreat')).toBeVisible()
-  await expect(page.getByText('3 × $150 payment plan')).toBeVisible()
-  await page.getByRole('link', { name: /View details for Day Camp/ }).click()
+  await upcoming.getByRole('link', { name: /View details for Day Camp/ }).click()
   await expect(page.getByRole('heading', { name: 'Day Camp · Atlanta registration' })).toBeVisible()
   await expect(page.getByText('Avery and Mia Johnson')).toBeVisible()
   await expect(page.locator('#checklist')).toContainText('Avery · Waivers (3 signed)')
+  // Two campers on the order, so "Request transfer" opens F8's list to pick one.
+  await expect(page.getByRole('link', { name: 'Request transfer' })).toHaveAttribute('href', '/family/transfers')
 
   // F6: pay the balance. The declined card leaves it at $450.
   await page.getByRole('link', { name: 'Payments and balance' }).click()

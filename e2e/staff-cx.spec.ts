@@ -4,8 +4,7 @@ import { expect, signInAs, test } from './fixtures'
 // the Finance threshold, a duplicate merge with an explicit conflict choice, and a family transfer
 // request that staff approve while a request into a full pool stays blocked.
 // Each demo step changes data for good (a code approved, accounts merged, a camper moved), so the spec
-// needs a freshly seeded database: point the API at a new database name, or drop it first. Every test
-// runs its real path; none of them skip work that an earlier run already did.
+// needs a freshly seeded database; the Playwright global setup drops and reseeds the docker stack's.
 // A valid answer for any required question in the checkout setup.
 const answer = (q: { type: string; options: string[] }) => q.options[0] ?? (q.type === 'YesNo' ? 'No' : 'n/a')
 
@@ -78,11 +77,12 @@ test('Diane merges the duplicate Lee accounts only after resolving the Jordan co
   await expect(page.getByText('No likely duplicates right now.')).toBeVisible()
 })
 
-test('Maria registers Avery for June 12–16, then asks to move to June 19–23', async ({ page }) => {
+test('Maria has Avery in June 12–16, then asks to move to June 19–23', async ({ page }) => {
   await signInAs(page, 'maria', '/family/transfers')
   await expect(page.getByRole('heading', { name: 'Session transfers' })).toBeVisible()
 
-  // Setup through the real checkout API: the registration wizard belongs to another slice.
+  // The family spec registers Avery and Mia for June week earlier in the same run; register Avery
+  // through the real checkout API only when this spec runs on its own (the wizard belongs to another slice).
   const programs = (await (await page.request.get('/api/programs')).json()) as {
     slug: string
     sessions: { id: number; name: string }[]
@@ -92,43 +92,45 @@ test('Maria registers Avery for June 12–16, then asks to move to June 19–23'
   expect(weekOne).toBeTruthy()
   const ctx = await (await page.request.get(`/api/sessions/${weekOne?.id}/register-context`)).json()
   const avery = ctx.participants.find((p: { firstName: string }) => p.firstName === 'Avery')
-  expect(avery.status, 'Avery must start unregistered: run this spec on a freshly seeded database').not.toBe(
-    'registered',
-  )
-  const questions = ctx.questions as { key: string; type: string; scope: string; options: string[] }[]
-  const token = (
-    await (await page.request.post('/api/fiserv-sandbox/tokenize', { data: { cardNumber: '4242424242424242' } })).json()
-  ).token
-  const res = await page.request.post('/api/checkout', {
-    data: {
-      idempotencyKey: `e2e-staffcx-${Date.now()}`,
-      sessionId: weekOne?.id,
-      participants: [
-        {
-          personId: avery.id,
-          answers: Object.fromEntries(
-            questions.filter((q) => q.scope === 'Participant').map((q) => [q.key, answer(q)]),
-          ),
-          health: { physicianName: 'Dr. Patel', physicianPhone: '(404) 555-0140' },
-        },
-      ],
-      householdAnswers: Object.fromEntries(
-        questions.filter((q) => q.scope === 'Household').map((q) => [q.key, answer(q)]),
-      ),
-      waivers: ctx.waivers.map((w: { id: number; perParticipant: boolean }) => ({
-        waiverId: w.id,
-        personId: w.perParticipant ? avery.id : null,
-        signerName: 'Maria Johnson',
-      })),
-      paymentOption: 'Full',
-      discountCode: null,
-      cardToken: token,
-    },
-  })
-  expect(res.status(), await res.text()).toBe(200)
+  if (avery.status !== 'registered') {
+    const questions = ctx.questions as { key: string; type: string; scope: string; options: string[] }[]
+    const token = (
+      await (
+        await page.request.post('/api/fiserv-sandbox/tokenize', { data: { cardNumber: '4242424242424242' } })
+      ).json()
+    ).token
+    const res = await page.request.post('/api/checkout', {
+      data: {
+        idempotencyKey: `e2e-staffcx-${Date.now()}`,
+        sessionId: weekOne?.id,
+        participants: [
+          {
+            personId: avery.id,
+            answers: Object.fromEntries(
+              questions.filter((q) => q.scope === 'Participant').map((q) => [q.key, answer(q)]),
+            ),
+            health: { physicianName: 'Dr. Patel', physicianPhone: '(404) 555-0140' },
+          },
+        ],
+        householdAnswers: Object.fromEntries(
+          questions.filter((q) => q.scope === 'Household').map((q) => [q.key, answer(q)]),
+        ),
+        waivers: ctx.waivers.map((w: { id: number; perParticipant: boolean }) => ({
+          waiverId: w.id,
+          personId: w.perParticipant ? avery.id : null,
+          signerName: 'Maria Johnson',
+        })),
+        paymentOption: 'Full',
+        discountCode: null,
+        cardToken: token,
+      },
+    })
+    expect(res.status(), await res.text()).toBe(200)
+  }
 
   await page.goto('/family/transfers')
-  await page.getByRole('link', { name: 'Request transfer' }).first().click()
+  const row = page.getByRole('listitem').filter({ hasText: 'Avery Johnson' }).filter({ hasText: 'June 12–16' })
+  await row.getByRole('link', { name: 'Request transfer' }).click()
 
   await expect(page.getByRole('heading', { name: 'Request a session transfer' })).toBeVisible()
   await expect(page.getByText('This is a request, not an immediate transfer')).toBeVisible()

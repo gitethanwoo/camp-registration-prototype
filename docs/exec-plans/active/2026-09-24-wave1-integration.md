@@ -21,13 +21,15 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - [x] (2026-09-24 21:05Z) Admittance fixes: application stores the claimed pool and decline releases exactly that pool, with the Wave1 migration regenerated (6); reauthorize voids its new hold when it loses a race (7); the staff queue opens on the upcoming retreat, not the past one.
 - [x] (2026-09-24 21:05Z) Staff-cx: concurrent transfer requests return 409 (8). Not reproducible on `wave1`: fc86843 already catches the unique-index violation and returns 409. Added a regression test (3 rounds of 10 concurrent requests from two signed-in clients) that passes.
 - [x] (2026-09-24 21:05Z) Cross-slice links (9): F5 "Request transfer", account menu "Applications" and "My groups".
-- [ ] e2e: `workers: 1`, a global setup that resets the stack's database, and specs adjusted to the combined seed.
+- [x] (2026-09-24 21:40Z) e2e: `workers: 1`, a global setup that resets the stack's database, and specs adjusted to the combined seed.
 - [ ] Gates, API tests, two full e2e runs on a fresh stack, and a persona click-through at desktop and 390px.
 
 ## Surprises & Discoveries
 
 - Observation: the C6 queue opened on the family slice's unpublished "Spring Marriage Retreat · Spring 2026", because `/api/admin/admittance/sessions` orders admittance sessions by start date and the page jumps to the first one.
   Evidence: `test-results/admittance-a-couple-applie-…/error-context.md` shows the breadcrumb "Spring Marriage Retreat · Spring 2026" and "2 of 80 couples confirmed". Both admittance failures (the demo path and the Marcus read-only check) come from this.
+- Observation: after the merge, the family spec's `Register` button no longer existed. Day Camp has a second session (staff-cx's "June week 2"), so the program page labels each button `Register for <session>`. The family spec also registers Avery for June week before the staff-cx spec runs, and the staff-cx spec asserted Avery started unregistered.
+  Evidence: `test-results/family-…/error-context.md`; with one worker in file order, staff-cx's precondition failed until it reused the existing registration.
 - Observation: F5's "Request transfer" button already rendered after the merge, but it linked to `/family/registrations/WS-XXXX/transfer`. The staff-cx route is `/family/registrations/:id/transfer` with a numeric registration id, so the page loaded with `id = NaN`.
   Evidence: `web/src/features/family/RegistrationDetail.vue` resolves the route by path shape only; `web/src/features/staff-cx/routes.ts` maps `:id` through `Number(...)`.
 
@@ -44,6 +46,7 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 
 - (2026-09-24) Baseline on `wave1` before changes: `npm run test:api` 86/86; `npx playwright test` on a fresh stack 18 passed, 5 failed.
 - (2026-09-24) New API tests for findings 1, 2, 6 and 7 fail against the HEAD versions of `BalancePaymentService.cs` and `AdmittanceService.cs` (3 of 3 runs) and pass with the fixes. The auth, F1 and F6 tests cover code that didn't exist before. `npm run test:api` 96/96; `npm run lint` and `npm run typecheck` pass.
+- (2026-09-24) After `docker compose down -v && docker compose up -d --build`: `npx playwright test` 23 passed, then again straight after, 23 passed. `e2e/staff-cx.spec.ts` alone 5 passed (registers Avery itself); `e2e/family.spec.ts` alone 5 passed.
 
 ## Outcomes & Retrospective
 
