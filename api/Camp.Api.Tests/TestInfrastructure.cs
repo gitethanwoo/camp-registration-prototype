@@ -15,7 +15,8 @@ namespace Camp.Api.Tests;
 public class ApiFactory : WebApplicationFactory<Program>
 {
     static readonly string SqlServer = Environment.GetEnvironmentVariable("TEST_SQL") ?? "localhost,14333";
-    public static readonly string ConnectionString =
+    // One database per factory: test classes run in parallel and each deletes its own on dispose.
+    public string ConnectionString { get; } =
         $"Server={SqlServer};Database=CampRegistration_Tests_{Guid.NewGuid():N};User Id=sa;Password=Camp_Dev_Passw0rd!;TrustServerCertificate=True";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

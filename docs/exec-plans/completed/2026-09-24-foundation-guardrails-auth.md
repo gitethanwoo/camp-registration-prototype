@@ -37,6 +37,8 @@ To see it working, run `docker compose up -d --build` and open http://localhost:
   Evidence: those rules are disabled in `.editorconfig`, with the reason written next to them.
 - Observation: the WorkOS emulator accepts any `client_id` string and puts the membership role straight into the access token.
   Evidence: a token decoded during the curl probe had `"org_id":"org_winshape_staff","role":"cet","roles":["cet"]`.
+- Observation: `ApiFactory.ConnectionString` was static, so every test class shared one database, and the first fixture to dispose deleted it under the others. It was hidden while there was only one test class, and the pre-push hook caught it on the first push.
+  Evidence: intermittent `Cannot open database "CampRegistration_Tests_…"` and 500s in AuthTests. It's now per-instance, and 4 of 4 consecutive runs are green.
 - Observation: the emulator's account picker is inside a collapsed `<details>`, so Playwright can't click it directly. Typing the email into the form is reliable and matches production AuthKit.
 
 ## Decision Log
