@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { ColumnDef } from '@tanstack/vue-table'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
+import { RouterLink } from 'vue-router'
 import { useAdminScope } from '@/composables/useAdminScope'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
+import { useSession } from '@/lib/session'
 
 interface Pool {
   id: number
@@ -37,6 +39,7 @@ interface SessionDetail {
 }
 
 const { sessionId, ready } = useAdminScope()
+const isAdmin = computed(() => useSession().session.value?.role === 'admin')
 const s = ref<SessionDetail | null>(null)
 const edits = ref<Record<number, string>>({})
 const errors = ref<Record<number, string>>({})
@@ -131,8 +134,12 @@ function audience(p: Pool) {
               <dd>{{ s.program.type }}</dd>
             </div>
           </dl>
-          <p class="mt-4 text-xs text-muted-foreground">
-            Session details are read-only in this prototype; capacity is editable below.
+          <p v-if="isAdmin" class="mt-4 text-xs text-muted-foreground">
+            To change dates, prices or pools, open
+            <RouterLink :to="`/admin/setup/sessions/${s.id}`" class="underline">session setup</RouterLink>.
+          </p>
+          <p v-else class="mt-4 text-xs text-muted-foreground">
+            Only an administrator can change session details. Capacity is editable below.
           </p>
         </CardContent>
       </Card>
