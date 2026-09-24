@@ -25,7 +25,7 @@ export function useOpsData<T>(path: (sessionId: number) => string) {
       data.value = await api.get<T>(path(id))
       error.value = null
     } catch (e) {
-      error.value = describe(e)
+      error.value = describe(e, "The operations data didn't load. Check your connection and reload the page.")
     } finally {
       loading.value = false
     }
@@ -34,7 +34,8 @@ export function useOpsData<T>(path: (sessionId: number) => string) {
   return { data, error, loading, load, sessionId, canEdit }
 }
 
-export function describe(e: unknown, fallback = 'Something went wrong. Try again.') {
+/** A specific, actionable message for a failed ops request. Each caller names what failed in `fallback`. */
+export function describe(e: unknown, fallback: string) {
   if (e instanceof ApiError) {
     if (e.status === 403) return 'Only the Customer Experience team and admins can change camp operations.'
     if (e.status === 404) return "That session wasn't found. Choose another session."

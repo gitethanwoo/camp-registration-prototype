@@ -90,7 +90,7 @@ internal static class OpsReadModel
         ReadinessReason.Health => (HealthLabel(usesCampDoc), usesCampDoc
             ? "The family hasn't finished the health profile in CampDoc."
             : "The family hasn't finished the health form."),
-        ReadinessReason.Waiver => ("Waiver missing", $"{c.WaiversSigned} of {c.WaiversRequired} required waivers signed."),
+        ReadinessReason.Waiver => (c.WaiversSigned > 0 ? "Waiver incomplete" : "Waiver missing", $"{c.WaiversSigned} of {c.WaiversRequired} required waivers signed."),
         _ => ("Balance due", $"{CheckoutService.Money(c.BalanceCents)} outstanding."),
     };
 

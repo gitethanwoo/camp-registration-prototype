@@ -91,7 +91,14 @@ public sealed class OpsSeed : ISeedModule
         var boysG68 = session.Pools.First(p => p.Gender == Gender.Male && p.GradeMin >= 6);
         var boys = poolLists[boysG68.Id];
         // Three pairs already together, and one pair split across Group 1 and Group 2 (O2's review case).
-        foreach (var (a, b) in new[] { (1, 2), (21, 22), (33, 34), (8, 14) }) Ask(boys[a], boys[b], older);
+        // The core seed repeats some names; a pair shifts along by one until the two names differ,
+        // so the board never shows "Ethan Anderson" asking for "Ethan Anderson".
+        foreach (var (a, b) in new[] { (1, 2), (21, 22), (33, 34), (8, 14) })
+        {
+            var (x, y) = (a, b);
+            while (boys[x].Name == boys[y].Name) { x++; y++; }
+            Ask(boys[x], boys[y], older);
+        }
         // Girls: pairs sharing a cabin, plus one new request for a camper in another cabin (O3's "not met").
         var girlsInCabin = campers.Where(c => c.Gender == Gender.Female && placements[c.RegistrationId].CabinId is not null)
             .GroupBy(c => placements[c.RegistrationId].CabinId!.Value).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.RegistrationId).ToList()).ToList();
@@ -99,6 +106,12 @@ public sealed class OpsSeed : ISeedModule
         Ask(girlsInCabin[1][2], girlsInCabin[1][3], older);
         Ask(girlsInCabin[1][3], girlsInCabin[1][2], older);
         Ask(girlsInCabin[3][0], girlsInCabin[2][0], newest.CreatedAt);
+        // A girl who asked to room with a boy (a sibling when the session has one): cabins are
+        // single-gender, so O3 lists it as a request that can't be met.
+        var girls = campers.Where(c => c.Gender == Gender.Female).OrderBy(c => c.RegistrationId).ToList();
+        var boysAll = campers.Where(c => c.Gender == Gender.Male).OrderBy(c => c.RegistrationId).ToList();
+        var sister = girls.FirstOrDefault(g => boysAll.Any(b => b.HouseholdId == g.HouseholdId)) ?? girls[^1];
+        Ask(sister, boysAll.FirstOrDefault(b => b.HouseholdId == sister.HouseholdId) ?? boysAll[^1], older);
         db.Set<OpsBuddyRequest>().AddRange(requests);
 
         db.Set<OpsRoomingReview>().Add(new OpsRoomingReview { SessionId = session.Id, ReviewedAt = reviewedAt, ReviewedBy = "Jamie Dalton (Camp director)" });

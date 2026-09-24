@@ -109,7 +109,7 @@ async function markReviewed() {
         : 'Rooming marked reviewed.',
     )
   } catch (e) {
-    toast.error(describe(e))
+    toast.error(describe(e, "Rooming wasn't marked reviewed. Try again."))
   } finally {
     reviewing.value = false
   }

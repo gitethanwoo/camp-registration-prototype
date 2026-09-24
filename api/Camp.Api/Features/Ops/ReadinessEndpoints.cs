@@ -15,6 +15,8 @@ public record ReminderRequest(List<int> RegistrationIds);
 /// </summary>
 public sealed class ReadinessEndpoints : IEndpointModule
 {
+    static readonly TimeSpan RemindAgainAfter = TimeSpan.FromHours(24);
+
     public void Map(IEndpointRouteBuilder app)
     {
         var ops = app.MapGroup("/api/admin/ops");
@@ -92,12 +94,19 @@ public sealed class ReadinessEndpoints : IEndpointModule
             var chosen = req.RegistrationIds.ToHashSet();
             var selected = roster.Campers.Where(c => chosen.Contains(c.RegistrationId)).ToList();
             if (selected.Count != chosen.Count) return OpsResults.Invalid("registrationIds", "Some of those campers aren't confirmed in this session. Refresh and try again.");
-            var open = selected.Where(c => c.Reasons.Count > 0).ToList();
-            if (open.Count == 0) return OpsResults.Conflict("Everyone you picked is ready for camp, so there's nothing to remind them about.");
+            var needsIt = selected.Where(c => c.Reasons.Count > 0).ToList();
+            if (needsIt.Count == 0) return OpsResults.Conflict("Everyone you picked is ready for camp, so there's nothing to remind them about.");
+            // A family reminded in the last day isn't emailed again, so a double click or a second
+            // staff member working the same list doesn't send duplicate emails.
+            var now = DateTime.UtcNow;
+            var since = now - RemindAgainAfter;
+            var open = needsIt.Where(c => c.Placement?.RemindedAt is not { } at || at < since).ToList();
+            var recent = needsIt.Count - open.Count;
+            if (open.Count == 0)
+                return OpsResults.Conflict($"{(recent == 1 ? "That family was" : "Those families were")} reminded in the last 24 hours. Wait a day before reminding them again.");
 
             var households = open.Select(c => c.HouseholdId).Distinct().ToList();
             var emails = await db.Households.Where(h => households.Contains(h.Id)).ToDictionaryAsync(h => h.Id, h => h.Email, ct);
-            var now = DateTime.UtcNow;
             var s = roster.Session;
             foreach (var family in open.GroupBy(c => c.HouseholdId))
             {
@@ -123,7 +132,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
             audit.Record("ops.reminders_sent", "Session", id,
                 $"Sent readiness reminders to {OpsResults.Plural(families, "family", "families")} for {OpsResults.Plural(open.Count, "camper", "campers")} in {s.Program.Name} · {s.Name}.");
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { Families = families, Campers = open.Count, Skipped = selected.Count - open.Count });
+            return Results.Ok(new { Families = families, Campers = open.Count, Skipped = selected.Count - needsIt.Count, RecentlyReminded = recent });
         }).RequireAuthorization(Policies.Cet);
     }
 }

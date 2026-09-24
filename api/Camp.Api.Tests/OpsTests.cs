@@ -111,6 +111,11 @@ public class OpsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(before + families, await factory.WithDb(db => db.OutboxEvents.CountAsync(e => e.Type == "ReadinessReminder" && e.Target == "HubSpot")));
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(a => a.Action == "ops.reminders_sent" && a.Actor == "Diane Carter (CET)")));
 
+        // Sending the same list again the same day queues nothing new.
+        var again = await staff.PostAsJsonAsync($"/api/admin/ops/sessions/{id}/reminders", new { registrationIds = roster.Select(RegId) });
+        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+        Assert.Equal(before + families, await factory.WithDb(db => db.OutboxEvents.CountAsync(e => e.Type == "ReadinessReminder" && e.Target == "HubSpot")));
+
         var after = (await Json(await staff.GetAsync($"/api/admin/ops/sessions/{id}/readiness"))).GetProperty("roster").EnumerateArray().ToList();
         Assert.All(after.Where(r => open.Contains(RegId(r))), r => Assert.NotEqual(JsonValueKind.Null, r.GetProperty("remindedAt").ValueKind));
         Assert.All(after.Where(r => ready.Contains(RegId(r))), r => Assert.Equal(JsonValueKind.Null, r.GetProperty("remindedAt").ValueKind));
@@ -130,6 +135,17 @@ public class OpsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(board.GetProperty("totals").GetProperty("assigned").GetInt32(), groups.Sum(g => g.GetProperty("count").GetInt32()));
         Assert.Equal(50, groups.Sum(g => g.GetProperty("count").GetInt32()) + board.GetProperty("totals").GetProperty("unassigned").GetInt32());
         Assert.Equal(4, board.GetProperty("pools").GetArrayLength());
+
+        // The core seed repeats names; no cabinmate request pairs two campers with the same name.
+        var pairs = await factory.WithDb(async db =>
+        {
+            var requests = await db.Set<OpsBuddyRequest>().ToListAsync();
+            var ids = requests.SelectMany(r => new[] { r.RegistrationId, r.RequestedRegistrationId }).ToList();
+            var names = (await db.Registrations.Include(r => r.Person).Where(r => ids.Contains(r.Id)).ToListAsync()).ToDictionary(r => r.Id, r => r.Person.FullName);
+            return requests.Select(r => (names[r.RegistrationId], names[r.RequestedRegistrationId])).ToList();
+        });
+        Assert.NotEmpty(pairs);
+        Assert.All(pairs, p => Assert.NotEqual(p.Item1, p.Item2));
     }
 
     [Fact]
@@ -205,6 +221,8 @@ public class OpsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(90, s.GetProperty("girls").GetProperty("registered").GetInt32());
         Assert.Equal(96, s.GetProperty("boys").GetProperty("beds").GetInt32());
         Assert.True(s.GetProperty("requestsNotMet").GetInt32() >= 1);
+        // A girl's request to room with a boy is a conflict: cabins are single-gender.
+        Assert.Equal(1, s.GetProperty("conflicts").GetInt32());
 
         var cabins = body.GetProperty("cabins").EnumerateArray().ToList();
         Assert.All(cabins, c =>
@@ -293,6 +311,28 @@ public class OpsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal("Checked out", after.GetProperty("status").GetString());
         Assert.Contains(camper.GetProperty("pickupAdults")[0].GetProperty("name").GetString()!, after.GetProperty("pickedUpBy").GetString(), StringComparison.Ordinal);
         Assert.True(await factory.WithDb(db => db.AuditEvents.AnyAsync(a => a.Action == "ops.checked_out" && a.EntityId == RegId(camper).ToString(CultureInfo.InvariantCulture))));
+    }
+
+    [Fact]
+    public async Task Two_tablets_checking_in_or_out_the_same_camper_at_once_record_it_once()
+    {
+        var staff = await factory.SignInAsStaff();
+        var rows = await CheckInRows(staff);
+        // The last rows, so the other O5 tests (which take the first) are unaffected.
+        var ready = rows.Last(r => r.GetProperty("status").GetString() == "Ready");
+        var inUrl = $"/api/admin/ops/check-in/{RegId(ready)}";
+        var ins = await Task.WhenAll(Enumerable.Range(0, 5).Select(i => staff.PostAsJsonAsync(inUrl, new { overrideReason = $"tablet {i}" })));
+        Assert.Equal(1, ins.Count(r => r.StatusCode == HttpStatusCode.OK));
+        Assert.Equal(4, ins.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        var regKey = RegId(ready).ToString(CultureInfo.InvariantCulture);
+        Assert.Equal(1, await factory.WithDb(db => db.AuditEvents.CountAsync(a => a.Action.StartsWith("ops.checked_in") && a.EntityId == regKey)));
+
+        var adults = ready.GetProperty("pickupAdults").EnumerateArray().Select(a => a.GetProperty("id").GetInt32()).ToList();
+        var outUrl = $"/api/admin/ops/check-out/{RegId(ready)}";
+        var outs = await Task.WhenAll(Enumerable.Range(0, 4).Select(i => staff.PostAsJsonAsync(outUrl, new { pickupAdultId = adults[i % adults.Count], idChecked = true })));
+        Assert.Equal(1, outs.Count(r => r.StatusCode == HttpStatusCode.OK));
+        Assert.Equal(3, outs.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        Assert.Equal(1, await factory.WithDb(db => db.AuditEvents.CountAsync(a => a.Action == "ops.checked_out" && a.EntityId == regKey)));
     }
 
     [Fact]

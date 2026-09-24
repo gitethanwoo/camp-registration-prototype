@@ -181,13 +181,17 @@ async function sendReminders() {
   if (!id) return
   sending.value = true
   try {
-    const res = await api.post<{ families: number; campers: number; skipped: number }>(
+    const res = await api.post<{ families: number; campers: number; skipped: number; recentlyReminded: number }>(
       `/admin/ops/sessions/${id}/reminders`,
       { registrationIds: reminderTargets.value.map((x) => x.registrationId) },
     )
     toast.success(
       `Reminders queued for ${res.families} ${res.families === 1 ? 'family' : 'families'} (${res.campers} ${res.campers === 1 ? 'camper' : 'campers'}).`,
-      { description: 'HubSpot sends each family one email listing what is still open.' },
+      {
+        description: res.recentlyReminded
+          ? `HubSpot sends each family one email listing what is still open. ${res.recentlyReminded} ${res.recentlyReminded === 1 ? 'camper was' : 'campers were'} reminded in the last 24 hours and skipped.`
+          : 'HubSpot sends each family one email listing what is still open.',
+      },
     )
     selected.value = new Set()
     await load()
@@ -311,7 +315,7 @@ function showOnly(s: StatusFilter) {
                 <SelectItem value="ready">Ready</SelectItem>
                 <SelectItem value="attention">Needs attention</SelectItem>
                 <SelectItem value="Health">{{ healthLabel }} incomplete</SelectItem>
-                <SelectItem value="Waiver">Waiver missing</SelectItem>
+                <SelectItem value="Waiver">Waiver not signed</SelectItem>
                 <SelectItem value="Balance">Balance due</SelectItem>
               </SelectContent>
             </Select>
@@ -338,10 +342,18 @@ function showOnly(s: StatusFilter) {
             <template #cell-camper="{ row: x }">
               <div class="font-medium">{{ x.name }}</div>
               <div class="text-sm text-muted-foreground">Grade {{ x.grade }} · {{ genderLabel(x.gender) }}</div>
+              <!-- The Cabin and Activity columns are hidden below xl; keep that data on the row. -->
+              <div class="text-sm text-muted-foreground xl:hidden">
+                <span class="lg:hidden">{{ x.cabin }} · </span>{{ x.activity ?? 'Activity not chosen' }}
+              </div>
               <div class="mt-1 flex flex-wrap gap-1 md:hidden">
                 <StatusBadge v-if="x.reasons.length === 0" status="Complete" label="Ready" />
                 <StatusBadge v-if="x.reasons.includes('Balance')" status="Incomplete" label="Balance due" />
-                <StatusBadge v-if="x.reasons.includes('Waiver')" status="Missing" label="Waiver missing" />
+                <StatusBadge
+                  v-if="x.reasons.includes('Waiver')"
+                  :status="x.waiver"
+                  :label="x.waiver === 'Incomplete' ? 'Waiver incomplete' : 'Waiver missing'"
+                />
                 <StatusBadge
                   v-if="x.reasons.includes('Health')"
                   status="Incomplete"

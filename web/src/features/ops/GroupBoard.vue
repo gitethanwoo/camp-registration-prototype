@@ -86,7 +86,12 @@ function onDrop(e: DragEvent, groupId: number | null) {
   if (id) move(id, groupId)
 }
 
-async function suggestion(action: 'suggest' | 'suggestions/approve' | 'suggestions/dismiss') {
+const SUGGESTION_ERRORS = {
+  suggest: "Suggestions weren't made. Nothing was moved. Try again.",
+  'suggestions/approve': "The suggested moves weren't approved. Nothing was moved. Try again.",
+  'suggestions/dismiss': "The suggestions weren't dismissed. Try again.",
+} as const
+async function suggestion(action: keyof typeof SUGGESTION_ERRORS) {
   const id = sessionId.value
   const pool = b.value?.poolId
   if (!id || !pool) return
@@ -105,7 +110,7 @@ async function suggestion(action: 'suggest' | 'suggestions/approve' | 'suggestio
     if (res.moved) toast.success(`Approved ${res.moved} ${res.moved === 1 ? 'move' : 'moves'}.`)
     if (res.dismissed) toast.info('Suggestions dismissed. Nothing was moved.')
   } catch (e) {
-    toast.error(describe(e))
+    toast.error(describe(e, SUGGESTION_ERRORS[action]))
   } finally {
     busy.value = false
   }

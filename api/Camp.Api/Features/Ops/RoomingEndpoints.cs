@@ -40,6 +40,7 @@ public sealed class RoomingEndpoints : IEndpointModule
             var cabinIds = cabins.ToDictionary(c => c.Id);
             int? CabinOf(Camper c) => c.Placement?.CabinId is { } x && cabinIds.ContainsKey(x) ? x : null;
             string CabinName(Camper c) => CabinOf(c) is { } x ? cabinIds[x].Name : "Unassigned";
+            string Where(Camper c) => CabinOf(c) is null ? $"{c.Name} has no cabin yet" : $"{c.Name} is in {CabinName(c)}";
 
             // A request is met when both campers share a cabin; it can't be met across genders or when
             // the other camper is no longer confirmed in this session.
@@ -53,7 +54,7 @@ public sealed class RoomingEndpoints : IEndpointModule
                 var why = a is null || b is null ? "The other camper is no longer registered for this session."
                     : a.Gender != b.Gender ? "Cabins are for one gender, so these campers can't share one."
                     : status == "Met" ? $"Both in {CabinName(a)}."
-                    : $"{a.Name} is in {CabinName(a)} and {b.Name} is in {CabinName(b)}.";
+                    : $"{Where(a)} and {Where(b)}.";
                 return new { Request = r, A = a, B = b, Status = status, Why = why };
             }).Where(p => p.A is not null).ToList();
 

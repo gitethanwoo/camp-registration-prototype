@@ -39,7 +39,18 @@ test.describe.configure({ mode: 'serial' })
 
 test('Diane sees who is not ready for camp and sends reminders', async ({ page }) => {
   await signInAs(page, 'diane', '/admin')
-  await useSession3(page)
+  const sessionId = await useSession3(page)
+  // A family reminded in the last 24 hours isn't emailed again, so pick a camper with a balance
+  // due who hasn't been reminded yet (and whose name is unique, so the checkbox is unambiguous).
+  const roster = (
+    (await (await page.request.get(`/api/admin/ops/sessions/${sessionId}/readiness`)).json()) as {
+      roster: { name: string; reasons: string[]; remindedAt: string | null }[]
+    }
+  ).roster
+  const target = roster.find(
+    (r) => r.reasons.includes('Balance') && !r.remindedAt && roster.filter((x) => x.name === r.name).length === 1,
+  )
+  expect(target, 'a camper with a balance due who has not been reminded is left').toBeTruthy()
   await page.goto('/admin/ops/readiness')
 
   await expect(page.getByRole('heading', { name: 'Session readiness' })).toBeVisible()
@@ -49,8 +60,8 @@ test('Diane sees who is not ready for camp and sends reminders', async ({ page }
 
   await page.getByRole('combobox', { name: 'Filter by status' }).click()
   await page.getByRole('option', { name: 'Balance due' }).click()
-  const first = page.getByRole('checkbox', { name: /^Select (?!every)/ }).first()
-  await first.click()
+  await page.getByLabel('Search campers').fill(target?.name ?? '')
+  await page.getByRole('checkbox', { name: `Select ${target?.name}` }).click()
   await page.getByRole('button', { name: /Send reminders \(1\)/ }).click()
   await expect(page.getByRole('alertdialog')).toContainText('Each family gets one email from HubSpot')
   await page.getByRole('button', { name: 'Send reminders' }).last().click()

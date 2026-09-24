@@ -71,6 +71,10 @@ public sealed class CheckInEndpoints : IEndpointModule
 
         ops.MapPost("/check-in/{registrationId:int}", async (int registrationId, CheckInRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
         {
+            // Two tablets can scan the same camper at once: the registration row is locked before the
+            // "already checked in" check, so the second request waits, sees the first, and gets the 409.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await LockRegistration(db, registrationId, ct);
             var (reg, camper, usesCampDoc) = await Load(db, registrationId, ct);
             if (reg is null || camper is null) return Results.NotFound();
             if (camper.Placement?.CheckedInAt is { } at)
@@ -94,11 +98,15 @@ public sealed class CheckInEndpoints : IEndpointModule
             else
                 audit.Record("ops.checked_in", "Registration", reg.Id, $"Checked in {camper.Name}.");
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return Results.Ok(new { placement.CheckedInAt, placement.CheckedInBy, Override = placement.CheckInOverride });
         }).RequireAuthorization(Policies.Cet);
 
         ops.MapPost("/check-out/{registrationId:int}", async (int registrationId, CheckOutRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
         {
+            // Same lock as check-in, so two adults can't both be recorded as picking up one camper.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await LockRegistration(db, registrationId, ct);
             var (reg, camper, _) = await Load(db, registrationId, ct);
             if (reg is null || camper is null) return Results.NotFound();
             if (camper.Placement?.CheckedInAt is null) return OpsResults.Conflict($"{camper.Name} hasn't been checked in, so there's nothing to check out.");
@@ -115,6 +123,7 @@ public sealed class CheckInEndpoints : IEndpointModule
             placement.PickedUpBy = $"{adult.Name} ({adult.Relationship})";
             audit.Record("ops.checked_out", "Registration", reg.Id, $"Released {camper.Name} to {placement.PickedUpBy}; photo ID checked.");
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return Results.Ok(new { placement.CheckedOutAt, placement.PickedUpBy });
         }).RequireAuthorization(Policies.Cet);
     }
@@ -123,6 +132,10 @@ public sealed class CheckInEndpoints : IEndpointModule
         c.Placement?.CheckedOutAt is not null ? "Checked out"
         : c.Placement?.CheckedInAt is not null ? "Checked in"
         : c.Reasons.Count > 0 ? "Blocked" : "Ready";
+
+    /// <summary>Holds an update lock on the registration row until the transaction ends.</summary>
+    static Task<int> LockRegistration(CampDbContext db, int registrationId, CancellationToken ct) =>
+        db.Database.ExecuteSqlAsync($"SELECT Id FROM Registrations WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE Id = {registrationId}", ct);
 
     static async Task<(Registration? Reg, Camper? Camper, bool UsesCampDoc)> Load(CampDbContext db, int registrationId, CancellationToken ct)
     {
