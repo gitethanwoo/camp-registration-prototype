@@ -28,6 +28,10 @@ When this plan is done, a presenter can sign in as each seeded persona (see `REA
 - [x] (2026-09-24) Wave 2, slice 7: operations (`ops`). Built and reviewed on `slice/ops`; merged into `wave2`.
 - [x] (2026-09-24) Wave 2, slice 8: host portal (`host`). Built and reviewed on `slice/host`; merged into `wave2`.
 - [x] (2026-09-24) Wave 2 integration on branch `wave2` (not yet merged to main): one `Wave2` migration with the audit trigger, cross-slice fixes, `npm run test:api` 171/171, `npx playwright test` 49 and 49 on a fresh stack. See `docs/exec-plans/completed/2026-09-24-wave2-integration.md`.
+- [x] (2026-09-24) Wave 3, slice 9: registration form builder (`forms`). Built on `slice/forms`; merged into `wave3`.
+- [x] (2026-09-24) Wave 3, slice 10: health settings and staff access (`access`). Built on `slice/access`; merged into `wave3`.
+- [x] (2026-09-24) Wave 3, polish (`polish`): demo clock, Family Camp waiver, role guard, moved campers, David persona. Built on `slice/polish`; merged into `wave3`.
+- [x] (2026-09-24) Wave 3 integration on branch `wave3` (not merged to main, not pushed): one `Wave3` migration, a lint ban on real-time reads, health gating on K6 answers with `health.viewed` audits, form four-eyes for editors, the retreat waiver signed at submit, staff No access in the console shell, ended sessions hidden from guests, an F5 500 fixed. `npm run test:api` 212/212; `npx playwright test` 64 and 64 on a fresh stack. See `docs/exec-plans/completed/2026-09-24-wave3-integration.md`.
 
 ## Surprises & Discoveries
 
@@ -35,6 +39,8 @@ When this plan is done, a presenter can sign in as each seeded persona (see `REA
   Evidence: `docs/exec-plans/completed/2026-09-24-wave1-integration.md`.
 - Wave 2: code merged cleanly, but two slices seeded the same program slug (`family-camp`), and the later seed skipped its own demo program without an error. Future slices should give seeded programs a slice-specific slug, or fail loudly when the slug they need is taken.
   Evidence: `docs/exec-plans/completed/2026-09-24-wave2-integration.md`.
+- Wave 3: every slice was green alone, but the combined stack had gaps that only show with all three: forms' staff answers ignored access's health rules, polish's route guard pre-empted access's in-page refusal, the demo clock turned setup's Summer 2026 session into a bookable past session, and an approved admittance order (no K6 answers) broke forms' F5 answers. The last two were found only by the persona click-through, not by any spec.
+  Evidence: `docs/exec-plans/completed/2026-09-24-wave3-integration.md`.
 
 ## Decision Log
 
@@ -194,6 +200,7 @@ Parallel worktrees can't all bind to :5080 and :5173. Each slice runs its own AP
 - [x] Wave 1: `npm run test:e2e` on a fresh stack (23/23 twice, 2026-09-24)
 - [x] Wave 1: walkthrough of each persona's demo path at desktop and phone width (2026-09-24)
 - [ ] Wave 2: all of the above on main after wave 2 merges (on branch `wave2`, 2026-09-24: lint, typecheck, check:api pass; test:api 171/171; e2e 49/49 twice on a fresh stack; persona walkthrough at desktop and phone)
+- [x] Wave 3: on branch `wave3` (2026-09-24, not yet on main): `npm run verify:precommit` passes; `npm run test:api` 212/212; `npx playwright test` 64/64 twice on a fresh stack; persona click-through at 1440×1000 and 390×844
 
 ## Idempotence and Recovery
 

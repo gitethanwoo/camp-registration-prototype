@@ -1,7 +1,7 @@
 # Wave 3 integration: forms, access and polish on one stack
 
 - Plan Type: ExecPlan
-- Status: In progress
+- Status: Completed
 - Owner: Claude (wave 3 integrator)
 - Started: 2026-09-24
 
@@ -27,12 +27,17 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - [x] (2026-09-24) Admittance waiver: R2's review step shows the program's waivers, an "I agree for us both" box and a signature; submit refuses (400, nothing authorized) without them and stores which versions were accepted; approval writes the `WaiverAcceptance` rows. Test: `AdmittanceTests` (refusal in `Missing_answers_are_refused...`, the acceptance in `Approving_captures_once...`).
 - [x] (2026-09-24) Staff No access: role mismatches (and console staff opening a family page) go to `/admin/no-access`, inside `AdminLayout`; guests and hosts still get `/no-access` in the public shell. `e2e/polish.spec.ts` checks the sidebar is there.
 - [x] (2026-09-24) `npm run test:api` 212/212. With each fix reverted, the three new or extended API tests fail (3 of 3).
-- [ ] Gates, test:api, two full e2e runs on a fresh stack.
-- [ ] Persona click-through at 1440×1000 and 390×844.
+- [x] (2026-09-24) `e2e/access.spec.ts`: Diane opening `/admin/setup/users` now meets polish's role guard, not access's in-page refusal; the spec checks `/admin/no-access` names the Administrator role and the Staff access page isn't shown.
+- [x] (2026-09-24) Gates on a fresh stack: `npm run verify:precommit` passes; `npm run test:api` 212/212; `npx playwright test` 64 passed, then 64 passed again.
+- [x] (2026-09-24) Persona click-through at 1440×1000 and 390×844 (Alex, Maria, David, Diane, Marcus, Grace, Pastor Dave, Sam). Found and fixed two more gaps: the guest catalog listed Family Weekend's Summer 2026 session as bookable, and F5 for an approved retreat application returned 500 from the answers endpoint. Both have tests (`SetupTests.Family_Camp_publishes...`, `AdmittanceTests.Approving_captures_once...`, and an F5 check in `e2e/admittance.spec.ts`), each failing with its fix reverted. Gates re-run after: test:api 212/212, e2e 64 and 64 on a fresh stack.
 
 ## Surprises & Discoveries
 
-(none yet)
+- The three slices merged with only using-directive conflicts, yet five cross-slice gaps showed on the combined stack. Two of them (a past session on the guest catalog, an F5 500 for admittance orders) no spec covered; the click-through found them.
+  Evidence: the click-through's page-text scan found "July 10–12, 2026" on `/programs`, and `GET /api/family/forms/orders/WS-FD7FF6/answers` returned 500 (`NullReferenceException` in `FormAnswersEndpoints.Legacy`, `r.Session` not loaded).
+- Polish's route guard answers before a page mounts, so page-level "you need admin" states from other slices (access's Staff access refusal) are now unreachable in the browser. The API still refuses, so they are harmless.
+  Evidence: `e2e/access.spec.ts` failed on "Staff access is for admins" until pointed at `/admin/no-access`.
+- 2026 dates remaining in the UI are intended history: the Johnsons' Spring 2026 retreat (under Past on F4) and the setup seed's Summer 2026 Family Weekend session with its v2 waiver signatures (now hidden from guests).
 
 ## Decision Log
 
@@ -54,13 +59,16 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - Decision: The couple signs the waiver on R2's review step (collected at submit), not on F5 after approval. Applications submitted before the retreat had a waiver (the seeded queue) still create a registration with no signature, which F5 shows as "to sign".
   Rationale: it matches the registration wizard (sign before paying), the card hold already happens on that step, and it is three columns on the application plus one loop at capture. Seeded applications aren't given made-up signatures.
   Date/Author: 2026-09-24 / Claude
+- Decision: Hide sessions whose end date is before the demo clock's today from `GET /api/programs` and `GET /api/programs/{slug}`, rather than moving setup's Summer 2026 session.
+  Rationale: that session is setup's fixture for existing registrations and v2 waiver signers (API tests rely on it); a guest catalog shouldn't offer past sessions in any case.
+  Date/Author: 2026-09-24 / Claude
 - Decision: The staff No access page is the same component at `/admin/no-access` inside `AdminLayout`; `/no-access` stays for guests and host coordinators (whose shell is the host portal).
   Rationale: a staff member keeps the sidebar and account menu, and the page needs no copy changes.
   Date/Author: 2026-09-24 / Claude
 
 ## Outcomes & Retrospective
 
-(pending)
+`wave3` holds all three slices with one `Wave3` migration and passes every gate on a fresh stack: verify:precommit, test:api 212/212, and Playwright 64/64 twice in a row. Every persona's path renders at 1440 and 390 wide with no sideways scroll and no server errors, and live actions carry 2028 demo-season dates (K6 "Live since Mar 2, 2028", audit rows, journals FS-2028-03-01, registrations "registered Mar 2"). All seven cross-slice items from the brief are done with tests, plus two found in the click-through. Not done: merging to main and pushing (out of scope for this plan). Lesson: a scripted click-through that scans page text for off-season years and 5xx responses caught what per-slice specs could not.
 
 ## Context and Orientation
 
@@ -85,10 +93,10 @@ From `/Users/ethanwoo/dev/camp-registration-prototype`:
 
 ## Validation and Acceptance
 
-- [ ] `npm run verify:precommit`
-- [ ] `npm run test:api`
-- [ ] `npx playwright test` on a fresh stack, twice in a row
-- [ ] Persona click-through at 1440 and 390 wide
+- [x] `npm run verify:precommit` (2026-09-24, passes)
+- [x] `npm run test:api` (2026-09-24, 212/212)
+- [x] `npx playwright test` on a fresh stack, twice in a row (2026-09-24, 64/64 and 64/64)
+- [x] Persona click-through at 1440 and 390 wide (2026-09-24)
 
 ## Idempotence and Recovery
 
@@ -96,8 +104,12 @@ The migration is regenerated from `main`'s snapshot, so rerunning the steps prod
 
 ## Artifacts and Notes
 
-(pending)
+Commits on `wave3` after `main` (ab49826): the three `--no-ff` merges, `Wave3` migration, c55d484 (clock lint), befeb9e (cross-slice fixes), 1effb76 (access spec), e696065 (F5 and catalog fixes), and this plan's completion. Click-through screenshots were saved outside the repo (session scratchpad `wave3-shots/`).
 
 ## Interfaces and Dependencies
 
-(pending)
+- `FormQuestion.Health` (bool) and `FormQuestionInput(..., bool Health = false)`; `FormVersion.EditedBy` / `EditedByEmails`.
+- `GET /api/admin/forms/registrations/{id}/answers` returns `healthWithheld` (string or null) and writes `health.viewed` when health answers are shown. `GET /api/admin/registrations/{id}` no longer has `answers`.
+- `AdmittanceService.CardRequest(CardToken, IdempotencyKey, AcceptedWaiverIds?, SignerName?)`; `AdmittanceApplication.WaiversAccepted`, `WaiverSignerName`, `WaiverSignedAt`; apply context returns `waivers`.
+- Route `/admin/no-access` (child of `AdminLayout`).
+- `scripts/check-slop.mjs` rejects real-time reads outside the clock files; mark a deliberate one with `clock: allow-real-time`.
