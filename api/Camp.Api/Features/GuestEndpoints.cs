@@ -1,6 +1,7 @@
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Forms;
 using Camp.Api.Features.Setup;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +118,8 @@ public static class GuestEndpoints
             var active = await db.Registrations.Where(r => r.SessionId == id && r.HouseholdId == h.Id && r.Status != RegistrationStatus.Cancelled).Select(r => r.PersonId).ToListAsync();
             var waiting = await db.WaitlistEntries.Where(w => w.Pool.SessionId == id && w.HouseholdId == h.Id && (w.Status == WaitlistStatus.Waiting || w.Status == WaitlistStatus.Offered)).Select(w => w.PersonId).ToListAsync();
             var waitlist = await WaitlistCounts(db, [id]);
+            // K6: the program's live form version, when it has one; otherwise its original questions.
+            var form = await FormRules.LiveAsync(db, s.ProgramId);
 
             return Results.Ok(new
             {
@@ -143,14 +146,16 @@ public static class GuestEndpoints
                         BasicHealth = new { m.Dietary, m.Allergies, m.AdaNeeds },
                     };
                 }),
-                Questions = s.Program.Questions.OrderBy(q => q.SortOrder).Select(q => new
+                Form = form is null ? null : new { form.Id, form.Version },
+                Questions = form is not null ? form.Questions.Select(FormViews.Question) : s.Program.Questions.OrderBy(q => q.SortOrder).Select(q => new
                 {
                     q.Key,
                     q.Label,
+                    HelpText = (string?)null,
                     Type = q.Type.ToString(),
                     Scope = q.Scope.ToString(),
                     q.Required,
-                    Options = q.Options?.Split('|') ?? [],
+                    Options = (IReadOnlyList<string>)(q.Options?.Split('|') ?? []),
                     q.ShowWhenKey,
                     q.ShowWhenValue,
                 }),
