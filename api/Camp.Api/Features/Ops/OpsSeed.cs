@@ -9,12 +9,11 @@ namespace Camp.Api.Features.Ops;
 /// Operations rows for Overnight Camp Session 3, on top of the core seed's 186 confirmed campers
 /// (spec Part 3). Adds no registrations, so every canonical count stays as the core seed made it:
 /// 16 cabins of 12 beds (86 boys and 86 girls placed, 14 unassigned), five groups of 10 per pool
-/// (Boys G6–8 fully grouped with one separated pair), cabinmate requests, activity choices, pickup
-/// adults, a rooming review just before the newest registration, and 12 campers already checked in.
+/// (Boys G6–8 fully grouped with one separated pair), cabinmate requests, pickup adults (activity
+/// choices are the Activities slice's seed), a rooming review just before the newest registration, and 12 campers already checked in.
 /// </summary>
 public sealed class OpsSeed : ISeedModule
 {
-    public static readonly string[] Activities = ["Archery", "Swimming", "Climbing", "Horseback", "Crafts", "Canoeing"];
     const int CabinsPerGender = 8;
     const int BedsPerCabin = 12;
     static readonly int[] CabinFill = [11, 11, 11, 11, 11, 11, 10, 10]; // 86 per gender
@@ -78,10 +77,6 @@ public sealed class OpsSeed : ISeedModule
             for (var i = 0; i < list.Count - keepOut; i++)
                 placements[list[i].RegistrationId].GroupId = poolGroups[Math.Min(i / 10, poolGroups.Count - 1)].Id;
         }
-
-        // ── Activity choices: every 13th camper hasn't chosen yet ──
-        for (var i = 0; i < campers.Count; i++)
-            placements[campers[i].RegistrationId].Activity = i % 13 == 12 ? null : Activities[i % Activities.Length];
 
         // ── Cabinmate requests ──
         var requests = new List<OpsBuddyRequest>();

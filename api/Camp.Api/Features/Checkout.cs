@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Activities;
 using Camp.Api.Features.Forms;
 using Camp.Api.Features.Polish;
 using Camp.Api.Features.Setup;
@@ -13,7 +14,9 @@ namespace Camp.Api.Features;
 public record HealthForm(string? Dietary, string? Allergies, string? AdaNeeds, string? Medications,
     string? PhysicianName, string? PhysicianPhone, string? InsuranceProvider);
 
-public record CheckoutParticipant(int PersonId, Dictionary<string, string>? Answers, HealthForm? Health);
+// R4/R5: ranked activity choices per period and cabinmate requests, for sessions with an activity schedule.
+public record CheckoutParticipant(int PersonId, Dictionary<string, string>? Answers, HealthForm? Health,
+    List<ActivityChoice>? Activities = null, List<CabinmateInput>? Cabinmates = null);
 public record WaiverSignature(int WaiverId, int? PersonId, string SignerName);
 
 public record CheckoutRequest(
@@ -102,6 +105,9 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             .Select(w => w.PersonId).ToListAsync(ct);
         foreach (var id in already.Concat(alreadyWaiting))
             errors[$"participants.{id}"] = [$"{people.Single(p => p.Id == id).FirstName} is already registered or waitlisted for this session."];
+
+        var activityCampers = placements.Select(p => new ActivityCheckout.Camper(p.Person, p.Input.Activities, p.Input.Cabinmates)).ToList();
+        foreach (var (key, messages) in await ActivityCheckout.CheckAsync(db, session, activityCampers, ct)) errors[key] = messages;
 
         foreach (var w in session.Program.Waivers)
         {
@@ -244,6 +250,8 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                     db.AddRange(camperAnswers[reg.PersonId].Select(a => new FormAnswer { OrderId = order.Id, RegistrationId = reg.Id, FormVersionId = form.Id, FormQuestionId = a.Question.Id, Value = a.Value }));
                 await db.SaveChangesAsync(ct);
             }
+            // R4: each camper's highest-ranked activity with room, per period; all full → rolled back, 409.
+            await ActivityCheckout.ApplyAsync(db, session, seated, activityCampers, clock.UtcNow(), ct);
             await tx.CommitAsync(ct);
         }
 
@@ -311,6 +319,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             await db.WaitlistEntries.Where(w => w.OrderId == order.Id && w.Status == WaitlistStatus.Waiting)
                 .ExecuteUpdateAsync(s => s.SetProperty(w => w.Status, WaitlistStatus.Removed), ct);
             await DiscountRuleGate.ReleaseAsync(db, order.DiscountCode, ct);
+            await ActivityRules.ReleaseAsync(db, [.. order.Registrations.Select(r => r.Id)], ct);
             Audit(actor, "payment.declined", "PaymentOrder", order.Id, $"Charge of {Money(order.DueTodayCents)} declined; {order.Registrations.Count} seat(s) released.");
         }
         await db.SaveChangesAsync(ct);

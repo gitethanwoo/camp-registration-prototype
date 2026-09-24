@@ -24,7 +24,7 @@ After this plan:
 ## Progress
 
 - [x] (2026-09-24 00:00Z) Worktree `/Users/ethanwoo/dev/camp-wt/activities` on `slice/activities` from `main` 70609ee; read AGENTS.md, PLANS.md, QUALITY.md, the exec-plan index, the master plan, `docs/product/screen-specs.md` and the K8/O4/R4/P3/R5 concepts; read Checkout, GuestEndpoints, Register.vue, the Ops slice and the Family overview.
-- [ ] Milestone 1: entities, `Activities` migration, seed, endpoints, checkout integration, O1 change, `ActivitiesTests.cs`.
+- [x] (2026-09-24 17:10Z) Milestone 1: entities, `Activities` migration, seed, endpoints, checkout integration, O1/O5 change, `ActivitiesTests.cs` (18 tests; `npm run test:api` 238 passing, up from 220). Reverting the capacity guard, the decline release or the household check each fails tests (6 failures together).
 - [ ] Milestone 2: web K8, O4, R4, P3, R5, family route and checklist item, O1 update, local SVG images.
 - [ ] Milestone 3: `e2e/activities.spec.ts`, full gates, screenshots, seven-pass review.
 - [ ] Milestone 4: plan completed with `node scripts/complete-exec-plan.mjs activities`.
@@ -60,7 +60,7 @@ After this plan:
 
 ## Verification
 
-- No code changes yet.
+- 2026-09-24 Milestone 1: `npm run test:api` → 238 passed, 0 failed. Spot-check with the conditional `Assigned < Capacity` removed from `ActivityRules.ClaimAsync`, `ActivityRules.ReleaseAsync` removed from the decline branch of `FinalizeAsync`, and the household filter neutralised in the family activities route: 6 of 18 activity tests fail (concurrency, 409, ranked fallback, staff move, decline, other household), then pass again once restored.
 
 ## Outcomes & Retrospective
 
@@ -107,8 +107,13 @@ The seed checks for existing activities and does nothing if they exist. To start
 
 Shared-file edits:
 
-- (filled in as they land)
+- `api/Camp.Api/Features/Checkout.cs`: `CheckoutParticipant` gains optional `Activities` and `Cabinmates`; activity/cabinmate validation errors merge into the existing error dictionary; `ActivityCheckout.ApplyAsync` runs inside the seat transaction before commit (throws `ActivityFullException` → rollback); the decline branch of `FinalizeAsync` calls `ActivityRules.ReleaseAsync`.
+- `api/Camp.Api/Features/GuestEndpoints.cs`: checkout maps `ActivityFullException` to 409; register-context adds `activities` (true when the session has activity blocks).
+- `api/Camp.Api/Features/Family/FamilyEndpoints.cs`: overview checklist concatenates `ActivityChecklist.ForAsync`.
+- `api/Camp.Api/Features/Ops/OpsEntities.cs` and `OpsSeed.cs`: `OpsPlacement.Activity` and its seeded names removed (the migration drops the column).
+- `api/Camp.Api/Features/Ops/ReadinessEndpoints.cs`: O1 `activities` filter list and roster `activity` (now `{ names, state, label }`) come from `ActivityReadModel`.
+- `api/Camp.Api/Features/Ops/CheckInEndpoints.cs`: O5 `activity` label comes from `ActivityReadModel`.
 
 ## Interfaces and Dependencies
 
-- `POST /api/family/checkout` accepts optional `activities` (per participant, per period, ranked activity ids) and `cabinmates` (per participant). 409 body: `{ title, conflicts: [{ personId, firstName, period, alternatives: [{ activityId, name, remaining }] }] }`.
+- `POST /api/checkout` accepts optional `activities` (per participant, per period, ranked activity ids) and `cabinmates` (per participant). 409 body: `{ title, conflicts: [{ personId, firstName, period, alternatives: [{ activityId, name, remaining }] }] }`.

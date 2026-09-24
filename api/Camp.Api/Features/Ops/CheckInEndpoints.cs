@@ -30,6 +30,7 @@ public sealed class CheckInEndpoints : IEndpointModule
             var adults = await db.Set<OpsPickupAdult>().AsNoTracking().Where(a => households.Contains(a.HouseholdId)).OrderBy(a => a.Id).ToListAsync(ct);
             var phones = await db.Households.Where(h => households.Contains(h.Id)).ToDictionaryAsync(h => h.Id, h => h.Phone, ct);
             var names = await OpsNames.For(db, id, ct);
+            var activities = await Activities.ActivityReadModel.SummariesAsync(db, id, ct);
             var rows = roster.Campers.Select(c => new
             {
                 c.RegistrationId,
@@ -38,7 +39,7 @@ public sealed class CheckInEndpoints : IEndpointModule
                 Gender = c.Gender.ToString(),
                 c.ConfirmationCode,
                 Cabin = names.Cabin(c.Placement?.CabinId),
-                c.Placement?.Activity,
+                Activity = activities.TryGetValue(c.RegistrationId, out var act) ? act.Label : null,
                 Status = Status(c),
                 Blockers = c.Reasons.Select(r =>
                 {
