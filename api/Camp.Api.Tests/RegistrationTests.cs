@@ -2,37 +2,10 @@ using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Features;
 using Camp.Api.Integrations;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Camp.Api.Tests;
-
-/// <summary>
-/// Boots the real app against a throwaway SQL Server database (migrated + seeded on startup).
-/// Set TEST_SQL to point at a server; defaults to the docker-compose instance.
-/// </summary>
-public class ApiFactory : WebApplicationFactory<Program>
-{
-    static readonly string Server = Environment.GetEnvironmentVariable("TEST_SQL") ?? "localhost,14333";
-    public static readonly string ConnectionString =
-        $"Server={Server};Database=CampRegistration_Tests_{Guid.NewGuid():N};User Id=sa;Password=Camp_Dev_Passw0rd!;TrustServerCertificate=True";
-
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:Default", ConnectionString);
-    }
-
-    public override async ValueTask DisposeAsync()
-    {
-        using (var scope = Services.CreateScope())
-            await scope.ServiceProvider.GetRequiredService<CampDbContext>().Database.EnsureDeletedAsync();
-        await base.DisposeAsync();
-        GC.SuppressFinalize(this);
-    }
-}
 
 public class RegistrationTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
@@ -104,8 +77,14 @@ public class RegistrationTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var template = await db.Sessions.AsNoTracking().OrderBy(s => s.Id).FirstAsync(s => s.Program.Slug == "day-camp-atlanta");
         var session = new Session
         {
-            ProgramId = template.ProgramId, Name = $"Test {Guid.NewGuid():N}"[..20], StartDate = template.StartDate, EndDate = template.EndDate,
-            PriceCents = template.PriceCents, DepositCents = template.DepositCents, PlanInstallments = template.PlanInstallments, BalanceDueDate = template.BalanceDueDate,
+            ProgramId = template.ProgramId,
+            Name = $"Test {Guid.NewGuid():N}"[..20],
+            StartDate = template.StartDate,
+            EndDate = template.EndDate,
+            PriceCents = template.PriceCents,
+            DepositCents = template.DepositCents,
+            PlanInstallments = template.PlanInstallments,
+            BalanceDueDate = template.BalanceDueDate,
         };
         var pool = new CapacityPool { Session = session, Name = "Grade 6", GradeMin = 6, GradeMax = 6, Capacity = capacity };
         db.CapacityPools.Add(pool);

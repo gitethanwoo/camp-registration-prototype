@@ -36,8 +36,18 @@ const attempted = ref(false)
 
 const scheduleColumns: ColumnDef<Quote['schedule'][number]>[] = [
   { accessorKey: 'label', header: 'Payment' },
-  { accessorKey: 'dueDate', header: 'Due', cell: ({ row }) => row.original.dueDate ? date(row.original.dueDate) : 'Today', meta: { cellClass: 'text-muted-foreground' } },
-  { accessorKey: 'amountCents', header: 'Amount', cell: ({ row }) => money(row.original.amountCents), meta: { class: 'text-right', cellClass: 'tabular-nums' } },
+  {
+    accessorKey: 'dueDate',
+    header: 'Due',
+    cell: ({ row }) => (row.original.dueDate ? date(row.original.dueDate) : 'Today'),
+    meta: { cellClass: 'text-muted-foreground' },
+  },
+  {
+    accessorKey: 'amountCents',
+    header: 'Amount',
+    cell: ({ row }) => money(row.original.amountCents),
+    meta: { class: 'text-right', cellClass: 'tabular-nums' },
+  },
 ]
 
 const steps = [
@@ -53,8 +63,7 @@ const step = computed(() => steps[draft.step]?.key ?? 'participants')
 onMounted(async () => {
   try {
     ctx.value = await api.get<RegisterContext>(`/sessions/${props.sessionId}/register-context`)
-  }
-  catch (e) {
+  } catch (e) {
     loadError.value = (e as Error).message
     return
   }
@@ -63,37 +72,44 @@ onMounted(async () => {
     return
   }
   // Drop anything that's no longer selectable (e.g. registered in another tab).
-  draft.selected = draft.selected.filter(id => selectable(byId(id)))
+  draft.selected = draft.selected.filter((id) => selectable(byId(id)))
   if (!draft.signer) draft.signer = ctx.value.household.signer
   if (draft.paymentOption === 'Plan' && !ctx.value.session.planInstallments) draft.paymentOption = 'Deposit'
   if (draft.paymentOption === 'Deposit' && !ctx.value.session.depositCents) draft.paymentOption = 'Full'
   for (const p of ctx.value.participants) {
     draft.answers[p.id] ??= {}
     draft.health[p.id] ??= {
-      dietary: p.basicHealth.dietary ?? '', allergies: p.basicHealth.allergies ?? '', adaNeeds: p.basicHealth.adaNeeds ?? '',
-      medications: '', physicianName: '', physicianPhone: '', insuranceProvider: '',
+      dietary: p.basicHealth.dietary ?? '',
+      allergies: p.basicHealth.allergies ?? '',
+      adaNeeds: p.basicHealth.adaNeeds ?? '',
+      medications: '',
+      physicianName: '',
+      physicianPhone: '',
+      insuranceProvider: '',
     }
   }
 })
 
-const byId = (id: number) => ctx.value?.participants.find(p => p.id === id)
+const byId = (id: number) => ctx.value?.participants.find((p) => p.id === id)
 const selectable = (p?: Participant) => p?.status === 'eligible'
 const selected = computed(() => draft.selected.map(byId).filter((p): p is Participant => !!p))
 // A child whose pool is already full goes to the waitlist and isn't charged.
 const willWaitlist = (p: Participant) => p.pool?.state === 'full'
-const seatable = computed(() => selected.value.filter(p => !willWaitlist(p)))
+const seatable = computed(() => selected.value.filter((p) => !willWaitlist(p)))
 const allWaitlisted = computed(() => selected.value.length > 0 && seatable.value.length === 0)
 
 function toggle(p: Participant, on: boolean | 'indeterminate') {
   if (on === true && !draft.selected.includes(p.id)) draft.selected.push(p.id)
-  if (on !== true) draft.selected = draft.selected.filter(id => id !== p.id)
+  if (on !== true) draft.selected = draft.selected.filter((id) => id !== p.id)
 }
 
 // ── Questions ────────────────────────────────────────────────────────────
-const participantQuestions = computed(() => ctx.value?.questions.filter(q => q.scope === 'Participant') ?? [])
-const householdQuestions = computed(() => ctx.value?.questions.filter(q => q.scope === 'Household') ?? [])
-const visible = (q: Question, answers: Record<string, string>) => !q.showWhenKey || answers[q.showWhenKey] === q.showWhenValue
-const missing = (q: Question, answers: Record<string, string>) => q.required && visible(q, answers) && !answers[q.key]?.trim()
+const participantQuestions = computed(() => ctx.value?.questions.filter((q) => q.scope === 'Participant') ?? [])
+const householdQuestions = computed(() => ctx.value?.questions.filter((q) => q.scope === 'Household') ?? [])
+const visible = (q: Question, answers: Record<string, string>) =>
+  !q.showWhenKey || answers[q.showWhenKey] === q.showWhenValue
+const missing = (q: Question, answers: Record<string, string>) =>
+  q.required && visible(q, answers) && !answers[q.key]?.trim()
 
 // ── Waivers ──────────────────────────────────────────────────────────────
 const waiverKey = (waiverId: number, personId?: number) => `${waiverId}:${personId ?? 'household'}`
@@ -108,20 +124,26 @@ const stepErrors = computed<string[]>(() => {
     case 'questions': {
       const errs: string[] = []
       for (const p of selected.value) {
-        const n = participantQuestions.value.filter(q => missing(q, draft.answers[p.id] ?? {})).length
+        const n = participantQuestions.value.filter((q) => missing(q, draft.answers[p.id] ?? {})).length
         if (n) errs.push(`${p.firstName}: ${n} required ${n === 1 ? 'question' : 'questions'} unanswered.`)
       }
-      const h = householdQuestions.value.filter(q => missing(q, draft.householdAnswers)).length
+      const h = householdQuestions.value.filter((q) => missing(q, draft.householdAnswers)).length
       if (h) errs.push(`Family: ${h} required ${h === 1 ? 'question' : 'questions'} unanswered.`)
       return errs
     }
     case 'health':
       if (c.program.healthMechanism !== 'Embedded') return []
-      return selected.value.filter(p => !draft.health[p.id]?.physicianName.trim()).map(p => `${p.firstName}: add a physician name.`)
+      return selected.value
+        .filter((p) => !draft.health[p.id]?.physicianName.trim())
+        .map((p) => `${p.firstName}: add a physician name.`)
     case 'waivers': {
-      const errs = c.waivers.flatMap(w => w.perParticipant
-        ? selected.value.filter(p => !draft.agreed[waiverKey(w.id, p.id)]).map(p => `${w.title}: agree for ${p.firstName}.`)
-        : draft.agreed[waiverKey(w.id)] ? [] : [`${w.title}: agree to continue.`])
+      const errs = c.waivers.flatMap((w) => {
+        if (w.perParticipant)
+          return selected.value
+            .filter((p) => !draft.agreed[waiverKey(w.id, p.id)])
+            .map((p) => `${w.title}: agree for ${p.firstName}.`)
+        return draft.agreed[waiverKey(w.id)] ? [] : [`${w.title}: agree to continue.`]
+      })
       if (!draft.signer.trim()) errs.push('Type your full name to sign.')
       return errs
     }
@@ -144,7 +166,10 @@ function back() {
   window.scrollTo({ top: 0 })
 }
 function goTo(i: number) {
-  if (i < draft.step) { attempted.value = false; draft.step = i }
+  if (i < draft.step) {
+    attempted.value = false
+    draft.step = i
+  }
 }
 
 // ── Quote (server-priced) ────────────────────────────────────────────────
@@ -157,13 +182,16 @@ async function refreshQuote() {
   quoting.value = true
   try {
     const q = await api.post<Quote>(`/sessions/${props.sessionId}/quote`, {
-      personIds: seatable.value.map(p => p.id), paymentOption: draft.paymentOption, discountCode: draft.discountCode || null,
+      personIds: seatable.value.map((p) => p.id),
+      paymentOption: draft.paymentOption,
+      discountCode: draft.discountCode || null,
     })
     if (seq === quoteSeq) quote.value = q // ignore responses that arrive out of order
+  } finally {
+    if (seq === quoteSeq) quoting.value = false
   }
-  finally { if (seq === quoteSeq) quoting.value = false }
 }
-watch(() => [ctx.value, seatable.value.map(p => p.id).join(), draft.paymentOption, draft.discountCode], refreshQuote)
+watch(() => [ctx.value, seatable.value.map((p) => p.id).join(), draft.paymentOption, draft.discountCode], refreshQuote)
 function applyCode() {
   draft.discountCode = discountInput.value.trim().toUpperCase()
 }
@@ -178,7 +206,13 @@ const processing = ref(false)
 const decline = ref<string | null>(null)
 const serverErrors = ref<string[]>([])
 
-const cardComplete = computed(() => card.value.number.replace(/\D/g, '').length >= 15 && /^\d{2}\s*\/\s*\d{2}$/.test(card.value.expiry) && card.value.cvc.length >= 3 && card.value.zip.length >= 5)
+const cardComplete = computed(
+  () =>
+    card.value.number.replace(/\D/g, '').length >= 15 &&
+    /^\d{2}\s*\/\s*\d{2}$/.test(card.value.expiry) &&
+    card.value.cvc.length >= 3 &&
+    card.value.zip.length >= 5,
+)
 
 async function pay() {
   if (processing.value || !ctx.value) return
@@ -187,41 +221,51 @@ async function pay() {
   processing.value = true
   try {
     // In production this token comes from Fiserv's iframe; the card number never touches our API.
-    const token = allWaitlisted.value ? '' : (await api.post<{ token: string }>('/fiserv-sandbox/tokenize', { cardNumber: card.value.number })).token
+    const token = allWaitlisted.value
+      ? ''
+      : (await api.post<{ token: string }>('/fiserv-sandbox/tokenize', { cardNumber: card.value.number })).token
     const c = ctx.value
-    const res = await api.post<{ confirmationCode: string, status: string }>('/checkout', {
+    const res = await api.post<{ confirmationCode: string; status: string }>('/checkout', {
       idempotencyKey: draft.idempotencyKey,
       sessionId: props.sessionId,
-      participants: selected.value.map(p => ({
+      participants: selected.value.map((p) => ({
         personId: p.id,
-        answers: Object.fromEntries(participantQuestions.value.filter(q => visible(q, draft.answers[p.id] ?? {})).map(q => [q.key, draft.answers[p.id]?.[q.key] ?? ''])),
+        answers: Object.fromEntries(
+          participantQuestions.value
+            .filter((q) => visible(q, draft.answers[p.id] ?? {}))
+            .map((q) => [q.key, draft.answers[p.id]?.[q.key] ?? '']),
+        ),
         health: c.program.healthMechanism === 'Embedded' ? draft.health[p.id] : null,
       })),
-      householdAnswers: Object.fromEntries(householdQuestions.value.filter(q => visible(q, draft.householdAnswers)).map(q => [q.key, draft.householdAnswers[q.key] ?? ''])),
-      waivers: c.waivers.flatMap((w): { waiverId: number, personId: number | null, signerName: string }[] => w.perParticipant
-        ? selected.value.map(p => ({ waiverId: w.id, personId: p.id, signerName: draft.signer }))
-        : [{ waiverId: w.id, personId: null, signerName: draft.signer }]),
+      householdAnswers: Object.fromEntries(
+        householdQuestions.value
+          .filter((q) => visible(q, draft.householdAnswers))
+          .map((q) => [q.key, draft.householdAnswers[q.key] ?? '']),
+      ),
+      waivers: c.waivers.flatMap((w): { waiverId: number; personId: number | null; signerName: string }[] =>
+        w.perParticipant
+          ? selected.value.map((p) => ({ waiverId: w.id, personId: p.id, signerName: draft.signer }))
+          : [{ waiverId: w.id, personId: null, signerName: draft.signer }],
+      ),
       paymentOption: draft.paymentOption,
       discountCode: quote.value?.appliedDiscountCode ?? null,
       cardToken: token,
     })
     clear()
     router.replace(`/confirmation/${res.confirmationCode}`)
-  }
-  catch (e) {
+  } catch (e) {
     if (e instanceof ApiError && e.status === 402) {
       decline.value = (e.body as { message?: string })?.message ?? 'Your card was declined.'
       rotateKey() // next attempt is a new payment intent; the declined one is closed
-    }
-    else if (e instanceof ApiError && e.status === 400) {
+    } else if (e instanceof ApiError && e.status === 400) {
       serverErrors.value = Object.values(e.errors).flat()
       if (!serverErrors.value.length) serverErrors.value = [e.message]
-    }
-    else {
+    } else {
       toast.error('We couldn’t reach the payment service. You have not been charged twice; try again.')
     }
+  } finally {
+    processing.value = false
   }
-  finally { processing.value = false }
 }
 
 const paymentOptions = computed(() => {
@@ -229,9 +273,19 @@ const paymentOptions = computed(() => {
   if (!s || !quote.value) return []
   const n = Math.max(seatable.value.length, 1)
   const opts = []
-  if (s.depositCents) opts.push({ value: 'Deposit', label: 'Pay deposit', detail: `${money(s.depositCents * n)} today, balance due ${date(s.balanceDueDate)}` })
+  if (s.depositCents)
+    opts.push({
+      value: 'Deposit',
+      label: 'Pay deposit',
+      detail: `${money(s.depositCents * n)} today, balance due ${date(s.balanceDueDate)}`,
+    })
   opts.push({ value: 'Full', label: 'Pay in full', detail: `${money(quote.value.totalCents)} today` })
-  if (s.planInstallments) opts.push({ value: 'Plan', label: 'Payment plan', detail: `Deposit today, then ${s.planInstallments} monthly payments by ${date(s.balanceDueDate)}` })
+  if (s.planInstallments)
+    opts.push({
+      value: 'Plan',
+      label: 'Payment plan',
+      detail: `Deposit today, then ${s.planInstallments} monthly payments by ${date(s.balanceDueDate)}`,
+    })
   return opts
 })
 </script>
@@ -256,13 +310,21 @@ const paymentOptions = computed(() => {
         <ArrowLeft />{{ draft.step === 0 ? ctx.program.name : 'Back' }}
       </Button>
       <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">Register for {{ ctx.program.name }}</h1>
-      <p class="mt-1 text-muted-foreground">{{ ctx.session.name }} · {{ dateRange(ctx.session.startDate, ctx.session.endDate) }}</p>
+      <p class="mt-1 text-muted-foreground">
+        {{ ctx.session.name }} · {{ dateRange(ctx.session.startDate, ctx.session.endDate) }}
+      </p>
 
       <!-- Step indicator -->
       <nav aria-label="Registration progress" class="mt-6">
-        <p class="text-sm font-medium md:hidden">Step {{ draft.step + 1 }} of {{ steps.length }} · {{ steps[draft.step]!.label }}</p>
+        <p class="text-sm font-medium md:hidden">
+          Step {{ draft.step + 1 }} of {{ steps.length }} · {{ steps[draft.step]!.label }}
+        </p>
         <ol class="mt-2 flex gap-1 md:hidden" aria-hidden="true">
-          <li v-for="(s, i) in steps" :key="s.key" :class="cn('h-1.5 flex-1 rounded-full', i <= draft.step ? 'bg-primary' : 'bg-muted')" />
+          <li
+            v-for="(s, i) in steps"
+            :key="s.key"
+            :class="cn('h-1.5 flex-1 rounded-full', i <= draft.step ? 'bg-primary' : 'bg-muted')"
+          />
         </ol>
         <ol class="hidden items-center gap-2 md:flex">
           <li v-for="(s, i) in steps" :key="s.key" class="flex flex-1 items-center gap-2 last:flex-none">
@@ -273,9 +335,15 @@ const paymentOptions = computed(() => {
               class="h-auto p-0 font-normal hover:bg-transparent disabled:opacity-100"
               @click="goTo(i)"
             >
-              <span :class="cn('flex size-7 items-center justify-center rounded-full border text-xs font-medium',
-                                i < draft.step && 'border-primary bg-primary text-primary-foreground',
-                                i === draft.step && 'border-primary text-foreground ring-2 ring-primary/20')">
+              <span
+                :class="
+                  cn(
+                    'flex size-7 items-center justify-center rounded-full border text-xs font-medium',
+                    i < draft.step && 'border-primary bg-primary text-primary-foreground',
+                    i === draft.step && 'border-primary text-foreground ring-2 ring-primary/20',
+                  )
+                "
+              >
                 <Check v-if="i < draft.step" class="size-4" /><template v-else>{{ i + 1 }}</template>
               </span>
               <span :class="i === draft.step ? 'font-medium' : 'text-muted-foreground'">{{ s.label }}</span>
@@ -291,21 +359,29 @@ const paymentOptions = computed(() => {
           <Card v-if="step === 'participants'">
             <CardHeader>
               <CardTitle>Who's going?</CardTitle>
-              <CardDescription>We place each child in the right group from their grade in fall {{ ctx.session.startDate.slice(0, 4) }}.</CardDescription>
+              <CardDescription
+                >We place each child in the right group from their grade in fall
+                {{ ctx.session.startDate.slice(0, 4) }}.</CardDescription
+              >
             </CardHeader>
             <CardContent class="space-y-3">
               <label
-                v-for="p in ctx.participants" :key="p.id"
-                :class="cn('flex items-start gap-4 rounded-lg border p-4 transition-colors',
-                           selectable(p) ? 'cursor-pointer hover:bg-muted/50' : 'bg-muted/40',
-                           draft.selected.includes(p.id) && 'border-primary bg-primary/5')"
+                v-for="p in ctx.participants"
+                :key="p.id"
+                :class="
+                  cn(
+                    'flex items-start gap-4 rounded-lg border p-4 transition-colors',
+                    selectable(p) ? 'cursor-pointer hover:bg-muted/50' : 'bg-muted/40',
+                    draft.selected.includes(p.id) && 'border-primary bg-primary/5',
+                  )
+                "
               >
                 <Checkbox
                   class="mt-1"
                   :aria-label="`Register ${p.firstName}`"
                   :model-value="draft.selected.includes(p.id)"
                   :disabled="!selectable(p)"
-                  @update:model-value="v => toggle(p, v)"
+                  @update:model-value="(v) => toggle(p, v)"
                 />
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
@@ -313,18 +389,40 @@ const paymentOptions = computed(() => {
                     <StatusBadge v-if="p.status === 'registered'" status="Confirmed" label="Already registered" />
                     <StatusBadge v-else-if="p.status === 'waitlisted'" status="Waitlisted" label="On waitlist" />
                   </div>
-                  <p class="text-sm text-muted-foreground">{{ p.gradeLabel }} · {{ p.gender === 'Male' ? 'Boy' : 'Girl' }}</p>
+                  <p class="text-sm text-muted-foreground">
+                    {{ p.gradeLabel }} · {{ p.gender === 'Male' ? 'Boy' : 'Girl' }}
+                  </p>
                   <p v-if="p.status === 'ineligible'" class="mt-1 text-sm text-muted-foreground">{{ p.reason }}</p>
-                  <p v-else-if="p.pool && selectable(p)" :class="cn('mt-1 text-sm', p.pool.state === 'full' ? 'font-medium text-destructive' : p.pool.state === 'low' ? 'font-medium text-amber-700' : 'text-muted-foreground')">
+                  <p
+                    v-else-if="p.pool && selectable(p)"
+                    :class="
+                      cn(
+                        'mt-1 text-sm',
+                        p.pool.state === 'full'
+                          ? 'font-medium text-destructive'
+                          : p.pool.state === 'low'
+                            ? 'font-medium text-amber-700'
+                            : 'text-muted-foreground',
+                      )
+                    "
+                  >
                     {{ p.pool.name }} ·
-                    <template v-if="p.pool.state === 'full'">Full. {{ p.firstName }} will join the waitlist (#{{ p.pool.waitlisted + 1 }}) and won't be charged.</template>
-                    <template v-else>{{ p.pool.remaining }} {{ p.pool.remaining === 1 ? 'spot' : 'spots' }} left</template>
+                    <template v-if="p.pool.state === 'full'"
+                      >Full. {{ p.firstName }} will join the waitlist (#{{ p.pool.waitlisted + 1 }}) and won't be
+                      charged.</template
+                    >
+                    <template v-else
+                      >{{ p.pool.remaining }} {{ p.pool.remaining === 1 ? 'spot' : 'spots' }} left</template
+                    >
                   </p>
                 </div>
-                <span v-if="selectable(p)" class="text-sm tabular-nums">{{ willWaitlist(p) ? 'Waitlist' : money(ctx.session.priceCents) }}</span>
+                <span v-if="selectable(p)" class="text-sm tabular-nums">{{
+                  willWaitlist(p) ? 'Waitlist' : money(ctx.session.priceCents)
+                }}</span>
               </label>
               <p class="text-sm text-muted-foreground">
-                Spots aren't held while you fill out forms. We reserve them the moment you pay, and if a group fills first, that child joins the waitlist instead.
+                Spots aren't held while you fill out forms. We reserve them the moment you pay, and if a group fills
+                first, that child joins the waitlist instead.
               </p>
             </CardContent>
           </Card>
@@ -338,19 +436,37 @@ const paymentOptions = computed(() => {
               <CardContent class="grid gap-5 sm:grid-cols-2">
                 <template v-for="q in participantQuestions" :key="q.key">
                   <div v-if="visible(q, draft.answers[p.id]!)" class="space-y-2">
-                    <Label :for="`q-${p.id}-${q.key}`">{{ q.label }}<span v-if="q.required" class="text-destructive"> *</span></Label>
+                    <Label :for="`q-${p.id}-${q.key}`"
+                      >{{ q.label }}<span v-if="q.required" class="text-destructive"> *</span></Label
+                    >
                     <Select v-if="q.type === 'Select'" v-model="draft.answers[p.id]![q.key]">
-                      <SelectTrigger :id="`q-${p.id}-${q.key}`" class="w-full" :aria-invalid="attempted && missing(q, draft.answers[p.id]!) || undefined">
+                      <SelectTrigger
+                        :id="`q-${p.id}-${q.key}`"
+                        class="w-full"
+                        :aria-invalid="(attempted && missing(q, draft.answers[p.id]!)) || undefined"
+                      >
                         <SelectValue placeholder="Choose…" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem v-for="o in q.options" :key="o" :value="o">{{ o }}</SelectItem>
                       </SelectContent>
                     </Select>
-                    <RadioGroup v-else-if="q.type === 'YesNo'" v-model="draft.answers[p.id]![q.key]" class="flex gap-6" :aria-invalid="attempted && missing(q, draft.answers[p.id]!) || undefined">
-                      <Label v-for="o in ['Yes', 'No']" :key="o" class="font-normal"><RadioGroupItem :value="o" :aria-label="o" />{{ o }}</Label>
+                    <RadioGroup
+                      v-else-if="q.type === 'YesNo'"
+                      v-model="draft.answers[p.id]![q.key]"
+                      class="flex gap-6"
+                      :aria-invalid="(attempted && missing(q, draft.answers[p.id]!)) || undefined"
+                    >
+                      <Label v-for="o in ['Yes', 'No']" :key="o" class="font-normal"
+                        ><RadioGroupItem :value="o" :aria-label="o" />{{ o }}</Label
+                      >
                     </RadioGroup>
-                    <Input v-else :id="`q-${p.id}-${q.key}`" v-model="draft.answers[p.id]![q.key]" :aria-invalid="attempted && missing(q, draft.answers[p.id]!) || undefined" />
+                    <Input
+                      v-else
+                      :id="`q-${p.id}-${q.key}`"
+                      v-model="draft.answers[p.id]![q.key]"
+                      :aria-invalid="(attempted && missing(q, draft.answers[p.id]!)) || undefined"
+                    />
                   </div>
                 </template>
               </CardContent>
@@ -363,15 +479,35 @@ const paymentOptions = computed(() => {
               <CardContent class="grid gap-5 sm:grid-cols-2">
                 <template v-for="q in householdQuestions" :key="q.key">
                   <div v-if="visible(q, draft.householdAnswers)" class="space-y-2">
-                    <Label :for="`hq-${q.key}`">{{ q.label }}<span v-if="q.required" class="text-destructive"> *</span></Label>
+                    <Label :for="`hq-${q.key}`"
+                      >{{ q.label }}<span v-if="q.required" class="text-destructive"> *</span></Label
+                    >
                     <Select v-if="q.type === 'Select'" v-model="draft.householdAnswers[q.key]">
-                      <SelectTrigger :id="`hq-${q.key}`" class="w-full" :aria-invalid="attempted && missing(q, draft.householdAnswers) || undefined"><SelectValue placeholder="Choose…" /></SelectTrigger>
-                      <SelectContent><SelectItem v-for="o in q.options" :key="o" :value="o">{{ o }}</SelectItem></SelectContent>
+                      <SelectTrigger
+                        :id="`hq-${q.key}`"
+                        class="w-full"
+                        :aria-invalid="(attempted && missing(q, draft.householdAnswers)) || undefined"
+                        ><SelectValue placeholder="Choose…"
+                      /></SelectTrigger>
+                      <SelectContent
+                        ><SelectItem v-for="o in q.options" :key="o" :value="o">{{ o }}</SelectItem></SelectContent
+                      >
                     </Select>
-                    <RadioGroup v-else-if="q.type === 'YesNo'" v-model="draft.householdAnswers[q.key]" class="flex gap-6">
-                      <Label v-for="o in ['Yes', 'No']" :key="o" class="font-normal"><RadioGroupItem :value="o" :aria-label="o" />{{ o }}</Label>
+                    <RadioGroup
+                      v-else-if="q.type === 'YesNo'"
+                      v-model="draft.householdAnswers[q.key]"
+                      class="flex gap-6"
+                    >
+                      <Label v-for="o in ['Yes', 'No']" :key="o" class="font-normal"
+                        ><RadioGroupItem :value="o" :aria-label="o" />{{ o }}</Label
+                      >
                     </RadioGroup>
-                    <Input v-else :id="`hq-${q.key}`" v-model="draft.householdAnswers[q.key]" :aria-invalid="attempted && missing(q, draft.householdAnswers) || undefined" />
+                    <Input
+                      v-else
+                      :id="`hq-${q.key}`"
+                      v-model="draft.householdAnswers[q.key]"
+                      :aria-invalid="(attempted && missing(q, draft.householdAnswers)) || undefined"
+                    />
                   </div>
                 </template>
               </CardContent>
@@ -383,8 +519,12 @@ const paymentOptions = computed(() => {
             <template v-if="ctx.program.healthMechanism === 'Embedded'">
               <Card v-for="p in selected" :key="p.id">
                 <CardHeader>
-                  <CardTitle class="flex items-center gap-2"><HeartPulse class="size-5 text-muted-foreground" />{{ p.firstName }}'s health form</CardTitle>
-                  <CardDescription>Only camp health staff can see this. We prefilled what you've told us before.</CardDescription>
+                  <CardTitle class="flex items-center gap-2"
+                    ><HeartPulse class="size-5 text-muted-foreground" />{{ p.firstName }}'s health form</CardTitle
+                  >
+                  <CardDescription
+                    >Only camp health staff can see this. We prefilled what you've told us before.</CardDescription
+                  >
                 </CardHeader>
                 <CardContent class="grid gap-5 sm:grid-cols-2">
                   <div class="space-y-2">
@@ -397,7 +537,12 @@ const paymentOptions = computed(() => {
                   </div>
                   <div class="space-y-2 sm:col-span-2">
                     <Label :for="`h-${p.id}-meds`">Medications taken during camp hours</Label>
-                    <Textarea :id="`h-${p.id}-meds`" v-model="draft.health[p.id]!.medications" placeholder="Name, dose, and time" rows="2" />
+                    <Textarea
+                      :id="`h-${p.id}-meds`"
+                      v-model="draft.health[p.id]!.medications"
+                      placeholder="Name, dose, and time"
+                      rows="2"
+                    />
                   </div>
                   <div class="space-y-2 sm:col-span-2">
                     <Label :for="`h-${p.id}-ada`">Accessibility or support needs</Label>
@@ -405,7 +550,12 @@ const paymentOptions = computed(() => {
                   </div>
                   <div class="space-y-2">
                     <Label :for="`h-${p.id}-doc`">Physician name<span class="text-destructive"> *</span></Label>
-                    <Input :id="`h-${p.id}-doc`" v-model="draft.health[p.id]!.physicianName" :aria-invalid="attempted && !draft.health[p.id]!.physicianName.trim() || undefined" autocomplete="off" />
+                    <Input
+                      :id="`h-${p.id}-doc`"
+                      v-model="draft.health[p.id]!.physicianName"
+                      :aria-invalid="(attempted && !draft.health[p.id]!.physicianName.trim()) || undefined"
+                      autocomplete="off"
+                    />
                   </div>
                   <div class="space-y-2">
                     <Label :for="`h-${p.id}-docphone`">Physician phone</Label>
@@ -420,11 +570,19 @@ const paymentOptions = computed(() => {
             </template>
             <Card v-else>
               <CardHeader>
-                <CardTitle class="flex items-center gap-2"><HeartPulse class="size-5 text-muted-foreground" />Health forms are completed in CampDoc</CardTitle>
-                <CardDescription>{{ ctx.program.name }} uses CampDoc for medical records and medication tracking.</CardDescription>
+                <CardTitle class="flex items-center gap-2"
+                  ><HeartPulse class="size-5 text-muted-foreground" />Health forms are completed in CampDoc</CardTitle
+                >
+                <CardDescription
+                  >{{ ctx.program.name }} uses CampDoc for medical records and medication tracking.</CardDescription
+                >
               </CardHeader>
               <CardContent class="space-y-3 text-sm">
-                <p>After you register, we'll email a CampDoc link for {{ selected.map(p => p.firstName).join(' and ') }}. The form's status shows up on your family checklist and updates automatically when you finish.</p>
+                <p>
+                  After you register, we'll email a CampDoc link for
+                  {{ selected.map((p) => p.firstName).join(' and ') }}. The form's status shows up on your family
+                  checklist and updates automatically when you finish.
+                </p>
                 <p class="text-muted-foreground">Nothing to fill out here. Continue to waivers.</p>
               </CardContent>
             </Card>
@@ -444,12 +602,20 @@ const paymentOptions = computed(() => {
                 <div class="space-y-2">
                   <template v-if="w.perParticipant">
                     <Label v-for="p in selected" :key="p.id" class="flex items-center gap-3 font-normal">
-                      <Checkbox v-model="draft.agreed[waiverKey(w.id, p.id)]" :aria-label="`${w.title}: I agree on behalf of ${p.firstName}`" :aria-invalid="attempted && !draft.agreed[waiverKey(w.id, p.id)] || undefined" />
+                      <Checkbox
+                        v-model="draft.agreed[waiverKey(w.id, p.id)]"
+                        :aria-label="`${w.title}: I agree on behalf of ${p.firstName}`"
+                        :aria-invalid="(attempted && !draft.agreed[waiverKey(w.id, p.id)]) || undefined"
+                      />
                       I agree on behalf of {{ p.firstName }}
                     </Label>
                   </template>
                   <Label v-else class="flex items-center gap-3 font-normal">
-                    <Checkbox v-model="draft.agreed[waiverKey(w.id)]" :aria-label="`${w.title}: I agree for my family`" :aria-invalid="attempted && !draft.agreed[waiverKey(w.id)] || undefined" />
+                    <Checkbox
+                      v-model="draft.agreed[waiverKey(w.id)]"
+                      :aria-label="`${w.title}: I agree for my family`"
+                      :aria-invalid="(attempted && !draft.agreed[waiverKey(w.id)]) || undefined"
+                    />
                     I agree for my family
                   </Label>
                 </div>
@@ -462,8 +628,15 @@ const paymentOptions = computed(() => {
               </CardHeader>
               <CardContent class="max-w-sm space-y-2">
                 <Label for="signer">Full name</Label>
-                <Input id="signer" v-model="draft.signer" autocomplete="name" :aria-invalid="attempted && !draft.signer.trim() || undefined" />
-                <p class="text-xs text-muted-foreground">Signed {{ date(new Date().toISOString()) }} · {{ ctx.household.email }}</p>
+                <Input
+                  id="signer"
+                  v-model="draft.signer"
+                  autocomplete="name"
+                  :aria-invalid="(attempted && !draft.signer.trim()) || undefined"
+                />
+                <p class="text-xs text-muted-foreground">
+                  Signed {{ date(new Date().toISOString()) }} · {{ ctx.household.email }}
+                </p>
               </CardContent>
             </Card>
           </template>
@@ -494,8 +667,14 @@ const paymentOptions = computed(() => {
               <CardContent>
                 <RadioGroup v-model="draft.paymentOption" class="gap-3">
                   <Label
-                    v-for="o in paymentOptions" :key="o.value"
-                    :class="cn('flex cursor-pointer items-start gap-3 rounded-lg border p-4 font-normal', draft.paymentOption === o.value && 'border-primary bg-primary/5')"
+                    v-for="o in paymentOptions"
+                    :key="o.value"
+                    :class="
+                      cn(
+                        'flex cursor-pointer items-start gap-3 rounded-lg border p-4 font-normal',
+                        draft.paymentOption === o.value && 'border-primary bg-primary/5',
+                      )
+                    "
                   >
                     <RadioGroupItem :value="o.value" class="mt-0.5" :aria-label="o.label" />
                     <span>
@@ -507,14 +686,23 @@ const paymentOptions = computed(() => {
 
                 <div v-if="quote && draft.paymentOption === 'Plan'" class="mt-4 space-y-2">
                   <DataTable :columns="scheduleColumns" :data="quote.schedule" />
-                  <p class="text-xs text-muted-foreground">Charged automatically to the card you use today. Final payment is due before camp starts.</p>
+                  <p class="text-xs text-muted-foreground">
+                    Charged automatically to the card you use today. Final payment is due before camp starts.
+                  </p>
                 </div>
 
                 <Separator class="my-6" />
                 <form class="flex max-w-sm items-end gap-2" @submit.prevent="applyCode">
                   <div class="flex-1 space-y-2">
                     <Label for="code">Discount code</Label>
-                    <Input id="code" v-model="discountInput" autocomplete="off" class="uppercase" :aria-invalid="!!quote?.discountError || undefined" aria-describedby="code-msg" />
+                    <Input
+                      id="code"
+                      v-model="discountInput"
+                      autocomplete="off"
+                      class="uppercase"
+                      :aria-invalid="!!quote?.discountError || undefined"
+                      aria-describedby="code-msg"
+                    />
                   </div>
                   <Button type="submit" variant="outline" :disabled="!discountInput.trim()">Apply</Button>
                 </form>
@@ -522,7 +710,14 @@ const paymentOptions = computed(() => {
                   <span v-if="quote?.discountError" class="text-destructive">{{ quote.discountError }}</span>
                   <span v-else-if="quote?.appliedDiscountCode" class="text-emerald-700">
                     {{ quote.appliedDiscountCode }} applied: −{{ money(quote.discountCents) }}
-                    <Button type="button" variant="link" size="sm" class="ml-1 h-auto p-0 text-muted-foreground" @click="removeCode">Remove</Button>
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      class="ml-1 h-auto p-0 text-muted-foreground"
+                      @click="removeCode"
+                      >Remove</Button
+                    >
                   </span>
                 </p>
               </CardContent>
@@ -530,7 +725,10 @@ const paymentOptions = computed(() => {
             <Alert v-else>
               <Info class="size-4" />
               <AlertTitle>No payment today</AlertTitle>
-              <AlertDescription>Everyone you selected is joining a waitlist. If a spot opens, staff will email you an offer with a deadline, and you'll pay then.</AlertDescription>
+              <AlertDescription
+                >Everyone you selected is joining a waitlist. If a spot opens, staff will email you an offer with a
+                deadline, and you'll pay then.</AlertDescription
+              >
             </Alert>
           </template>
 
@@ -544,7 +742,11 @@ const paymentOptions = computed(() => {
             <Alert v-if="serverErrors.length" variant="destructive">
               <TriangleAlert class="size-4" />
               <AlertTitle>Please fix the following</AlertTitle>
-              <AlertDescription><ul class="list-disc pl-4"><li v-for="e in serverErrors" :key="e">{{ e }}</li></ul></AlertDescription>
+              <AlertDescription
+                ><ul class="list-disc pl-4">
+                  <li v-for="e in serverErrors" :key="e">{{ e }}</li>
+                </ul></AlertDescription
+              >
             </Alert>
 
             <Card v-if="!allWaitlisted">
@@ -555,20 +757,56 @@ const paymentOptions = computed(() => {
               <CardContent>
                 <!-- Stand-in for Fiserv hosted payment fields (an iframe in production). -->
                 <fieldset class="space-y-4 rounded-lg border bg-muted/20 p-4" :disabled="processing">
-                  <legend class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground"><Lock class="size-3" />Secure payment by Fiserv · sandbox</legend>
+                  <legend class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                    <Lock class="size-3" />Secure payment by Fiserv · sandbox
+                  </legend>
                   <div class="space-y-2">
                     <Label for="cc">Card number</Label>
-                    <Input id="cc" v-model="card.number" inputmode="numeric" autocomplete="cc-number" placeholder="4242 4242 4242 4242" />
+                    <Input
+                      id="cc"
+                      v-model="card.number"
+                      inputmode="numeric"
+                      autocomplete="cc-number"
+                      placeholder="4242 4242 4242 4242"
+                    />
                   </div>
                   <div class="grid grid-cols-3 gap-3">
-                    <div class="space-y-2"><Label for="exp">Expiry</Label><Input id="exp" v-model="card.expiry" autocomplete="cc-exp" placeholder="MM / YY" /></div>
-                    <div class="space-y-2"><Label for="cvc">CVC</Label><Input id="cvc" v-model="card.cvc" inputmode="numeric" autocomplete="cc-csc" placeholder="123" /></div>
-                    <div class="space-y-2"><Label for="zip">ZIP</Label><Input id="zip" v-model="card.zip" inputmode="numeric" autocomplete="postal-code" placeholder="30303" /></div>
+                    <div class="space-y-2">
+                      <Label for="exp">Expiry</Label
+                      ><Input id="exp" v-model="card.expiry" autocomplete="cc-exp" placeholder="MM / YY" />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="cvc">CVC</Label
+                      ><Input id="cvc" v-model="card.cvc" inputmode="numeric" autocomplete="cc-csc" placeholder="123" />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="zip">ZIP</Label
+                      ><Input
+                        id="zip"
+                        v-model="card.zip"
+                        inputmode="numeric"
+                        autocomplete="postal-code"
+                        placeholder="30303"
+                      />
+                    </div>
                   </div>
                 </fieldset>
                 <p class="mt-3 text-xs text-muted-foreground">
-                  Test cards: <Button variant="link" class="h-auto p-0 font-mono text-xs text-muted-foreground" @click="card = { number: '4242 4242 4242 4242', expiry: '12 / 29', cvc: '123', zip: '30303' }">4242 4242 4242 4242</Button> approves,
-                  <Button variant="link" class="h-auto p-0 font-mono text-xs text-muted-foreground" @click="card = { number: '4000 0000 0000 0002', expiry: '12 / 29', cvc: '123', zip: '30303' }">4000 0000 0000 0002</Button> declines.
+                  Test cards:
+                  <Button
+                    variant="link"
+                    class="h-auto p-0 font-mono text-xs text-muted-foreground"
+                    @click="card = { number: '4242 4242 4242 4242', expiry: '12 / 29', cvc: '123', zip: '30303' }"
+                    >4242 4242 4242 4242</Button
+                  >
+                  approves,
+                  <Button
+                    variant="link"
+                    class="h-auto p-0 font-mono text-xs text-muted-foreground"
+                    @click="card = { number: '4000 0000 0000 0002', expiry: '12 / 29', cvc: '123', zip: '30303' }"
+                    >4000 0000 0000 0002</Button
+                  >
+                  declines.
                 </p>
               </CardContent>
             </Card>
@@ -583,7 +821,11 @@ const paymentOptions = computed(() => {
           <Alert v-if="attempted && stepErrors.length" variant="destructive" aria-live="polite">
             <TriangleAlert class="size-4" />
             <AlertTitle>Before you continue</AlertTitle>
-            <AlertDescription><ul class="list-disc pl-4"><li v-for="e in stepErrors" :key="e">{{ e }}</li></ul></AlertDescription>
+            <AlertDescription
+              ><ul class="list-disc pl-4">
+                <li v-for="e in stepErrors" :key="e">{{ e }}</li>
+              </ul></AlertDescription
+            >
           </Alert>
           <div class="flex items-center justify-between gap-3">
             <Button variant="ghost" @click="back">Back</Button>
@@ -603,22 +845,35 @@ const paymentOptions = computed(() => {
           <Card class="sticky top-24">
             <CardHeader>
               <CardTitle>Order summary</CardTitle>
-              <CardDescription>{{ ctx.program.name }} · {{ dateRange(ctx.session.startDate, ctx.session.endDate) }}</CardDescription>
+              <CardDescription
+                >{{ ctx.program.name }} · {{ dateRange(ctx.session.startDate, ctx.session.endDate) }}</CardDescription
+              >
             </CardHeader>
             <CardContent>
               <div :class="cn('space-y-2 text-sm transition-opacity', quoting && 'opacity-60')">
                 <p v-if="!selected.length" class="text-muted-foreground">No participants selected yet.</p>
                 <div v-for="p in selected" :key="p.id" class="flex justify-between gap-2">
-                  <span>{{ p.firstName }} <span class="text-muted-foreground">· {{ p.pool?.name }}</span></span>
+                  <span
+                    >{{ p.firstName }} <span class="text-muted-foreground">· {{ p.pool?.name }}</span></span
+                  >
                   <span v-if="willWaitlist(p)" class="text-muted-foreground">Waitlist</span>
                   <span v-else class="tabular-nums">{{ money(ctx.session.priceCents) }}</span>
                 </div>
                 <template v-if="quote && seatable.length">
-                  <div v-if="quote.discountCents" class="flex justify-between text-emerald-700"><span>Discount ({{ quote.appliedDiscountCode }})</span><span class="tabular-nums">−{{ money(quote.discountCents) }}</span></div>
+                  <div v-if="quote.discountCents" class="flex justify-between text-emerald-700">
+                    <span>Discount ({{ quote.appliedDiscountCode }})</span
+                    ><span class="tabular-nums">−{{ money(quote.discountCents) }}</span>
+                  </div>
                   <Separator />
-                  <div class="flex justify-between font-medium"><span>Total</span><span class="tabular-nums">{{ money(quote.totalCents) }}</span></div>
-                  <div class="flex justify-between text-base font-semibold"><span>Due today</span><span class="tabular-nums">{{ money(quote.dueTodayCents) }}</span></div>
-                  <div v-if="quote.remainingCents" class="flex justify-between text-muted-foreground"><span>Remaining</span><span class="tabular-nums">{{ money(quote.remainingCents) }}</span></div>
+                  <div class="flex justify-between font-medium">
+                    <span>Total</span><span class="tabular-nums">{{ money(quote.totalCents) }}</span>
+                  </div>
+                  <div class="flex justify-between text-base font-semibold">
+                    <span>Due today</span><span class="tabular-nums">{{ money(quote.dueTodayCents) }}</span>
+                  </div>
+                  <div v-if="quote.remainingCents" class="flex justify-between text-muted-foreground">
+                    <span>Remaining</span><span class="tabular-nums">{{ money(quote.remainingCents) }}</span>
+                  </div>
                 </template>
               </div>
             </CardContent>
@@ -630,10 +885,16 @@ const paymentOptions = computed(() => {
         <Sheet>
           <SheetTrigger class="flex w-full items-center justify-between text-left">
             <span>
-              <span class="block text-xs text-muted-foreground">{{ selected.length }} {{ selected.length === 1 ? 'participant' : 'participants' }} · Due today</span>
-              <span class="font-semibold tabular-nums">{{ quote && seatable.length ? money(quote.dueTodayCents) : '$0' }}</span>
+              <span class="block text-xs text-muted-foreground"
+                >{{ selected.length }} {{ selected.length === 1 ? 'participant' : 'participants' }} · Due today</span
+              >
+              <span class="font-semibold tabular-nums">{{
+                quote && seatable.length ? money(quote.dueTodayCents) : '$0'
+              }}</span>
             </span>
-            <span class="flex items-center gap-1 text-sm text-muted-foreground">Details<ChevronUp class="size-4" /></span>
+            <span class="flex items-center gap-1 text-sm text-muted-foreground"
+              >Details<ChevronUp class="size-4"
+            /></span>
           </SheetTrigger>
           <SheetContent side="bottom" class="rounded-t-xl">
             <SheetHeader><SheetTitle>Order summary</SheetTitle></SheetHeader>
@@ -643,10 +904,16 @@ const paymentOptions = computed(() => {
                 <span>{{ willWaitlist(p) ? 'Waitlist' : money(ctx.session.priceCents) }}</span>
               </div>
               <template v-if="quote && seatable.length">
-                <div v-if="quote.discountCents" class="flex justify-between text-emerald-700"><span>Discount</span><span>−{{ money(quote.discountCents) }}</span></div>
+                <div v-if="quote.discountCents" class="flex justify-between text-emerald-700">
+                  <span>Discount</span><span>−{{ money(quote.discountCents) }}</span>
+                </div>
                 <Separator />
-                <div class="flex justify-between font-medium"><span>Total</span><span>{{ money(quote.totalCents) }}</span></div>
-                <div class="flex justify-between font-semibold"><span>Due today</span><span>{{ money(quote.dueTodayCents) }}</span></div>
+                <div class="flex justify-between font-medium">
+                  <span>Total</span><span>{{ money(quote.totalCents) }}</span>
+                </div>
+                <div class="flex justify-between font-semibold">
+                  <span>Due today</span><span>{{ money(quote.dueTodayCents) }}</span>
+                </div>
               </template>
             </div>
           </SheetContent>

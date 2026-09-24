@@ -1,0 +1,23 @@
+# Seed for the local WorkOS emulator (ghcr.io/workos/emulate). Fictional people only.
+# Guests have no organization. Staff belong to "WinShape Staff" with one role each.
+users:
+  - { email: maria.johnson@example.com, first_name: Maria, last_name: Johnson, email_verified: true }
+  - { email: sam.rivera@example.com, first_name: Sam, last_name: Rivera, email_verified: true }
+  - { email: pastor.dave@example.com, first_name: Dave, last_name: Kim, email_verified: true }
+  - { email: diane.carter@winshape.example, first_name: Diane, last_name: Carter, email_verified: true }
+  - { email: marcus.lee@winshape.example, first_name: Marcus, last_name: Lee, email_verified: true }
+  - { email: grace.patel@winshape.example, first_name: Grace, last_name: Patel, email_verified: true }
+
+roles:
+  - { slug: cet, name: Customer Experience Team }
+  - { slug: finance, name: Finance }
+  - { slug: host, name: Host coordinator }
+  - { slug: admin, name: Administrator }
+
+organizations:
+  - id: org_winshape_staff
+    name: WinShape Staff
+    memberships:
+      - { email: diane.carter@winshape.example, role: cet }
+      - { email: marcus.lee@winshape.example, role: finance }
+      - { email: grace.patel@winshape.example, role: host }

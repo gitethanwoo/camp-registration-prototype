@@ -97,9 +97,14 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
         // last seat can only be taken once. Anyone who loses the race is waitlisted, never overbooked.
         var order = new PaymentOrder
         {
-            HouseholdId = householdId, SessionId = session.Id, IdempotencyKey = req.IdempotencyKey,
-            ConfirmationCode = NewCode(), PaymentOption = req.PaymentOption, DiscountCode = discount?.Code,
-            Status = OrderStatus.Pending, CreatedAt = DateTime.UtcNow,
+            HouseholdId = householdId,
+            SessionId = session.Id,
+            IdempotencyKey = req.IdempotencyKey,
+            ConfirmationCode = NewCode(),
+            PaymentOption = req.PaymentOption,
+            DiscountCode = discount?.Code,
+            Status = OrderStatus.Pending,
+            CreatedAt = DateTime.UtcNow,
         };
         var seated = new List<Registration>();
         var waitlisted = new List<WaitlistEntry>();
@@ -127,8 +132,12 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                 {
                     var reg = new Registration
                     {
-                        OrderId = order.Id, SessionId = session.Id, PoolId = pool.Id, PersonId = person.Id,
-                        HouseholdId = householdId, Status = RegistrationStatus.PaymentPending,
+                        OrderId = order.Id,
+                        SessionId = session.Id,
+                        PoolId = pool.Id,
+                        PersonId = person.Id,
+                        HouseholdId = householdId,
+                        Status = RegistrationStatus.PaymentPending,
                         Grade = Eligibility.GradeFor(person.DateOfBirth, session.StartDate),
                         PriceCents = session.PriceCents,
                         HealthStatus = session.Program.HealthMechanism switch
@@ -155,8 +164,13 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                         .SingleAsync(ct);
                     var entry = new WaitlistEntry
                     {
-                        PoolId = pool.Id, PersonId = person.Id, HouseholdId = householdId, OrderId = order.Id,
-                        Position = position, Status = WaitlistStatus.Waiting, CreatedAt = DateTime.UtcNow,
+                        PoolId = pool.Id,
+                        PersonId = person.Id,
+                        HouseholdId = householdId,
+                        OrderId = order.Id,
+                        Position = position,
+                        Status = WaitlistStatus.Waiting,
+                        CreatedAt = DateTime.UtcNow,
                     };
                     db.WaitlistEntries.Add(entry);
                     await db.SaveChangesAsync(ct);
@@ -204,8 +218,14 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
 
         db.PaymentOperations.Add(new PaymentOperation
         {
-            OrderId = order.Id, Kind = PaymentKind.Charge, AmountCents = order.DueTodayCents, Succeeded = result.Succeeded,
-            ProcessorRef = result.ProcessorRef, CardLast4 = result.CardLast4, Reason = result.DeclineReason, CreatedAt = DateTime.UtcNow,
+            OrderId = order.Id,
+            Kind = PaymentKind.Charge,
+            AmountCents = order.DueTodayCents,
+            Succeeded = result.Succeeded,
+            ProcessorRef = result.ProcessorRef,
+            CardLast4 = result.CardLast4,
+            Reason = result.DeclineReason,
+            CreatedAt = DateTime.UtcNow,
         });
 
         if (result.Succeeded)
@@ -224,7 +244,7 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
                     db.Installments.Add(new Installment { OrderId = order.Id, Sequence = seq++, DueDate = item.DueDate!.Value, AmountCents = item.AmountCents, Status = InstallmentStatus.Scheduled });
             }
             Outbox("RegistrationConfirmed", "HubSpot", order.ConfirmationCode, new { order.ConfirmationCode, to = order.Household.Email, participants = order.Registrations.Select(r => r.Person.FirstName) });
-            Outbox("ConstituentUpsert", "Salesforce", order.Household.Id.ToString(), new { householdId = order.Household.Id, order.Household.Email });
+            Outbox("ConstituentUpsert", "Salesforce", order.Household.Id.ToString(CultureInfo.InvariantCulture), new { householdId = order.Household.Id, order.Household.Email });
         }
         else
         {

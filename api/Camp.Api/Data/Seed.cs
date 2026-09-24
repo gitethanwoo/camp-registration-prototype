@@ -27,16 +27,27 @@ public static class Seed
         // ── Overnight Camp (ON) ────────────────────────────────────────────────
         var on = new CampProgram
         {
-            Ministry = wsc, Slug = "overnight-camp", Name = "Overnight Camp",
+            Ministry = wsc,
+            Slug = "overnight-camp",
+            Name = "Overnight Camp",
             Tagline = "Six-day camp for grades 3–8.",
             Description = "A week of cabins, lake days, and campfires on the mountain campus. Campers are grouped by grade in cabins of 12 with trained college-age counselors, and pick three activities to rotate through each day.",
-            Type = ProgramType.Standard, HealthMechanism = HealthMechanism.CampDoc,
-            Location = "WinShape Camps · Mount Berry, GA", ImageUrl = "/images/overnight.jpg", IsPublished = true,
+            Type = ProgramType.Standard,
+            HealthMechanism = HealthMechanism.CampDoc,
+            Location = "WinShape Camps · Mount Berry, GA",
+            ImageUrl = "/images/overnight.jpg",
+            IsPublished = true,
         };
         var onS3 = new Session
         {
-            Program = on, Name = "Session 3", StartDate = new(2028, 7, 10), EndDate = new(2028, 7, 15),
-            PriceCents = 145000, DepositCents = 25000, PlanInstallments = 3, BalanceDueDate = new(2028, 6, 1),
+            Program = on,
+            Name = "Session 3",
+            StartDate = new(2028, 7, 10),
+            EndDate = new(2028, 7, 15),
+            PriceCents = 145000,
+            DepositCents = 25000,
+            PlanInstallments = 3,
+            BalanceDueDate = new(2028, 6, 1),
         };
         var onPools = new[]
         {
@@ -55,17 +66,28 @@ public static class Seed
         // ── Day Camp · Atlanta (WSCC, hosted by Grace Community Church) ────────
         var day = new CampProgram
         {
-            Ministry = wsc, Slug = "day-camp-atlanta", Name = "Day Camp · Atlanta",
+            Ministry = wsc,
+            Slug = "day-camp-atlanta",
+            Name = "Day Camp · Atlanta",
             Tagline = "A week of day camp for rising 1st–6th graders.",
             Description = "WinShape Day Camp comes to Grace Community Church for one week. Campers spend 9 AM–4 PM in grade-based groups with games, Bible time, swimming, and crafts, led by WinShape staff and church volunteers.",
-            Type = ProgramType.Standard, HealthMechanism = HealthMechanism.Embedded,
-            Location = "Grace Community Church · Atlanta, GA", HostOrganization = "Grace Community Church",
-            ImageUrl = "/images/daycamp.jpg", IsPublished = true,
+            Type = ProgramType.Standard,
+            HealthMechanism = HealthMechanism.Embedded,
+            Location = "Grace Community Church · Atlanta, GA",
+            HostOrganization = "Grace Community Church",
+            ImageUrl = "/images/daycamp.jpg",
+            IsPublished = true,
         };
         var dayS = new Session
         {
-            Program = day, Name = "June week", StartDate = new(2028, 6, 12), EndDate = new(2028, 6, 16),
-            PriceCents = 32500, DepositCents = 10000, PlanInstallments = 3, BalanceDueDate = new(2028, 5, 1),
+            Program = day,
+            Name = "June week",
+            StartDate = new(2028, 6, 12),
+            EndDate = new(2028, 6, 16),
+            PriceCents = 32500,
+            DepositCents = 10000,
+            PlanInstallments = 3,
+            BalanceDueDate = new(2028, 5, 1),
         };
         var dayPools = Enumerable.Range(1, 6).Select(g => Pool(dayS, $"Grade {g}", null, g, g, 20, g)).ToArray();
         dayS.Pools.AddRange(dayPools);
@@ -79,11 +101,16 @@ public static class Seed
         // ── Admittance / cohort programs: discoverable, registration out of prototype scope ──
         var retreat = new CampProgram
         {
-            Ministry = wsm, Slug = "fall-marriage-retreat", Name = "Fall Marriage Retreat",
+            Ministry = wsm,
+            Slug = "fall-marriage-retreat",
+            Name = "Fall Marriage Retreat",
             Tagline = "A weekend away for married couples.",
             Description = "Three days at the retreat center with teaching sessions, time alone together, and small-group conversations. Couples apply first; cards are authorized, not charged, until the application is approved.",
-            Type = ProgramType.Admittance, HealthMechanism = HealthMechanism.Embedded,
-            Location = "WinShape Retreat · Rome, GA", ImageUrl = "/images/retreat.jpg", IsPublished = true,
+            Type = ProgramType.Admittance,
+            HealthMechanism = HealthMechanism.Embedded,
+            Location = "WinShape Retreat · Rome, GA",
+            ImageUrl = "/images/retreat.jpg",
+            IsPublished = true,
         };
         var retreatS = new Session { Program = retreat, Name = "Fall 2028", StartDate = new(2028, 10, 6), EndDate = new(2028, 10, 8), PriceCents = 90000, DepositCents = 0, BalanceDueDate = new(2028, 9, 1) };
         retreatS.Pools.Add(new CapacityPool { Name = "Couples", GradeMin = 99, GradeMax = 99, Capacity = 40, Reserved = 31, SortOrder = 1 });
@@ -91,11 +118,16 @@ public static class Seed
 
         var cohort = new CampProgram
         {
-            Ministry = wsl, Slug = "emerging-leaders-cohort", Name = "Emerging Leaders Cohort",
+            Ministry = wsl,
+            Slug = "emerging-leaders-cohort",
+            Name = "Emerging Leaders Cohort",
             Tagline = "A leadership cohort for teams, registered by a group leader.",
             Description = "A three-day leadership intensive. A group leader registers the cohort; each attendee then completes their own forms by secure link.",
-            Type = ProgramType.Cohort, HealthMechanism = HealthMechanism.Embedded,
-            Location = "WinShape Retreat · Rome, GA", ImageUrl = "/images/leaders.jpg", IsPublished = true,
+            Type = ProgramType.Cohort,
+            HealthMechanism = HealthMechanism.Embedded,
+            Location = "WinShape Retreat · Rome, GA",
+            ImageUrl = "/images/leaders.jpg",
+            IsPublished = true,
         };
         var cohortS = new Session { Program = cohort, Name = "September 2028", StartDate = new(2028, 9, 13), EndDate = new(2028, 9, 15), PriceCents = 45000, DepositCents = 0, BalanceDueDate = new(2028, 8, 1) };
         cohortS.Pools.Add(new CapacityPool { Name = "Attendees", GradeMin = 99, GradeMax = 99, Capacity = 60, Reserved = 14, SortOrder = 1 });
@@ -122,8 +154,16 @@ public static class Seed
         // ── Filler registrations so the counts are real ────────────────────────
         var fillerTargets = new Dictionary<CapacityPool, int>
         {
-            [onPools[0]] = 46, [onPools[1]] = 50, [onPools[2]] = 44, [onPools[3]] = 46,
-            [dayPools[0]] = 15, [dayPools[1]] = 17, [dayPools[2]] = 14, [dayPools[3]] = 11, [dayPools[4]] = 16, [dayPools[5]] = 8,
+            [onPools[0]] = 46,
+            [onPools[1]] = 50,
+            [onPools[2]] = 44,
+            [onPools[3]] = 46,
+            [dayPools[0]] = 15,
+            [dayPools[1]] = 17,
+            [dayPools[2]] = 14,
+            [dayPools[3]] = 11,
+            [dayPools[4]] = 16,
+            [dayPools[5]] = 8,
         };
         var onIndex = 0;
         foreach (var (pool, count) in fillerTargets)
@@ -150,20 +190,34 @@ public static class Seed
                 var paid = balanceDue ? session.DepositCents : session.PriceCents;
                 var order = new PaymentOrder
                 {
-                    Household = household, SessionId = session.Id, IdempotencyKey = Guid.NewGuid().ToString(),
-                    ConfirmationCode = $"WS-{rng.Next(0x100000, 0xFFFFFF):X6}", PaymentOption = option,
-                    SubtotalCents = session.PriceCents, TotalCents = session.PriceCents, DueTodayCents = paid,
-                    Status = OrderStatus.Paid, CreatedAt = created,
+                    Household = household,
+                    SessionId = session.Id,
+                    IdempotencyKey = Guid.NewGuid().ToString(),
+                    ConfirmationCode = $"WS-{rng.Next(0x100000, 0xFFFFFF):X6}",
+                    PaymentOption = option,
+                    SubtotalCents = session.PriceCents,
+                    TotalCents = session.PriceCents,
+                    DueTodayCents = paid,
+                    Status = OrderStatus.Paid,
+                    CreatedAt = created,
                 };
                 order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Charge, AmountCents = paid, Succeeded = true, ProcessorRef = $"fsv_{rng.Next():x8}", CardLast4 = $"{rng.Next(1000, 9999)}", CreatedAt = created });
                 var reg = new Registration
                 {
-                    Order = order, SessionId = session.Id, PoolId = pool.Id, Person = child, HouseholdId = 0,
-                    Status = RegistrationStatus.Confirmed, Grade = grade, PriceCents = session.PriceCents, PaidCents = paid,
+                    Order = order,
+                    SessionId = session.Id,
+                    PoolId = pool.Id,
+                    Person = child,
+                    HouseholdId = 0,
+                    Status = RegistrationStatus.Confirmed,
+                    Grade = grade,
+                    PriceCents = session.PriceCents,
+                    PaidCents = paid,
                     HealthStatus = program.HealthMechanism == HealthMechanism.CampDoc
                         ? (campDocIncomplete ? FormStatus.Incomplete : FormStatus.Complete)
                         : FormStatus.Complete,
-                    AnswersJson = """{"tshirt":"Youth M","church":"No"}""", CreatedAt = created,
+                    AnswersJson = """{"tshirt":"Youth M","church":"No"}""",
+                    CreatedAt = created,
                 };
                 if (!waiverMissing)
                     foreach (var w in program.Waivers)

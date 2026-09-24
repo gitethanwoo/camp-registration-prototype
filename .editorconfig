@@ -1,0 +1,40 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{ts,vue,js,mjs,json,css,md,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.cs]
+indent_style = space
+indent_size = 4
+# Unused usings and variables fail the build (IDE analyzers run via EnforceCodeStyleInBuild).
+dotnet_diagnostic.IDE0005.severity = error
+dotnet_diagnostic.IDE0059.severity = error
+dotnet_diagnostic.IDE0060.severity = error
+# EF Core translates ToLower()/Contains to SQL; the StringComparison overloads it wants do not translate.
+dotnet_diagnostic.CA1862.severity = none
+dotnet_diagnostic.CA1311.severity = none
+dotnet_diagnostic.CA1304.severity = none
+# LoggerMessage source generation is not worth the ceremony at this app's log volume.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+# Minimal API handlers are not a public library surface.
+dotnet_diagnostic.CA1515.severity = none
+dotnet_diagnostic.CA1062.severity = none
+# Terse lambda-style parameter names (b, ct) are the house style.
+dotnet_diagnostic.CA1725.severity = none
+
+[**/Migrations/*.cs]
+generated_code = true
+
+[api/Camp.Api.Tests/**.cs]
+# Test names read as sentences: Two_families_racing_for_the_last_seat_...
+dotnet_diagnostic.CA1707.severity = none
+# xunit fixtures and test classes are instantiated by the runner.
+dotnet_diagnostic.CA1812.severity = none

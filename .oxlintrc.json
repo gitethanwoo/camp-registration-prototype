@@ -1,0 +1,75 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "vue", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "env": {
+    "browser": true,
+    "builtin": true
+  },
+  "ignorePatterns": ["web/dist/**", "node_modules/**", "web/src/components/ui/**", "api/**"],
+  "rules": {
+    "no-console": "error",
+    "no-debugger": "error",
+    "no-alert": "error",
+    "no-empty": [
+      "error",
+      {
+        "allowEmptyCatch": false
+      }
+    ],
+    "no-warning-comments": [
+      "error",
+      {
+        "terms": ["todo", "fixme", "xxx", "hack"],
+        "location": "start"
+      }
+    ],
+    "no-nested-ternary": "error",
+    "no-param-reassign": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "eqeqeq": ["error", "smart"],
+    "max-lines": [
+      "error",
+      {
+        "max": 600,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-depth": ["error", 4],
+    "typescript/no-explicit-any": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-empty-object-type": "error",
+    "unicorn/no-useless-undefined": "error",
+    "unicorn/prefer-array-some": "error",
+    "unicorn/no-lonely-if": "error",
+    "oxc/no-barrel-file": "off",
+    "import/no-cycle": "error",
+    "promise/no-return-wrap": "error",
+    "vue/no-multiple-slot-args": "error",
+    "vue/require-typed-ref": "error",
+    "vue/valid-define-emits": "error",
+    "vue/valid-define-props": "error",
+    "import/no-unassigned-import": [
+      "error",
+      {
+        "allow": ["**/*.css", "@fontsource-variable/*"]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["scripts/**", "e2e/**"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
+}

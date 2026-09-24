@@ -19,7 +19,18 @@ export interface ProgramSummary {
   hostOrganization: string | null
   ministry: string
   type: 'Standard' | 'Admittance' | 'Cohort'
-  sessions: { id: number, name: string, startDate: string, endDate: string, priceCents: number, depositCents: number, gradeMin: number, gradeMax: number, capacity: number, remaining: number }[]
+  sessions: {
+    id: number
+    name: string
+    startDate: string
+    endDate: string
+    priceCents: number
+    depositCents: number
+    gradeMin: number
+    gradeMax: number
+    capacity: number
+    remaining: number
+  }[]
 }
 
 export interface ProgramDetail {
@@ -34,7 +45,16 @@ export interface ProgramDetail {
   type: 'Standard' | 'Admittance' | 'Cohort'
   healthMechanism: 'Embedded' | 'ThirdParty' | 'CampDoc'
   requirements: string[]
-  sessions: { id: number, name: string, startDate: string, endDate: string, priceCents: number, depositCents: number, planInstallments: number, pools: PoolAvailability[] }[]
+  sessions: {
+    id: number
+    name: string
+    startDate: string
+    endDate: string
+    priceCents: number
+    depositCents: number
+    planInstallments: number
+    pools: PoolAvailability[]
+  }[]
   asOf: string
 }
 
@@ -49,7 +69,7 @@ export interface Participant {
   status: 'eligible' | 'ineligible' | 'registered' | 'waitlisted'
   reason: string | null
   pool: PoolAvailability | null
-  basicHealth: { dietary: string | null, allergies: string | null, adaNeeds: string | null }
+  basicHealth: { dietary: string | null; allergies: string | null; adaNeeds: string | null }
 }
 
 export interface Question {
@@ -73,9 +93,25 @@ export interface Waiver {
 }
 
 export interface RegisterContext {
-  session: { id: number, name: string, startDate: string, endDate: string, priceCents: number, depositCents: number, planInstallments: number, balanceDueDate: string }
-  program: { slug: string, name: string, location: string, imageUrl: string, type: string, healthMechanism: 'Embedded' | 'ThirdParty' | 'CampDoc' }
-  household: { name: string, email: string, phone: string, city: string, signer: string }
+  session: {
+    id: number
+    name: string
+    startDate: string
+    endDate: string
+    priceCents: number
+    depositCents: number
+    planInstallments: number
+    balanceDueDate: string
+  }
+  program: {
+    slug: string
+    name: string
+    location: string
+    imageUrl: string
+    type: string
+    healthMechanism: 'Embedded' | 'ThirdParty' | 'CampDoc'
+  }
+  household: { name: string; email: string; phone: string; city: string; signer: string }
   participants: Participant[]
   questions: Question[]
   waivers: Waiver[]
@@ -84,14 +120,14 @@ export interface RegisterContext {
 export type PaymentOption = 'Deposit' | 'Full' | 'Plan'
 
 export interface Quote {
-  lines: { personId: number, name: string, priceCents: number, discountCents: number }[]
+  lines: { personId: number; name: string; priceCents: number; discountCents: number }[]
   subtotalCents: number
   discountCents: number
   totalCents: number
   dueTodayCents: number
   remainingCents: number
   paymentOption: PaymentOption
-  schedule: { dueDate: string | null, amountCents: number, label: string }[]
+  schedule: { dueDate: string | null; amountCents: number; label: string }[]
   appliedDiscountCode: string | null
   discountError: string | null
 }

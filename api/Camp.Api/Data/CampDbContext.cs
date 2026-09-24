@@ -71,5 +71,8 @@ public class CampDbContext(DbContextOptions<CampDbContext> options) : DbContext(
         b.Entity<OutboxEvent>().HasIndex(o => o.ProcessedAt);
         b.Entity<AuditEvent>().Property(a => a.Detail).HasMaxLength(2000);
         b.Entity<AuditEvent>().HasIndex(a => new { a.EntityType, a.EntityId });
+
+        // Feature slices map their own entities with IEntityTypeConfiguration<T> next to the code.
+        b.ApplyConfigurationsFromAssembly(typeof(CampDbContext).Assembly);
     }
 }

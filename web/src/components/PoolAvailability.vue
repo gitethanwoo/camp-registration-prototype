@@ -21,18 +21,44 @@ defineProps<{ pools: PoolAvailability[] }>()
           <Progress
             :model-value="Math.round((p.reserved / p.capacity) * 100)"
             :aria-label="`${p.name}: ${p.reserved} of ${p.capacity} taken`"
-            :class="cn('h-2', p.state === 'full' && '[&>*]:bg-destructive', p.state === 'low' && '[&>*]:bg-amber-500', p.state === 'open' && '[&>*]:bg-emerald-600')"
+            :class="
+              cn(
+                'h-2',
+                p.state === 'full' && '[&>*]:bg-destructive',
+                p.state === 'low' && '[&>*]:bg-amber-500',
+                p.state === 'open' && '[&>*]:bg-emerald-600',
+              )
+            "
           />
-          <p :class="cn('mt-1 text-sm', p.state === 'full' ? 'font-medium text-destructive' : p.state === 'low' ? 'font-medium text-amber-700' : 'text-muted-foreground')">
+          <p
+            :class="
+              cn(
+                'mt-1 text-sm',
+                p.state === 'full'
+                  ? 'font-medium text-destructive'
+                  : p.state === 'low'
+                    ? 'font-medium text-amber-700'
+                    : 'text-muted-foreground',
+              )
+            "
+          >
             <template v-if="p.state === 'full'">Full · {{ p.waitlisted }} on waitlist</template>
-            <template v-else-if="p.state === 'low'">Only {{ p.remaining }} {{ p.remaining === 1 ? 'spot' : 'spots' }} left</template>
+            <template v-else-if="p.state === 'low'"
+              >Only {{ p.remaining }} {{ p.remaining === 1 ? 'spot' : 'spots' }} left</template
+            >
             <template v-else>{{ p.remaining }} spots left</template>
           </p>
         </div>
       </div>
-      <div v-if="p.state === 'full'" class="mt-3 flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      <div
+        v-if="p.state === 'full'"
+        class="mt-3 flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+      >
         <AlertTriangle class="mt-0.5 size-4 shrink-0" />
-        <p>{{ p.name }} has reached capacity. A camper in this group goes on the waitlist; staff offer open spots in order and you'll be emailed with a deadline to confirm. You won't be charged unless you accept.</p>
+        <p>
+          {{ p.name }} has reached capacity. A camper in this group goes on the waitlist; staff offer open spots in
+          order and you'll be emailed with a deadline to confirm. You won't be charged unless you accept.
+        </p>
       </div>
     </li>
   </ul>

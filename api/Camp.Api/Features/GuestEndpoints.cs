@@ -1,3 +1,4 @@
+using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
 using Camp.Api.Integrations;
@@ -14,6 +15,8 @@ public static class GuestEndpoints
     public static void MapGuestEndpoints(this WebApplication app)
     {
         var api = app.MapGroup("/api");
+        // Anything that reads or writes a household needs a signed-in guest.
+        var family = api.MapGroup("").RequireAuthorization(Policies.Family);
 
         // FR-15: every program from one entry point.
         api.MapGet("/programs", async (CampDbContext db) =>
@@ -23,13 +26,26 @@ public static class GuestEndpoints
                 .AsNoTracking().ToListAsync();
             return programs.Select(p => new
             {
-                p.Slug, p.Name, p.Tagline, p.Location, p.ImageUrl, p.HostOrganization,
-                Ministry = p.Ministry.Name, Type = p.Type.ToString(),
+                p.Slug,
+                p.Name,
+                p.Tagline,
+                p.Location,
+                p.ImageUrl,
+                p.HostOrganization,
+                Ministry = p.Ministry.Name,
+                Type = p.Type.ToString(),
                 Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new
                 {
-                    s.Id, s.Name, s.StartDate, s.EndDate, s.PriceCents, s.DepositCents,
-                    GradeMin = s.Pools.Min(x => x.GradeMin), GradeMax = s.Pools.Max(x => x.GradeMax),
-                    Capacity = s.Pools.Sum(x => x.Capacity), Remaining = s.Pools.Sum(x => x.Capacity - x.Reserved),
+                    s.Id,
+                    s.Name,
+                    s.StartDate,
+                    s.EndDate,
+                    s.PriceCents,
+                    s.DepositCents,
+                    GradeMin = s.Pools.Min(x => x.GradeMin),
+                    GradeMax = s.Pools.Max(x => x.GradeMax),
+                    Capacity = s.Pools.Sum(x => x.Capacity),
+                    Remaining = s.Pools.Sum(x => x.Capacity - x.Reserved),
                 }),
             });
         });
@@ -44,8 +60,16 @@ public static class GuestEndpoints
             var waitlist = await WaitlistCounts(db, p.Sessions.Select(s => s.Id));
             return Results.Ok(new
             {
-                p.Slug, p.Name, p.Tagline, p.Description, p.Location, p.ImageUrl, p.HostOrganization,
-                Ministry = p.Ministry.Name, Type = p.Type.ToString(), HealthMechanism = p.HealthMechanism.ToString(),
+                p.Slug,
+                p.Name,
+                p.Tagline,
+                p.Description,
+                p.Location,
+                p.ImageUrl,
+                p.HostOrganization,
+                Ministry = p.Ministry.Name,
+                Type = p.Type.ToString(),
+                HealthMechanism = p.HealthMechanism.ToString(),
                 Requirements = p.Waivers.Select(w => w.Title).Append(p.HealthMechanism switch
                 {
                     HealthMechanism.CampDoc => "Health forms in CampDoc",
@@ -54,7 +78,13 @@ public static class GuestEndpoints
                 }),
                 Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new
                 {
-                    s.Id, s.Name, s.StartDate, s.EndDate, s.PriceCents, s.DepositCents, s.PlanInstallments,
+                    s.Id,
+                    s.Name,
+                    s.StartDate,
+                    s.EndDate,
+                    s.PriceCents,
+                    s.DepositCents,
+                    s.PlanInstallments,
                     Pools = s.Pools.OrderBy(x => x.SortOrder).Select(x => ToAvailability(x, waitlist)),
                 }),
                 AsOf = DateTime.UtcNow,
@@ -69,14 +99,14 @@ public static class GuestEndpoints
             return new { AsOf = DateTime.UtcNow, Pools = pools.Select(x => ToAvailability(x, waitlist)) };
         });
 
-        api.MapGet("/me", async (CampDbContext db, CurrentUser me) =>
+        family.MapGet("/me", async (CampDbContext db, CurrentUser me) =>
         {
             var h = await db.Households.Include(x => x.Members).AsNoTracking().SingleAsync(x => x.Id == me.HouseholdId);
             return new { h.Id, h.Name, h.Email, h.Phone, h.City, Signer = me.Name, Members = h.Members.Select(m => new { m.Id, m.FirstName, m.LastName, m.IsAdult, m.Role }) };
         });
 
         // Everything the wizard needs for one session: members with eligibility, questions, waivers, pricing.
-        api.MapGet("/sessions/{id:int}/register-context", async (int id, CampDbContext db, CurrentUser me) =>
+        family.MapGet("/sessions/{id:int}/register-context", async (int id, CampDbContext db, CurrentUser me) =>
         {
             var s = await db.Sessions.Include(x => x.Program).ThenInclude(p => p.Questions)
                 .Include(x => x.Program).ThenInclude(p => p.Waivers)
@@ -99,22 +129,36 @@ public static class GuestEndpoints
                     var status = active.Contains(m.Id) ? "registered" : waiting.Contains(m.Id) ? "waitlisted" : pool is null ? "ineligible" : "eligible";
                     return new
                     {
-                        m.Id, m.FirstName, m.LastName, m.DateOfBirth, Gender = m.Gender.ToString(), Grade = grade, GradeLabel = Eligibility.GradeLabel(grade),
-                        Status = status, Reason = reason, Pool = pool is null ? null : ToAvailability(pool, waitlist),
+                        m.Id,
+                        m.FirstName,
+                        m.LastName,
+                        m.DateOfBirth,
+                        Gender = m.Gender.ToString(),
+                        Grade = grade,
+                        GradeLabel = Eligibility.GradeLabel(grade),
+                        Status = status,
+                        Reason = reason,
+                        Pool = pool is null ? null : ToAvailability(pool, waitlist),
                         BasicHealth = new { m.Dietary, m.Allergies, m.AdaNeeds },
                     };
                 }),
                 Questions = s.Program.Questions.OrderBy(q => q.SortOrder).Select(q => new
                 {
-                    q.Key, q.Label, Type = q.Type.ToString(), Scope = q.Scope.ToString(), q.Required,
-                    Options = q.Options?.Split('|') ?? [], q.ShowWhenKey, q.ShowWhenValue,
+                    q.Key,
+                    q.Label,
+                    Type = q.Type.ToString(),
+                    Scope = q.Scope.ToString(),
+                    q.Required,
+                    Options = q.Options?.Split('|') ?? [],
+                    q.ShowWhenKey,
+                    q.ShowWhenValue,
                 }),
                 Waivers = s.Program.Waivers.Select(w => new { w.Id, w.Title, w.Version, w.EffectiveDate, w.Body, w.PerParticipant }),
             });
         });
 
         // R9 · price the cart server-side; the UI never does money math on its own.
-        api.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me) =>
+        family.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me) =>
         {
             var s = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             if (s is null) return Results.NotFound();
@@ -133,7 +177,7 @@ public static class GuestEndpoints
             catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
         });
 
-        api.MapPost("/checkout", async (CheckoutRequest req, CheckoutService checkout, CurrentUser me, CancellationToken ct) =>
+        family.MapPost("/checkout", async (CheckoutRequest req, CheckoutService checkout, CurrentUser me, CancellationToken ct) =>
         {
             try
             {
@@ -146,7 +190,7 @@ public static class GuestEndpoints
         });
 
         // R11 / R12 · confirmation, including anyone who landed on the waitlist.
-        api.MapGet("/orders/{code}", async (string code, CampDbContext db, CurrentUser me) =>
+        family.MapGet("/orders/{code}", async (string code, CampDbContext db, CurrentUser me) =>
         {
             var o = await db.Orders.Include(x => x.Session).ThenInclude(s => s.Program)
                 .Include(x => x.Registrations).ThenInclude(r => r.Person)
@@ -159,23 +203,31 @@ public static class GuestEndpoints
             var charge = o.Operations.Where(x => x.Kind == PaymentKind.Charge && x.Succeeded).Sum(x => x.AmountCents);
             return Results.Ok(new
             {
-                o.ConfirmationCode, Status = o.Status.ToString(), o.DeclineReason, o.Household.Email, EmailSent = emailSent,
+                o.ConfirmationCode,
+                Status = o.Status.ToString(),
+                o.DeclineReason,
+                o.Household.Email,
+                EmailSent = emailSent,
                 Program = new { o.Session.Program.Name, o.Session.Program.Slug, o.Session.Program.Location, HealthMechanism = o.Session.Program.HealthMechanism.ToString() },
                 Session = new { o.Session.Id, o.Session.Name, o.Session.StartDate, o.Session.EndDate },
                 Registrations = o.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled).Select(r => new { r.Id, r.Person.FirstName, r.Person.LastName, Pool = r.Pool.Name, Status = r.Status.ToString() }),
                 Waitlisted = waitlisted.Select(w => new { w.Id, w.Person.FirstName, Pool = w.Pool.Name, w.Position, Status = w.Status.ToString() }),
                 Payment = new
                 {
-                    Option = o.PaymentOption.ToString(), o.TotalCents, o.DiscountCents, ChargedCents = charge,
+                    Option = o.PaymentOption.ToString(),
+                    o.TotalCents,
+                    o.DiscountCents,
+                    ChargedCents = charge,
                     CardLast4 = o.Operations.FirstOrDefault(x => x.Succeeded)?.CardLast4,
-                    BalanceCents = o.TotalCents - charge, BalanceDueDate = o.Session.BalanceDueDate,
+                    BalanceCents = o.TotalCents - charge,
+                    BalanceDueDate = o.Session.BalanceDueDate,
                     Installments = o.Installments.OrderBy(i => i.Sequence).Select(i => new { i.DueDate, i.AmountCents, Status = i.Status.ToString() }),
                 },
             });
         });
 
         // F1 · one combined checklist across all kids (FR-27) + F4 registrations.
-        api.MapGet("/family", async (CampDbContext db, CurrentUser me) =>
+        family.MapGet("/family", async (CampDbContext db, CurrentUser me) =>
         {
             var regs = await db.Registrations.Where(r => r.HouseholdId == me.HouseholdId && r.Status != RegistrationStatus.Cancelled)
                 .Include(r => r.Person).Include(r => r.Pool).Include(r => r.Session).ThenInclude(s => s.Program).ThenInclude(p => p.Waivers)
@@ -188,8 +240,15 @@ public static class GuestEndpoints
             {
                 Registrations = regs.OrderBy(r => r.Session.StartDate).Select(r => new
                 {
-                    r.Id, Participant = r.Person.FullName, Program = r.Session.Program.Name, Session = r.Session.Name,
-                    r.Session.StartDate, r.Session.EndDate, Pool = r.Pool.Name, Status = r.Status.ToString(), r.BalanceCents,
+                    r.Id,
+                    Participant = r.Person.FullName,
+                    Program = r.Session.Program.Name,
+                    Session = r.Session.Name,
+                    r.Session.StartDate,
+                    r.Session.EndDate,
+                    Pool = r.Pool.Name,
+                    Status = r.Status.ToString(),
+                    r.BalanceCents,
                     r.Order!.ConfirmationCode,
                 }),
                 Waitlist = waitlist.Select(w => new { w.Id, Participant = w.Person.FullName, Program = w.Pool.Session.Program.Name, Session = w.Pool.Session.Name, Pool = w.Pool.Name, w.Position, Status = w.Status.ToString(), w.OfferExpiresAt }),
@@ -253,9 +312,3 @@ public static class GuestEndpoints
 
 public record QuoteRequest(List<int> PersonIds, PaymentOption PaymentOption, string? DiscountCode);
 public record TokenizeRequest(string CardNumber);
-
-/// <summary>
-/// Demo identity. Production: WorkOS session → Person → Household, with server-side
-/// authorization on every household-scoped query.
-/// </summary>
-public record CurrentUser(int HouseholdId, string Name);

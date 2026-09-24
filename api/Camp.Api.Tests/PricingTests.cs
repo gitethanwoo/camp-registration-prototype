@@ -7,8 +7,11 @@ public class PricingTests
 {
     static readonly Session DayCamp = new()
     {
-        StartDate = new(2028, 6, 12), PriceCents = 32500, DepositCents = 10000,
-        PlanInstallments = 3, BalanceDueDate = new(2028, 5, 1),
+        StartDate = new(2028, 6, 12),
+        PriceCents = 32500,
+        DepositCents = 10000,
+        PlanInstallments = 3,
+        BalanceDueDate = new(2028, 5, 1),
     };
 
     static readonly Person[] Kids =

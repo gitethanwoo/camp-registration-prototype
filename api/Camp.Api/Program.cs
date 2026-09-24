@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
+using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Features;
+using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,13 +15,8 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddSingleton<IPaymentGateway, FakeFiservGateway>();
 builder.Services.AddScoped<CheckoutService>();
-builder.Services.AddScoped(sp =>
-{
-    // Demo identity: every guest request acts as Maria Johnson. Production: WorkOS session.
-    var db = sp.GetRequiredService<CampDbContext>();
-    var h = db.Households.Single(x => x.Email == Seed.JohnsonEmail);
-    return new CurrentUser(h.Id, "Maria Johnson");
-});
+builder.Services.AddCampAuth(builder.Configuration);
+builder.Services.AddCampModules();
 if (!builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddHostedService<OutboxDispatcher>();
@@ -38,12 +35,16 @@ using (var scope = app.Services.CreateScope())
         catch (Exception) when (attempt < 20) { await Task.Delay(3000); } // SQL Server still starting
     }
     await Seed.RunAsync(db);
+    await scope.ServiceProvider.RunSeedModulesAsync(db, CancellationToken.None);
 }
 
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { ok = true }));
 app.MapGuestEndpoints();
 app.MapAdminEndpoints();
+app.MapCampModules();
 
 app.Run();
 

@@ -28,7 +28,10 @@ onMounted(async () => {
   poll = window.setInterval(refresh, 10_000)
   tick = window.setInterval(() => (now.value = Date.now()), 1_000)
 })
-onUnmounted(() => { clearInterval(poll); clearInterval(tick) })
+onUnmounted(() => {
+  clearInterval(poll)
+  clearInterval(tick)
+})
 
 async function refresh() {
   if (!program.value) return
@@ -39,21 +42,23 @@ async function refresh() {
     }
     asOf.value = new Date()
     stale.value = false
+  } catch {
+    stale.value = true
   }
-  catch { stale.value = true }
 }
 
 const updatedLabel = computed(() => {
   if (!asOf.value) return ''
   const secs = Math.round((now.value - asOf.value.getTime()) / 1000)
-  if (stale.value) return `Availability as of ${asOf.value.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+  if (stale.value)
+    return `Availability as of ${asOf.value.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
   return secs < 5 ? 'Updated just now' : `Updated ${secs}s ago`
 })
 
 const standard = computed(() => program.value?.type === 'Standard')
 const audience = computed(() => {
-  const pools = program.value?.sessions.flatMap(s => s.pools) ?? []
-  return pools.length && pools.every(p => p.name.match(/^(Couples|Attendees)$/)) ? 'adults' : 'campers'
+  const pools = program.value?.sessions.flatMap((s) => s.pools) ?? []
+  return pools.length && pools.every((p) => p.name.match(/^(Couples|Attendees)$/)) ? 'adults' : 'campers'
 })
 
 function register(sessionId: number) {
@@ -70,17 +75,48 @@ function register(sessionId: number) {
     <div v-else class="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[1fr_440px]">
       <section class="min-w-0">
         <div class="aspect-[21/9] overflow-hidden rounded-xl bg-muted">
-          <img v-if="!program.imageUrl.includes('retreat') && !program.imageUrl.includes('leaders')" :src="program.imageUrl" alt="" class="size-full object-cover">
+          <img
+            v-if="!program.imageUrl.includes('retreat') && !program.imageUrl.includes('leaders')"
+            :src="program.imageUrl"
+            alt=""
+            class="size-full object-cover"
+          />
         </div>
-        <p class="mt-6 text-sm text-muted-foreground">{{ program.ministry }}<template v-if="program.hostOrganization"> · Hosted by {{ program.hostOrganization }}</template></p>
+        <p class="mt-6 text-sm text-muted-foreground">
+          {{ program.ministry
+          }}<template v-if="program.hostOrganization"> · Hosted by {{ program.hostOrganization }}</template>
+        </p>
         <h1 class="mt-1 text-3xl font-semibold tracking-tight md:text-4xl">{{ program.name }}</h1>
         <p class="mt-2 text-lg text-muted-foreground">{{ program.tagline }}</p>
 
         <dl v-for="s in program.sessions" :key="s.id" class="mt-6 grid gap-3 text-sm sm:grid-cols-2">
-          <div class="flex items-center gap-2"><Calendar class="size-4 text-muted-foreground" /><dt class="sr-only">Dates</dt><dd>{{ s.name }} · {{ dateRange(s.startDate, s.endDate) }}</dd></div>
-          <div class="flex items-center gap-2"><MapPin class="size-4 text-muted-foreground" /><dt class="sr-only">Location</dt><dd>{{ program.location }}</dd></div>
-          <div class="flex items-center gap-2"><Tag class="size-4 text-muted-foreground" /><dt class="sr-only">Price</dt><dd>{{ money(s.priceCents) }} per {{ audience === 'adults' ? (program.type === 'Admittance' ? 'couple' : 'attendee') : 'camper' }}</dd></div>
-          <div v-if="s.depositCents" class="flex items-center gap-2"><Wallet class="size-4 text-muted-foreground" /><dt class="sr-only">Deposit</dt><dd>{{ money(s.depositCents) }} deposit<template v-if="s.planInstallments"> · or {{ s.planInstallments }}-payment plan</template></dd></div>
+          <div class="flex items-center gap-2">
+            <Calendar class="size-4 text-muted-foreground" />
+            <dt class="sr-only">Dates</dt>
+            <dd>{{ s.name }} · {{ dateRange(s.startDate, s.endDate) }}</dd>
+          </div>
+          <div class="flex items-center gap-2">
+            <MapPin class="size-4 text-muted-foreground" />
+            <dt class="sr-only">Location</dt>
+            <dd>{{ program.location }}</dd>
+          </div>
+          <div class="flex items-center gap-2">
+            <Tag class="size-4 text-muted-foreground" />
+            <dt class="sr-only">Price</dt>
+            <dd>
+              {{ money(s.priceCents) }} per
+              {{ audience === 'adults' ? (program.type === 'Admittance' ? 'couple' : 'attendee') : 'camper' }}
+            </dd>
+          </div>
+          <div v-if="s.depositCents" class="flex items-center gap-2">
+            <Wallet class="size-4 text-muted-foreground" />
+            <dt class="sr-only">Deposit</dt>
+            <dd>
+              {{ money(s.depositCents) }} deposit<template v-if="s.planInstallments">
+                · or {{ s.planInstallments }}-payment plan</template
+              >
+            </dd>
+          </div>
         </dl>
 
         <p class="mt-6 max-w-prose leading-relaxed">{{ program.description }}</p>
@@ -124,15 +160,21 @@ function register(sessionId: number) {
             </template>
             <Alert v-if="!standard">
               <Info class="size-4" />
-              <AlertTitle>{{ program.type === 'Admittance' ? 'Application required' : 'Registered by a group leader' }}</AlertTitle>
+              <AlertTitle>{{
+                program.type === 'Admittance' ? 'Application required' : 'Registered by a group leader'
+              }}</AlertTitle>
               <AlertDescription>
-                {{ program.type === 'Admittance'
-                  ? 'Couples apply first; your card is authorized, not charged, until approval.'
-                  : 'The group leader registers the cohort and each attendee completes forms by secure link.' }}
+                {{
+                  program.type === 'Admittance'
+                    ? 'Couples apply first; your card is authorized, not charged, until approval.'
+                    : 'The group leader registers the cohort and each attendee completes forms by secure link.'
+                }}
                 This flow isn't part of the prototype yet.
               </AlertDescription>
             </Alert>
-            <p v-else class="text-xs text-muted-foreground">You'll pick which of your children to register next. We place each child in the right group by grade.</p>
+            <p v-else class="text-xs text-muted-foreground">
+              You'll pick which of your children to register next. We place each child in the right group by grade.
+            </p>
           </CardContent>
         </Card>
       </aside>

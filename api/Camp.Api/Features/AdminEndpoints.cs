@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Infrastructure;
 using Camp.Api.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,12 +15,9 @@ public record RemoveRequest(string Reason);
 
 public static class AdminEndpoints
 {
-    // Demo staff identity. Production: Entra SSO via WorkOS, ministry-scoped roles.
-    const string Actor = "Diane Carter (CET)";
-
     public static void MapAdminEndpoints(this WebApplication app)
     {
-        var admin = app.MapGroup("/api/admin");
+        var admin = app.MapGroup("/api/admin").RequireAuthorization(Policies.Staff);
 
         // Scope switcher: Ministry ▸ Program ▸ Session
         admin.MapGet("/scope", async (CampDbContext db) =>
@@ -26,10 +25,15 @@ public static class AdminEndpoints
             var ministries = await db.Ministries.Include(m => m.Programs).ThenInclude(p => p.Sessions).AsNoTracking().ToListAsync();
             return ministries.Where(m => m.Programs.Count > 0).Select(m => new
             {
-                m.Id, m.Code, m.Name,
+                m.Id,
+                m.Code,
+                m.Name,
                 Programs = m.Programs.Select(p => new
                 {
-                    p.Id, p.Name, p.Slug, Type = p.Type.ToString(),
+                    p.Id,
+                    p.Name,
+                    p.Slug,
+                    Type = p.Type.ToString(),
                     Sessions = p.Sessions.OrderBy(s => s.StartDate).Select(s => new { s.Id, s.Name, s.StartDate, s.EndDate }),
                 }),
             });
@@ -146,17 +150,28 @@ public static class AdminEndpoints
             var siblings = await db.Registrations.Where(x => x.HouseholdId == h.Id && x.Id != id && x.Order!.Status != OrderStatus.Declined).Include(x => x.Person).Include(x => x.Session).ThenInclude(s => s.Program).AsNoTracking()
                 .Select(x => new { x.Id, Participant = x.Person.FirstName, Program = x.Session.Program.Name, Session = x.Session.Name, Status = x.Status.ToString() }).ToListAsync();
             var code = r.Order?.ConfirmationCode ?? "";
-            var audit = await db.AuditEvents.Where(a => (a.EntityType == "Registration" && a.EntityId == id.ToString()) || (a.EntityType == "PaymentOrder" && a.EntityId == r.OrderId.ToString()))
+            var regKey = id.ToString(CultureInfo.InvariantCulture);
+            var orderKey = r.OrderId?.ToString(CultureInfo.InvariantCulture);
+            var audit = await db.AuditEvents.Where(a => (a.EntityType == "Registration" && a.EntityId == regKey) || (a.EntityType == "PaymentOrder" && a.EntityId == orderKey))
                 .OrderByDescending(a => a.Id).AsNoTracking().ToListAsync();
             var messages = await db.OutboxEvents.Where(e => e.AggregateId == code || e.AggregateId == "reg-" + id).OrderBy(e => e.Id).AsNoTracking().ToListAsync();
 
             return Results.Ok(new
             {
-                r.Id, Status = r.Status.ToString(), r.Grade, GradeLabel = Eligibility.GradeLabel(r.Grade), r.CreatedAt,
+                r.Id,
+                Status = r.Status.ToString(),
+                r.Grade,
+                GradeLabel = Eligibility.GradeLabel(r.Grade),
+                r.CreatedAt,
                 Participant = new { r.Person.Id, r.Person.FirstName, r.Person.LastName, r.Person.DateOfBirth, Gender = r.Person.Gender.ToString(), r.Person.Dietary, r.Person.Allergies, r.Person.AdaNeeds },
                 Household = new
                 {
-                    h.Id, h.Name, h.Email, h.Phone, h.City, h.SalesforceId,
+                    h.Id,
+                    h.Name,
+                    h.Email,
+                    h.Phone,
+                    h.City,
+                    h.SalesforceId,
                     Adults = h.Members.Where(m => m.IsAdult).Select(m => new { m.FirstName, m.LastName, m.Role, m.Email }),
                     OtherRegistrations = siblings,
                 },
@@ -174,8 +189,13 @@ public static class AdminEndpoints
                 }),
                 Money = new
                 {
-                    r.PriceCents, r.DiscountCents, r.PaidCents, r.BalanceCents,
-                    ConfirmationCode = code, Option = r.Order?.PaymentOption.ToString(), BalanceDueDate = r.Session.BalanceDueDate,
+                    r.PriceCents,
+                    r.DiscountCents,
+                    r.PaidCents,
+                    r.BalanceCents,
+                    ConfirmationCode = code,
+                    Option = r.Order?.PaymentOption.ToString(),
+                    BalanceDueDate = r.Session.BalanceDueDate,
                     OrderParticipants = r.Order is null ? 0 : await db.Registrations.CountAsync(x => x.OrderId == r.OrderId),
                     Operations = r.Order?.Operations.OrderBy(o => o.CreatedAt).Select(o => new { o.Id, Kind = o.Kind.ToString(), o.AmountCents, o.Succeeded, o.ProcessorRef, o.CardLast4, o.Reason, o.CreatedAt }),
                     Installments = r.Order?.Installments.OrderBy(i => i.Sequence).Select(i => new { i.Sequence, i.DueDate, i.AmountCents, Status = i.Status.ToString() }),
@@ -188,7 +208,7 @@ public static class AdminEndpoints
 
         // Cancel under the time-based policy, refund on the same screen (FR-40, FR-49), release the seat.
         // The waitlist is not auto-promoted: the freed seat shows up for an admin to offer (FR-69).
-        admin.MapPost("/registrations/{id:int}/cancel", async (int id, CancelRequest req, CampDbContext db, IPaymentGateway gateway) =>
+        admin.MapPost("/registrations/{id:int}/cancel", async (int id, CancelRequest req, CampDbContext db, IPaymentGateway gateway, IAuditLog audit) =>
         {
             if (string.IsNullOrWhiteSpace(req.Reason)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["reason"] = ["A reason is required."] });
             var r = await db.Registrations.Include(x => x.Person).Include(x => x.Session).Include(x => x.Order).ThenInclude(o => o!.Operations).FirstOrDefaultAsync(x => x.Id == id);
@@ -206,7 +226,7 @@ public static class AdminEndpoints
             }
             r.Status = RegistrationStatus.Cancelled;
             await db.CapacityPools.Where(p => p.Id == r.PoolId && p.Reserved > 0).ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1));
-            db.AuditEvents.Add(new AuditEvent { Actor = Actor, Action = "registration.cancelled", EntityType = "Registration", EntityId = id.ToString(), Detail = $"Cancelled {r.Person.FullName}. Refund {CheckoutService.Money(req.RefundCents)}. Reason: {req.Reason}", CreatedAt = DateTime.UtcNow });
+            audit.Record("registration.cancelled", "Registration", id, $"Cancelled {r.Person.FullName}. Refund {CheckoutService.Money(req.RefundCents)}. Reason: {req.Reason}");
             db.OutboxEvents.Add(new OutboxEvent { Type = "RegistrationCancelled", Target = "HubSpot", AggregateId = "reg-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.RefundCents }), CreatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -222,17 +242,32 @@ public static class AdminEndpoints
                 .GroupBy(w => w.PoolId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
             return Results.Ok(new
             {
-                s.Id, s.Name, s.StartDate, s.EndDate, s.PriceCents, s.DepositCents, s.PlanInstallments, s.BalanceDueDate, s.WaitlistMode,
+                s.Id,
+                s.Name,
+                s.StartDate,
+                s.EndDate,
+                s.PriceCents,
+                s.DepositCents,
+                s.PlanInstallments,
+                s.BalanceDueDate,
+                s.WaitlistMode,
                 Program = new { s.Program.Name, Ministry = s.Program.Ministry.Name, s.Program.Location, HealthMechanism = s.Program.HealthMechanism.ToString(), Type = s.Program.Type.ToString() },
                 Pools = s.Pools.OrderBy(p => p.SortOrder).Select(p => new
                 {
-                    p.Id, p.Name, Gender = p.Gender?.ToString(), p.GradeMin, p.GradeMax, p.Capacity, p.Reserved,
-                    Remaining = p.Capacity - p.Reserved, Waitlisted = waitlist.GetValueOrDefault(p.Id),
+                    p.Id,
+                    p.Name,
+                    Gender = p.Gender?.ToString(),
+                    p.GradeMin,
+                    p.GradeMax,
+                    p.Capacity,
+                    p.Reserved,
+                    Remaining = p.Capacity - p.Reserved,
+                    Waitlisted = waitlist.GetValueOrDefault(p.Id),
                 }),
             });
         });
 
-        admin.MapPut("/pools/{id:int}", async (int id, CapacityRequest req, CampDbContext db) =>
+        admin.MapPut("/pools/{id:int}", async (int id, CapacityRequest req, CampDbContext db, IAuditLog audit) =>
         {
             var pool = await db.CapacityPools.FirstOrDefaultAsync(p => p.Id == id);
             if (pool is null) return Results.NotFound();
@@ -241,7 +276,7 @@ public static class AdminEndpoints
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.Capacity, req.Capacity));
             if (updated == 0)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["capacity"] = [$"{pool.Name} already has {pool.Reserved} seats taken; capacity can't go below that."] });
-            db.AuditEvents.Add(new AuditEvent { Actor = Actor, Action = "capacity.changed", EntityType = "CapacityPool", EntityId = id.ToString(), Detail = $"{pool.Name}: {pool.Capacity} → {req.Capacity}", CreatedAt = DateTime.UtcNow });
+            audit.Record("capacity.changed", "CapacityPool", id, $"{pool.Name}: {pool.Capacity} → {req.Capacity}");
             await db.SaveChangesAsync();
             return Results.Ok();
         });
@@ -258,17 +293,27 @@ public static class AdminEndpoints
             {
                 Pools = pools.Select(p => new
                 {
-                    p.Id, p.Name, p.Capacity, p.Reserved, Remaining = p.Capacity - p.Reserved,
+                    p.Id,
+                    p.Name,
+                    p.Capacity,
+                    p.Reserved,
+                    Remaining = p.Capacity - p.Reserved,
                     Entries = entries.Where(e => e.PoolId == p.Id).Select(e => new
                     {
-                        e.Id, e.Position, Participant = e.Person.FullName, Grade = Eligibility.GradeFor(e.Person.DateOfBirth, session.StartDate),
-                        Guardian = households[e.HouseholdId].Members.Where(m => m.IsAdult).OrderBy(m => m.Id).Select(m => m.FullName).FirstOrDefault(), Status = e.Status.ToString(), e.OfferExpiresAt, e.CreatedAt,
+                        e.Id,
+                        e.Position,
+                        Participant = e.Person.FullName,
+                        Grade = Eligibility.GradeFor(e.Person.DateOfBirth, session.StartDate),
+                        Guardian = households[e.HouseholdId].Members.Where(m => m.IsAdult).OrderBy(m => m.Id).Select(m => m.FullName).FirstOrDefault(),
+                        Status = e.Status.ToString(),
+                        e.OfferExpiresAt,
+                        e.CreatedAt,
                     }),
                 }).Where(p => p.Entries.Any() || p.Remaining == 0),
             };
         });
 
-        admin.MapPost("/waitlist/{id:int}/offer", async (int id, OfferRequest req, CampDbContext db) =>
+        admin.MapPost("/waitlist/{id:int}/offer", async (int id, OfferRequest req, CampDbContext db, IAuditLog audit) =>
         {
             var entry = await db.WaitlistEntries.Include(w => w.Person).Include(w => w.Pool).FirstOrDefaultAsync(w => w.Id == id);
             if (entry is null) return Results.NotFound();
@@ -282,14 +327,14 @@ public static class AdminEndpoints
             if (claimed == 0) return Results.Conflict(new { error = $"{entry.Pool.Name} has no open spots. Raise capacity or wait for a cancellation." });
             entry.Status = WaitlistStatus.Offered;
             entry.OfferExpiresAt = req.Deadline;
-            db.AuditEvents.Add(new AuditEvent { Actor = Actor, Action = "waitlist.offered", EntityType = "WaitlistEntry", EntityId = id.ToString(), Detail = $"Offered {entry.Pool.Name} spot to {entry.Person.FullName} (#{entry.Position}); respond by {req.Deadline:MMM d, h:mm tt} UTC.", CreatedAt = DateTime.UtcNow });
+            audit.Record("waitlist.offered", "WaitlistEntry", id, $"Offered {entry.Pool.Name} spot to {entry.Person.FullName} (#{entry.Position}); respond by {req.Deadline:MMM d, h:mm tt} UTC.");
             db.OutboxEvents.Add(new OutboxEvent { Type = "WaitlistOfferSent", Target = "HubSpot", AggregateId = "wl-" + id, PayloadJson = JsonSerializer.Serialize(new { id, req.Deadline }), CreatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok();
         });
 
-        admin.MapPost("/waitlist/{id:int}/remove", async (int id, RemoveRequest req, CampDbContext db) =>
+        admin.MapPost("/waitlist/{id:int}/remove", async (int id, RemoveRequest req, CampDbContext db, IAuditLog audit) =>
         {
             var entry = await db.WaitlistEntries.Include(w => w.Person).FirstOrDefaultAsync(w => w.Id == id);
             if (entry is null) return Results.NotFound();
@@ -297,7 +342,7 @@ public static class AdminEndpoints
             if (entry.Status == WaitlistStatus.Offered)
                 await db.CapacityPools.Where(p => p.Id == entry.PoolId && p.Reserved > 0).ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1));
             entry.Status = WaitlistStatus.Removed;
-            db.AuditEvents.Add(new AuditEvent { Actor = Actor, Action = "waitlist.removed", EntityType = "WaitlistEntry", EntityId = id.ToString(), Detail = $"Removed {entry.Person.FullName}: {req.Reason}", CreatedAt = DateTime.UtcNow });
+            audit.Record("waitlist.removed", "WaitlistEntry", id, $"Removed {entry.Person.FullName}: {req.Reason}");
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok();

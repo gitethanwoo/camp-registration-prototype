@@ -11,10 +11,28 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
 
-interface Pool { id: number, name: string, gender: string | null, gradeMin: number, gradeMax: number, capacity: number, reserved: number, remaining: number, waitlisted: number }
+interface Pool {
+  id: number
+  name: string
+  gender: string | null
+  gradeMin: number
+  gradeMax: number
+  capacity: number
+  reserved: number
+  remaining: number
+  waitlisted: number
+}
 interface SessionDetail {
-  id: number, name: string, startDate: string, endDate: string, priceCents: number, depositCents: number, planInstallments: number, balanceDueDate: string, waitlistMode: string
-  program: { name: string, ministry: string, location: string, healthMechanism: string, type: string }
+  id: number
+  name: string
+  startDate: string
+  endDate: string
+  priceCents: number
+  depositCents: number
+  planInstallments: number
+  balanceDueDate: string
+  waitlistMode: string
+  program: { name: string; ministry: string; location: string; healthMechanism: string; type: string }
   pools: Pool[]
 }
 
@@ -26,9 +44,12 @@ const saving = ref<number | null>(null)
 
 async function load() {
   s.value = await api.get<SessionDetail>(`/admin/sessions/${sessionId.value}`)
-  edits.value = Object.fromEntries(s.value.pools.map(p => [p.id, String(p.capacity)]))
+  edits.value = Object.fromEntries(s.value.pools.map((p) => [p.id, String(p.capacity)]))
 }
-onMounted(async () => { await ready; if (sessionId.value) await load() })
+onMounted(async () => {
+  await ready
+  if (sessionId.value) await load()
+})
 
 async function save(p: Pool) {
   saving.value = p.id
@@ -37,18 +58,32 @@ async function save(p: Pool) {
     await api.put(`/admin/pools/${p.id}`, { capacity: Number(edits.value[p.id]) })
     toast.success(`${p.name} capacity set to ${edits.value[p.id]}.`)
     await load()
+  } catch (e) {
+    errors.value[p.id] = e instanceof ApiError ? e.message : 'Save failed.'
+  } finally {
+    saving.value = null
   }
-  catch (e) { errors.value[p.id] = e instanceof ApiError ? e.message : 'Save failed.' }
-  finally { saving.value = null }
 }
 const columns: ColumnDef<Pool>[] = [
   { accessorKey: 'name', header: 'Pool', meta: { cellClass: 'font-medium' } },
   { id: 'who', header: 'Who', cell: ({ row }) => audience(row.original), meta: { cellClass: 'text-muted-foreground' } },
   { accessorKey: 'reserved', header: 'Taken', meta: { class: 'text-right', cellClass: 'tabular-nums' } },
-  { accessorKey: 'waitlisted', header: 'Waitlist', cell: ({ row }) => row.original.waitlisted || '—', meta: { class: 'text-right', cellClass: 'tabular-nums' } },
+  {
+    accessorKey: 'waitlisted',
+    header: 'Waitlist',
+    cell: ({ row }) => row.original.waitlisted || '—',
+    meta: { class: 'text-right', cellClass: 'tabular-nums' },
+  },
   { accessorKey: 'capacity', header: 'Capacity', meta: { class: 'w-48' } },
 ]
-function audience(p: Pool) { return `${p.gender ? (p.gender === 'Male' ? 'Boys' : 'Girls') + ', ' : ''}${p.gradeMin >= 99 ? 'adults' : p.gradeMin === p.gradeMax ? `grade ${p.gradeMin}` : `grades ${p.gradeMin}–${p.gradeMax}`}` }
+function grades(p: Pool) {
+  if (p.gradeMin >= 99) return 'adults'
+  return p.gradeMin === p.gradeMax ? `grade ${p.gradeMin}` : `grades ${p.gradeMin}–${p.gradeMax}`
+}
+const genderLabel: Record<string, string> = { Male: 'Boys', Female: 'Girls' }
+function audience(p: Pool) {
+  return p.gender ? `${genderLabel[p.gender]}, ${grades(p)}` : grades(p)
+}
 </script>
 
 <template>
@@ -62,28 +97,73 @@ function audience(p: Pool) { return `${p.gender ? (p.gender === 'Male' ? 'Boys' 
         </CardHeader>
         <CardContent>
           <dl class="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <div><dt class="text-muted-foreground">Dates</dt><dd>{{ dateRange(s.startDate, s.endDate) }}</dd></div>
-            <div><dt class="text-muted-foreground">Price</dt><dd>{{ money(s.priceCents) }}<template v-if="s.depositCents"> · {{ money(s.depositCents) }} deposit</template></dd></div>
-            <div><dt class="text-muted-foreground">Payment plan</dt><dd>{{ s.planInstallments ? `${s.planInstallments} monthly, final by ${date(s.balanceDueDate)}` : 'Not offered' }}</dd></div>
-            <div><dt class="text-muted-foreground">Waitlist</dt><dd>{{ s.waitlistMode === 'AdminApproval' ? 'Staff offer spots in order' : s.waitlistMode }}</dd></div>
-            <div><dt class="text-muted-foreground">Health forms</dt><dd>{{ s.program.healthMechanism === 'CampDoc' ? 'CampDoc' : 'Built-in form' }}</dd></div>
-            <div><dt class="text-muted-foreground">Registration type</dt><dd>{{ s.program.type }}</dd></div>
+            <div>
+              <dt class="text-muted-foreground">Dates</dt>
+              <dd>{{ dateRange(s.startDate, s.endDate) }}</dd>
+            </div>
+            <div>
+              <dt class="text-muted-foreground">Price</dt>
+              <dd>
+                {{ money(s.priceCents)
+                }}<template v-if="s.depositCents"> · {{ money(s.depositCents) }} deposit</template>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-muted-foreground">Payment plan</dt>
+              <dd>
+                {{
+                  s.planInstallments
+                    ? `${s.planInstallments} monthly, final by ${date(s.balanceDueDate)}`
+                    : 'Not offered'
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-muted-foreground">Waitlist</dt>
+              <dd>{{ s.waitlistMode === 'AdminApproval' ? 'Staff offer spots in order' : s.waitlistMode }}</dd>
+            </div>
+            <div>
+              <dt class="text-muted-foreground">Health forms</dt>
+              <dd>{{ s.program.healthMechanism === 'CampDoc' ? 'CampDoc' : 'Built-in form' }}</dd>
+            </div>
+            <div>
+              <dt class="text-muted-foreground">Registration type</dt>
+              <dd>{{ s.program.type }}</dd>
+            </div>
           </dl>
-          <p class="mt-4 text-xs text-muted-foreground">Session details are read-only in this prototype; capacity is editable below.</p>
+          <p class="mt-4 text-xs text-muted-foreground">
+            Session details are read-only in this prototype; capacity is editable below.
+          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>Capacity pools</CardTitle>
-          <CardDescription>Each camper is placed in exactly one pool by gender and grade. Capacity can't drop below seats already taken.</CardDescription>
+          <CardDescription
+            >Each camper is placed in exactly one pool by gender and grade. Capacity can't drop below seats already
+            taken.</CardDescription
+          >
         </CardHeader>
         <CardContent>
-          <DataTable :columns="columns" :data="s.pools" :get-row-id="p => String(p.id)">
+          <DataTable :columns="columns" :data="s.pools" :get-row-id="(p) => String(p.id)">
             <template #cell-capacity="{ row: p }">
               <form class="flex items-center gap-2" @submit.prevent="save(p)">
-                <Input v-model="edits[p.id]" type="number" :min="p.reserved" class="h-8 w-20" :aria-label="`${p.name} capacity`" :aria-invalid="!!errors[p.id] || undefined" />
-                <Button size="sm" variant="outline" type="submit" :disabled="saving === p.id || Number(edits[p.id]) === p.capacity">Save</Button>
+                <Input
+                  v-model="edits[p.id]"
+                  type="number"
+                  :min="p.reserved"
+                  class="h-8 w-20"
+                  :aria-label="`${p.name} capacity`"
+                  :aria-invalid="!!errors[p.id] || undefined"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="submit"
+                  :disabled="saving === p.id || Number(edits[p.id]) === p.capacity"
+                  >Save</Button
+                >
               </form>
               <p v-if="errors[p.id]" class="mt-1 text-xs text-destructive" role="alert">{{ errors[p.id] }}</p>
             </template>

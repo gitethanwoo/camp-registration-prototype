@@ -45,7 +45,7 @@ public class FakeFiservGateway : IPaymentGateway
             if (!_tokens.TryGetValue(cardToken, out var digits))
                 return new GatewayResult(false, "", "", "Your card details expired. Please re-enter them.");
             var last4 = digits[^4..];
-            if (digits.EndsWith("0002"))
+            if (digits.EndsWith("0002", StringComparison.Ordinal))
                 return new GatewayResult(false, $"fsv_{Guid.NewGuid():N}"[..16], last4, "Your card was declined. Try another card or contact your bank.");
             ChargeCount++;
             return new GatewayResult(true, $"fsv_{Guid.NewGuid():N}"[..16], last4, null);

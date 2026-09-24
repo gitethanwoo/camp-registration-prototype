@@ -1,0 +1,27 @@
+{
+  "name": "camp-registration-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "husky",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "format:staged": "node scripts/format-staged.mjs",
+    "lint": "oxlint --max-warnings 0 web/src scripts e2e && node scripts/check-slop.mjs",
+    "typecheck": "npm --prefix web run typecheck",
+    "check:api": "scripts/dotnet.sh build CampRegistration.slnx -v q -nologo && scripts/dotnet.sh format CampRegistration.slnx --verify-no-changes",
+    "check:governance": "node scripts/check-governance.mjs",
+    "check:governance:cached": "node scripts/check-governance.mjs --cached",
+    "check:secrets:staged": "gitleaks protect --staged --redact --no-banner",
+    "test:api": "scripts/dotnet.sh test CampRegistration.slnx",
+    "test:e2e": "playwright test",
+    "verify:precommit": "npm run check:secrets:staged && npm run check:governance:cached && npm run lint && npm run typecheck && npm run check:api",
+    "verify:prepush": "npm run check:governance && npm run lint && npm run typecheck && npm run check:api && npm run test:api && npm --prefix web run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "husky": "^9.1.7",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0"
+  }
+}

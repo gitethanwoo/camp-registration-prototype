@@ -90,7 +90,7 @@ public class WaitlistOfferExpiry(IServiceScopeFactory scopes, ILogger<WaitlistOf
                     w.Status = WaitlistStatus.Expired;
                     await db.CapacityPools.Where(p => p.Id == w.PoolId && p.Reserved > 0)
                         .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1), ct);
-                    db.AuditEvents.Add(new AuditEvent { Actor = "system", Action = "waitlist.offer_expired", EntityType = "WaitlistEntry", EntityId = w.Id.ToString(), Detail = $"Offer to {w.Person.FullName} expired; seat released for the next position.", CreatedAt = DateTime.UtcNow });
+                    db.AuditEvents.Add(new AuditEvent { Actor = "system", Action = "waitlist.offer_expired", EntityType = "WaitlistEntry", EntityId = w.Id.ToString(CultureInfo.InvariantCulture), Detail = $"Offer to {w.Person.FullName} expired; seat released for the next position.", CreatedAt = DateTime.UtcNow });
                     await db.SaveChangesAsync(ct);
                     await tx.CommitAsync(ct);
                     log.LogInformation("Waitlist offer {Id} expired", w.Id);

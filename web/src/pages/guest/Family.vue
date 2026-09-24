@@ -12,20 +12,46 @@ import { dateRange, dateTime, money } from '@/lib/format'
 import type { ChecklistItem } from '@/lib/types'
 
 interface FamilyData {
-  registrations: { id: number, participant: string, program: string, session: string, startDate: string, endDate: string, pool: string, status: string, balanceCents: number, confirmationCode: string }[]
-  waitlist: { id: number, participant: string, program: string, session: string, pool: string, position: number, status: string, offerExpiresAt: string | null }[]
+  registrations: {
+    id: number
+    participant: string
+    program: string
+    session: string
+    startDate: string
+    endDate: string
+    pool: string
+    status: string
+    balanceCents: number
+    confirmationCode: string
+  }[]
+  waitlist: {
+    id: number
+    participant: string
+    program: string
+    session: string
+    pool: string
+    position: number
+    status: string
+    offerExpiresAt: string | null
+  }[]
   checklist: ChecklistItem[]
 }
 
 const data = ref<FamilyData | null>(null)
-onMounted(async () => { data.value = await api.get<FamilyData>('/family') })
+onMounted(async () => {
+  data.value = await api.get<FamilyData>('/family')
+})
 
-const open = computed(() => data.value?.checklist.filter(c => !c.done) ?? [])
-const done = computed(() => data.value?.checklist.filter(c => c.done) ?? [])
+const open = computed(() => data.value?.checklist.filter((c) => !c.done) ?? [])
+const done = computed(() => data.value?.checklist.filter((c) => c.done) ?? [])
 const icon = { waiver: FileSignature, health: HeartPulse, campdoc: HeartPulse, balance: CreditCard }
 
 function act(item: ChecklistItem) {
-  toast.info(item.kind === 'campdoc' ? 'CampDoc opens in a new tab in production (SSO handoff).' : `“${item.action}” isn't wired up in this prototype.`)
+  toast.info(
+    item.kind === 'campdoc'
+      ? 'CampDoc opens in a new tab in production (SSO handoff).'
+      : `“${item.action}” isn't wired up in this prototype.`,
+  )
 }
 </script>
 
@@ -34,15 +60,23 @@ function act(item: ChecklistItem) {
     <h1 class="text-3xl font-semibold tracking-tight">Johnson family</h1>
     <p class="mt-1 text-muted-foreground">Maria & David · Avery and Mia</p>
 
-    <div v-if="!data" class="mt-8 space-y-4"><Skeleton class="h-40 rounded-xl" /><Skeleton class="h-40 rounded-xl" /></div>
+    <div v-if="!data" class="mt-8 space-y-4">
+      <Skeleton class="h-40 rounded-xl" /><Skeleton class="h-40 rounded-xl" />
+    </div>
     <template v-else>
       <Card id="checklist" class="mt-8 scroll-mt-24">
         <CardHeader>
           <CardTitle>Checklist</CardTitle>
-          <CardDescription>{{ open.length ? `${open.length} ${open.length === 1 ? 'thing' : 'things'} to do before camp, across all your kids.` : 'You’re all set.' }}</CardDescription>
+          <CardDescription>{{
+            open.length
+              ? `${open.length} ${open.length === 1 ? 'thing' : 'things'} to do before camp, across all your kids.`
+              : 'You’re all set.'
+          }}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p v-if="!data.checklist.length" class="text-sm text-muted-foreground">Register for a program and your to-dos will show up here.</p>
+          <p v-if="!data.checklist.length" class="text-sm text-muted-foreground">
+            Register for a program and your to-dos will show up here.
+          </p>
           <ul class="divide-y">
             <li v-for="c in open" :key="c.key" class="flex items-center gap-3 py-3">
               <component :is="icon[c.kind]" class="size-5 shrink-0 text-amber-600" />
@@ -69,17 +103,26 @@ function act(item: ChecklistItem) {
         <CardHeader><CardTitle>Registrations</CardTitle></CardHeader>
         <CardContent>
           <p v-if="!data.registrations.length" class="text-sm text-muted-foreground">
-            None yet. <Button variant="link" as-child class="h-auto p-0"><RouterLink to="/programs">Find a program</RouterLink></Button>.
+            None yet.
+            <Button variant="link" as-child class="h-auto p-0"
+              ><RouterLink to="/programs">Find a program</RouterLink></Button
+            >.
           </p>
           <ul class="divide-y">
             <li v-for="r in data.registrations" :key="r.id" class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
               <div class="min-w-0 flex-1">
                 <p class="font-medium">{{ r.participant }}</p>
-                <p class="text-sm text-muted-foreground">{{ r.program }} · {{ r.pool }} · {{ dateRange(r.startDate, r.endDate) }}</p>
+                <p class="text-sm text-muted-foreground">
+                  {{ r.program }} · {{ r.pool }} · {{ dateRange(r.startDate, r.endDate) }}
+                </p>
               </div>
-              <span v-if="r.balanceCents > 0" class="text-sm text-muted-foreground tabular-nums">{{ money(r.balanceCents) }} balance</span>
+              <span v-if="r.balanceCents > 0" class="text-sm text-muted-foreground tabular-nums"
+                >{{ money(r.balanceCents) }} balance</span
+              >
               <StatusBadge :status="r.status" />
-              <Button variant="link" as-child class="h-auto p-0 font-mono"><RouterLink :to="`/confirmation/${r.confirmationCode}`">{{ r.confirmationCode }}</RouterLink></Button>
+              <Button variant="link" as-child class="h-auto p-0 font-mono"
+                ><RouterLink :to="`/confirmation/${r.confirmationCode}`">{{ r.confirmationCode }}</RouterLink></Button
+              >
             </li>
           </ul>
         </CardContent>
@@ -94,7 +137,9 @@ function act(item: ChecklistItem) {
               <div class="min-w-0 flex-1">
                 <p class="font-medium">{{ w.participant }}</p>
                 <p class="text-sm text-muted-foreground">{{ w.program }} · {{ w.pool }}</p>
-                <p v-if="w.status === 'Offered' && w.offerExpiresAt" class="text-sm font-medium text-sky-800">A spot is being held until {{ dateTime(w.offerExpiresAt) }}.</p>
+                <p v-if="w.status === 'Offered' && w.offerExpiresAt" class="text-sm font-medium text-sky-800">
+                  A spot is being held until {{ dateTime(w.offerExpiresAt) }}.
+                </p>
               </div>
               <StatusBadge :status="w.status" :label="w.status === 'Waiting' ? `#${w.position} in line` : undefined" />
             </li>

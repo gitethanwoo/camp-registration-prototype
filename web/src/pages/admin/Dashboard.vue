@@ -12,14 +12,14 @@ import { dateRange, money } from '@/lib/format'
 import type { PoolAvailability } from '@/lib/types'
 
 interface Overview {
-  session: { id: number, name: string, startDate: string, endDate: string, program: string, healthMechanism: string }
+  session: { id: number; name: string; startDate: string; endDate: string; program: string; healthMechanism: string }
   capacity: number
   registered: number
   held: number
   waitlisted: number
   ready: number
   needsAttention: number
-  breakdown: { health: number, waivers: number, balance: number }
+  breakdown: { health: number; waivers: number; balance: number }
   newToday: number
   collectedCents: number
   outstandingCents: number
@@ -45,28 +45,50 @@ onMounted(async () => {
 
       <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <CardHeader class="pb-2"><CardDescription class="flex items-center gap-2"><Users class="size-4" />Registered</CardDescription></CardHeader>
+          <CardHeader class="pb-2"
+            ><CardDescription class="flex items-center gap-2"
+              ><Users class="size-4" />Registered</CardDescription
+            ></CardHeader
+          >
           <CardContent>
-            <p class="text-3xl font-semibold tabular-nums">{{ o.registered }}<span class="text-base font-normal text-muted-foreground"> / {{ o.capacity }}</span></p>
-            <p class="text-sm text-muted-foreground">{{ o.newToday }} new today<template v-if="o.held"> · {{ o.held }} held</template></p>
+            <p class="text-3xl font-semibold tabular-nums">
+              {{ o.registered }}<span class="text-base font-normal text-muted-foreground"> / {{ o.capacity }}</span>
+            </p>
+            <p class="text-sm text-muted-foreground">
+              {{ o.newToday }} new today<template v-if="o.held"> · {{ o.held }} held</template>
+            </p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader class="pb-2"><CardDescription class="flex items-center gap-2"><CircleCheck class="size-4" />Ready for camp</CardDescription></CardHeader>
+          <CardHeader class="pb-2"
+            ><CardDescription class="flex items-center gap-2"
+              ><CircleCheck class="size-4" />Ready for camp</CardDescription
+            ></CardHeader
+          >
           <CardContent>
             <p class="text-3xl font-semibold tabular-nums">{{ o.ready }}</p>
             <p class="text-sm text-muted-foreground">{{ o.needsAttention }} need attention</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader class="pb-2"><CardDescription class="flex items-center gap-2"><ListOrdered class="size-4" />Waitlisted</CardDescription></CardHeader>
+          <CardHeader class="pb-2"
+            ><CardDescription class="flex items-center gap-2"
+              ><ListOrdered class="size-4" />Waitlisted</CardDescription
+            ></CardHeader
+          >
           <CardContent>
             <p class="text-3xl font-semibold tabular-nums">{{ o.waitlisted }}</p>
-            <Button variant="link" as-child class="h-auto p-0 text-muted-foreground"><RouterLink to="/admin/waitlist">Manage waitlists</RouterLink></Button>
+            <Button variant="link" as-child class="h-auto p-0 text-muted-foreground"
+              ><RouterLink to="/admin/waitlist">Manage waitlists</RouterLink></Button
+            >
           </CardContent>
         </Card>
         <Card>
-          <CardHeader class="pb-2"><CardDescription class="flex items-center gap-2"><CreditCard class="size-4" />Collected</CardDescription></CardHeader>
+          <CardHeader class="pb-2"
+            ><CardDescription class="flex items-center gap-2"
+              ><CreditCard class="size-4" />Collected</CardDescription
+            ></CardHeader
+          >
           <CardContent>
             <p class="text-3xl font-semibold tabular-nums">{{ money(o.collectedCents) }}</p>
             <p class="text-sm text-muted-foreground">{{ money(o.outstandingCents) }} outstanding</p>
@@ -83,10 +105,19 @@ onMounted(async () => {
           <CardContent class="space-y-2">
             <RouterLink
               v-for="item in [
-                { key: 'health', label: o.session.healthMechanism === 'CampDoc' ? 'CampDoc health forms incomplete' : 'Health forms incomplete', count: o.breakdown.health, icon: HeartPulse },
+                {
+                  key: 'health',
+                  label:
+                    o.session.healthMechanism === 'CampDoc'
+                      ? 'CampDoc health forms incomplete'
+                      : 'Health forms incomplete',
+                  count: o.breakdown.health,
+                  icon: HeartPulse,
+                },
                 { key: 'waivers', label: 'Waivers missing', count: o.breakdown.waivers, icon: FileSignature },
                 { key: 'balance', label: 'Balance due', count: o.breakdown.balance, icon: CreditCard },
-              ]" :key="item.key"
+              ]"
+              :key="item.key"
               :to="{ path: '/admin/registrations', query: { attention: item.key } }"
               class="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
             >
@@ -100,7 +131,9 @@ onMounted(async () => {
         <Card>
           <CardHeader>
             <CardTitle>Capacity by group</CardTitle>
-            <CardDescription>Live seat counts. Held seats include pending payments and open waitlist offers.</CardDescription>
+            <CardDescription
+              >Live seat counts. Held seats include pending payments and open waitlist offers.</CardDescription
+            >
           </CardHeader>
           <CardContent><PoolAvailabilityList :pools="o.pools" /></CardContent>
         </Card>

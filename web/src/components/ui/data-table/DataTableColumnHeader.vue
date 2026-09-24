@@ -3,7 +3,7 @@ import type { Column } from '@tanstack/vue-table'
 import { ArrowDown, ArrowUp, ChevronsUpDown } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 
-const props = defineProps<{ column: Column<TData, unknown>, title: string }>()
+const props = defineProps<{ column: Column<TData, unknown>; title: string }>()
 
 function toggle() {
   const s = props.column.getIsSorted()

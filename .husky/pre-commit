@@ -1,0 +1,11 @@
+npm run format:staged
+
+# Docs-only commits skip the build but still get a secret scan.
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$staged" ] && ! printf '%s\n' "$staged" | rg -qv '^(docs/|[^/]+\.md$)'; then
+  echo "[pre-commit] docs-only diff; skipping verify:precommit"
+  npm run check:secrets:staged
+  exit $?
+fi
+
+npm run verify:precommit

@@ -12,15 +12,28 @@ A working prototype of the core camp registration flow for WinShape: program dis
 docker compose up --build
 ```
 
-| URL | What |
-| --- | --- |
-| http://localhost:5173 | Guest site (you're signed in as **Maria Johnson**) |
-| http://localhost:5173/admin | Staff console (you're **Diane Carter, CET**) |
-| http://localhost:5080/api/programs | API |
+| URL                                | What                                   |
+| ---------------------------------- | -------------------------------------- |
+| http://localhost:5173              | Guest site                             |
+| http://localhost:5173/admin        | Staff console                          |
+| http://localhost:4100              | WorkOS emulator (AuthKit sign-in page) |
+| http://localhost:5080/api/programs | API                                    |
+
+**Signing in** goes through WorkOS AuthKit, served locally by the official WorkOS emulator. Enter one of these seeded emails; there's no password:
+
+| Email                           | Who                                                    |
+| ------------------------------- | ------------------------------------------------------ |
+| `maria.johnson@example.com`     | Returning family: Avery (G6) and Mia (G4)              |
+| `sam.rivera@example.com`        | New family. The household is created at first sign-in. |
+| `pastor.dave@example.com`       | Church group leader                                    |
+| `diane.carter@winshape.example` | Staff, Customer Experience (CET)                       |
+| `marcus.lee@winshape.example`   | Staff, Finance                                         |
+| `grace.patel@winshape.example`  | Host coordinator                                       |
 
 The API migrates and seeds the database on startup. To start over with clean demo data, run `docker compose down -v`.
 
 **Test cards** (simulated Fiserv hosted fields):
+
 - `4242 4242 4242 4242` approves.
 - `4000 0000 0000 0002` declines.
 - Use any expiry, CVC, and ZIP.
@@ -28,19 +41,19 @@ The API migrates and seeds the database on startup. To start over with clean dem
 ### Local dev
 
 ```bash
-docker compose up -d db api      # SQL Server on :14333, API on :5080
+docker compose up -d db workos api   # SQL :14333, WorkOS emulator :4100, API :5080
 cd web && npm install && npm run dev   # Vite on :5173, proxies /api to :5080
 ```
 
 ### Tests
 
 ```bash
-cd api
-docker run --rm --network camp-registration-prototype_default -e TEST_SQL=db,1433 \
-  -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:10.0 dotnet test Camp.Api.Tests
+npm install && npx playwright install chromium   # once
+npm run test:api     # xUnit integration tests; needs `docker compose up -d db`
+npm run test:e2e     # Playwright against the running stack (`docker compose up -d`)
 ```
 
-With the .NET 10 SDK installed locally, `dotnet test` also works against the compose database on `localhost,14333`. Integration tests boot the real app against a throwaway database, which is deleted afterwards.
+Integration tests boot the real app against a throwaway database, which is deleted afterwards.
 
 ## Demo script
 
@@ -60,6 +73,10 @@ With the .NET 10 SDK installed locally, `dotnet test` also works against the com
    - Use "Search families" to search every ministry.
    - Open a registration to cancel it, with a refund quote from the time-based policy on the same screen.
    - Sessions & capacity: raise Boys G6–8 to 51. On Waitlists, offer #1 a spot with a deadline; the offer holds a real seat.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) first. Commits run formatting, lint, anti-slop checks, typecheck, the C# build, and plan governance ([docs/QUALITY.md](docs/QUALITY.md)). Larger changes need a plan in `docs/exec-plans/` ([docs/PLANS.md](docs/PLANS.md)).
 
 ## Architecture
 
@@ -86,6 +103,7 @@ db     SQL Server 2022 (docker)
   3. Finalize, or compensate on decline: release seats and cancel.
 
   If the process dies between steps, `PendingPaymentReconciler` asks the processor what happened and finishes the order.
+
 - **Integrations are async.** Confirmation emails (HubSpot) and CRM sync (Salesforce) go through a transactional outbox, so a slow third party never blocks checkout.
 - **Money is computed server-side.** The UI never does money math. Quotes, discounts, and plan schedules come from `Pricing.Build`, and the final installment absorbs rounding so the schedule always sums to the total.
 
@@ -99,6 +117,7 @@ db     SQL Server 2022 (docker)
 ## Scope
 
 **In:**
+
 - Discovery with live availability (P1/P2).
 - Standard registration wizard (R1–R12).
 - Family checklist (F1/F4-lite).
@@ -111,8 +130,8 @@ db     SQL Server 2022 (docker)
 - Background workers.
 
 **Out (stubbed or not built):**
+
 - Admittance programs (marriage retreats) and cohort programs (leadership). They're discoverable, but checkout rejects them.
-- Real auth. The demo identities stand in for WorkOS (guests) and Entra SSO (staff). Every household query is already scoped through a `CurrentUser`.
 - Real Fiserv, HubSpot, Salesforce, and CampDoc integrations. They're simulated behind interfaces.
 - Field-level encryption for health data, role-based access, reporting, and program setup beyond capacity.
 - Guest self-service cancellation, accepting a waitlist offer, and paying a balance.
