@@ -23,7 +23,7 @@ public sealed class ProgramWaiverEndpoints : IEndpointModule
             var setup = await ProgramSetupEndpoints.StateOf(db, program, ct);
             if (setup.State != PublishState.Draft)
                 return SetupResults.Conflict($"{program.Name} is {ProgramSetupEndpoints.StateLabel(setup.State).ToLowerInvariant()}. Return it to draft to add a waiver.");
-            var title = $"{program.Name} Release and Waiver of Liability";
+            var title = PolishSeed.StandardTitle(program.Name);
             if (program.Waivers.Any(w => w.Title == title)) return SetupResults.Conflict($"{program.Name} already has the standard release.");
 
             var today = clock.Today();
@@ -44,7 +44,8 @@ public sealed class ProgramWaiverEndpoints : IEndpointModule
             });
             audit.Record(db, "waiver.added", "Program", id, $"Added {title} to {program.Name}.", ("Waivers", "None", $"{title} v1"));
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { waiver.Id, waiver.Title, waiver.Version });
+            // Not "id": K2's sheet reopens whatever program id a save returns.
+            return Results.Ok(new { WaiverId = waiver.Id, waiver.Title, waiver.Version });
         }).RequireAuthorization(Policies.Admin);
     }
 }

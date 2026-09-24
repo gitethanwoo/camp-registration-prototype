@@ -62,7 +62,7 @@ public class PolishTests(ApiFactory factory) : IClassFixture<ApiFactory>
     // ── Family Camp waiver and K2's publish guard ───────────────────────────
 
     [Fact]
-    public async Task Family_Camp_has_a_waiver_and_its_existing_registrations_are_signed()
+    public async Task Every_published_program_has_a_waiver_and_Family_Camps_registrations_are_signed()
     {
         var (waivers, unsigned) = await factory.WithDb(async db =>
         {
@@ -73,6 +73,8 @@ public class PolishTests(ApiFactory factory) : IClassFixture<ApiFactory>
         });
         Assert.Equal([PolishSeed.FamilyCampWaiverTitle], waivers);
         Assert.Equal(0, unsigned);
+        // The invariant: no published program takes registrations without a waiver.
+        Assert.Empty(await factory.WithDb(db => db.Programs.Where(p => p.IsPublished && !p.Waivers.Any()).Select(p => p.Name).ToListAsync()));
 
         // Maria's checklist shows the waiver as signed, and K7 lists it with its version history.
         var maria = await factory.SignInAsFamily();

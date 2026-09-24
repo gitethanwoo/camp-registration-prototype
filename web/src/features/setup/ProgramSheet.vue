@@ -75,6 +75,13 @@ watch(
   },
   { immediate: true },
 )
+// The sheet can open before the ministries load; default a new program's ministry once they arrive.
+watch(
+  () => props.ministries,
+  (list) => {
+    if (!form.ministryId && list[0]) form.ministryId = String(list[0].id)
+  },
+)
 const dirty = computed(() => {
   const p = props.program
   if (!p) return !!form.name
