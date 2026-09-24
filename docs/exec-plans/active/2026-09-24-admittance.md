@@ -26,8 +26,8 @@ To see it: run the API and Vite (see Concrete Steps), sign in as `maria.johnson@
 - [x] (2026-09-24 17:00Z) API integration tests in `api/Camp.Api.Tests/AdmittanceTests.cs` (12 tests; full suite 28/28).
 - [x] (2026-09-24 18:10Z) Web: R2 application wizard, F7 status page, C6 review queue, and the Apply entry point on the program page. Also a small "My applications" list at `/applications`.
 - [x] (2026-09-24 18:20Z) Playwright spec `e2e/admittance.spec.ts` (demo path plus a finance read-only check); passes with `e2e/smoke.spec.ts` on a fresh database.
-- [ ] Seven-pass self-review with desktop and phone screenshots compared to the concepts.
-- [ ] All gates green; plan completed.
+- [x] (2026-09-24 19:00Z) Seven-pass self-review with desktop (1440x1000) and phone (390x844) screenshots compared to the R2, F7, and C6 concepts. Fixes: F7 regrouped into one status card (status, progress, payment status, next step) like the concept; R2 summary shows the couple and a Draft badge; the seeded queue no longer reads mostly "expiring"; a submit that loses a race to a draft save now returns 409 instead of a silent success; F7 sends drafts back to R2; the capture's confirmation audit row goes through `IAuditLog`; clearer approve-dialog copy.
+- [x] (2026-09-24 19:20Z) All gates green; plan completed.
 
 ## Surprises & Discoveries
 
@@ -73,11 +73,13 @@ To see it: run the API and Vite (see Concrete Steps), sign in as `maria.johnson@
 
 ## Verification
 
-- No code changes yet.
+- `npm run lint`, `npm run typecheck`, `npm run check:api`: pass.
+- `npm run test:api`: 28 passed, 0 failed (12 in `AdmittanceTests`).
+- `E2E_BASE_URL=http://localhost:5182 npx playwright test e2e/admittance.spec.ts e2e/smoke.spec.ts` on a freshly dropped and reseeded `CampRegistration_Admittance`: 8 passed (desktop and phone projects).
 
 ## Outcomes & Retrospective
 
-Not started.
+The slice ships R2, F7, and C6 end to end against the real API: a couple applies with autosave, the card is authorized (not charged), CET approves from the queue, approval claims a seat and captures once, and the family sees Confirmed and Paid. Declines and waitlists void the hold; an expired hold keeps the seat on approval and asks the family for a new card. Gaps left for later: no worker chases a couple who never re-enters a card after approval, questions are configured in code rather than the K-screen forms builder, and the guest header and family page (slice 1 and shell files) don't link to applications yet; families reach F7 from the program page or `/applications`.
 
 ## Context and Orientation
 
@@ -139,12 +141,12 @@ To reset demo data, drop the `CampRegistration_Admittance` database and restart 
 
 ## Validation and Acceptance
 
-- [ ] `npm run lint` (pass)
-- [ ] `npm run typecheck` (pass)
-- [ ] `npm run check:api` (pass)
-- [ ] `npm run test:api` (pass, including every test in `AdmittanceTests`)
-- [ ] `E2E_BASE_URL=http://localhost:5182 npx playwright test e2e/admittance.spec.ts e2e/smoke.spec.ts` on a fresh database (pass)
-- [ ] Walkthrough: Maria applies, sees "Authorized (not charged)"; Diane approves; Maria sees "Confirmed" and "Paid" (pass)
+- [x] `npm run lint` (pass)
+- [x] `npm run typecheck` (pass)
+- [x] `npm run check:api` (pass)
+- [x] `npm run test:api` (pass, including every test in `AdmittanceTests`)
+- [x] `E2E_BASE_URL=http://localhost:5182 npx playwright test e2e/admittance.spec.ts e2e/smoke.spec.ts` on a fresh database (pass)
+- [x] Walkthrough: Maria applies, sees "Authorized (not charged)"; Diane approves; Maria sees "Confirmed" and "Paid" (pass)
 
 ## Idempotence and Recovery
 

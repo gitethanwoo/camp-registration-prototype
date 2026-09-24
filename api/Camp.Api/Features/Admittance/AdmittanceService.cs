@@ -118,6 +118,9 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
             db.ChangeTracker.Clear();
             var winner = await db.Set<AdmittanceApplication>().AsNoTracking().SingleAsync(a => a.Id == id, ct);
             if (winner.AuthorizationRef != hold.ProcessorRef) await gateway.VoidAsync(hold.ProcessorRef, ct);
+            // If what won was a draft save rather than another submit, nothing was submitted.
+            if (winner.Stage == ApplicationStage.Draft)
+                throw new AdmittanceException(409, "Your application changed while we were submitting it. Nothing was authorized; please submit again.");
         }
     }
 
@@ -353,7 +356,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         app.RegistrationId = registration.Id;
         app.UpdatedAt = now;
         audit.Record("payment.captured", Entity, id, $"Captured {Money(app.AmountCents)} on card ending {app.CardLast4}; {app.CoupleName} confirmed ({order.ConfirmationCode}) by {actor}.");
-        db.AuditEvents.Add(new AuditEvent { Actor = actor, Action = "registration.confirmed", EntityType = "Registration", EntityId = registration.Id.ToString(CultureInfo.InvariantCulture), Detail = $"{app.CoupleName} confirmed for {app.Session.Program.Name} · {app.Session.Name} after approval.", CreatedAt = now });
+        audit.Record("registration.confirmed", "Registration", registration.Id, $"{app.CoupleName} confirmed for {app.Session.Program.Name} · {app.Session.Name} after approval.");
         Outbox("RegistrationConfirmed", app, new { order.ConfirmationCode, to = app.Household.Email });
         await SaveOrConflict(ct);
         await tx.CommitAsync(ct);

@@ -117,6 +117,11 @@ async function act(path: string, body: unknown, done: string) {
 }
 
 const couple = computed(() => d.value?.couple ?? 'the couple')
+const spotsAfter = computed(() => {
+  const n = (d.value?.sessionRemaining ?? 1) - 1
+  if (n <= 0) return 'This takes the last spot.'
+  return `After this, ${n} ${n === 1 ? 'spot' : 'spots'} will be left.`
+})
 async function approve() {
   approveOpen.value = false
   await act(
@@ -325,7 +330,7 @@ async function sendMessage() {
             >Their card authorization has lapsed. Approving holds their spot and asks them to re-enter a card. Nothing
             is charged until they do.</template
           >
-          {{ (d?.sessionRemaining ?? 1) - 1 }} of {{ d?.session.name }}'s spots will be left.
+          {{ spotsAfter }}
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>

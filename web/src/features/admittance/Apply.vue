@@ -200,7 +200,9 @@ async function submit() {
       const labels = Object.fromEntries(ctx.value.questions.map((q) => [`answers.${q.key}`, q.label]))
       serverErrors.value = Object.entries(e.errors).map(([k, v]) => labels[k] ?? v[0] ?? k)
     } else if (e instanceof ApiError && e.status === 409) {
-      router.replace(`/applications/${appId.value}`)
+      const fresh = await api.get<ApplyContext>(`/admittance/sessions/${props.sessionId}/apply`).catch(() => null)
+      if (fresh?.application && fresh.application.stage !== 'Draft') router.replace(`/applications/${appId.value}`)
+      else serverErrors.value = [e.message]
     } else {
       serverErrors.value = [e instanceof Error ? e.message : "That didn't go through. Try again."]
     }

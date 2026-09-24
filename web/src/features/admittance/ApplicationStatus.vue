@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Check, CircleAlert, Clock, Info, Loader2, MessageSquare, PartyPopper, TriangleAlert } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -19,12 +19,19 @@ import PaymentBadge from './PaymentBadge.vue'
 import { statusLabels, type FamilyApplication } from './types'
 
 const props = defineProps<{ id: number }>()
+const router = useRouter()
 const app = ref<FamilyApplication | null>(null)
 const loadError = ref<string | null>(null)
 
 async function load() {
   try {
-    app.value = await api.get<FamilyApplication>(`/admittance/applications/${props.id}`)
+    const a = await api.get<FamilyApplication>(`/admittance/applications/${props.id}`)
+    // A draft has no status yet; send the family back to finish it.
+    if (a.stage === 'Draft') {
+      router.replace(`/apply/${a.session.id}`)
+      return
+    }
+    app.value = a
   } catch (e) {
     loadError.value =
       e instanceof ApiError && e.status === 404
