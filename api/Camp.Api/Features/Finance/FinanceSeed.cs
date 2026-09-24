@@ -11,8 +11,8 @@ namespace Camp.Api.Features.Finance;
 /// (some on payment plans whose first installment failed), Maria Johnson's Avery and Mia with a
 /// balance due, the Mitchell family whose phone payment reaches Fiserv without a registration
 /// reference, and scholarship applications. Then one Fiserv settlement batch per day of platform
-/// payments so far, and the Oracle Fusion journal batch for each. Runs after the other slices'
-/// seeds so their payments settle too. Nothing here touches another slice's program or session.
+/// payments so far, and the Oracle Fusion journal batch for each (in <see cref="FinanceSettlementSeed"/>,
+/// which runs last so every slice's payments settle). Nothing here touches another slice's program or session.
 /// </summary>
 public sealed class FinanceSeed : ISeedModule
 {
@@ -38,7 +38,6 @@ public sealed class FinanceSeed : ISeedModule
         if (wsc is null || johnson is null) return;
 
         var now = DateTime.UtcNow;
-        var today = DateOnly.FromDateTime(now);
         var rng = new Random(6006);
 
         var program = new CampProgram
@@ -108,7 +107,7 @@ public sealed class FinanceSeed : ISeedModule
         SeedPlanFailures(db, fillers, now, rng);
         await db.SaveChangesAsync(ct);
         await SeedScholarships(db, fillers, now, ct);
-        await SeedSettlements(db, today, rng, ct);
+        // Settlement batches are built by FinanceSettlementSeed, after every other slice's seed.
     }
 
     static (Household, PaymentOrder) Filler(Random rng, int i, Session session, CapacityPool pool, DateTime created, string kind, DiscountCode? discount)
@@ -290,7 +289,7 @@ public sealed class FinanceSeed : ISeedModule
     /// payment for. Journals: yesterday's waits on reconciliation, the day before is Pending in
     /// Fusion, two older ones Failed, the rest Posted.
     /// </summary>
-    static async Task SeedSettlements(CampDbContext db, DateOnly today, Random rng, CancellationToken ct)
+    internal static async Task SeedSettlements(CampDbContext db, DateOnly today, Random rng, CancellationToken ct)
     {
         var start = today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var ops = await db.PaymentOperations.AsNoTracking()
@@ -413,5 +412,23 @@ public sealed class FinanceSeed : ISeedModule
         foreach (var o in offsets) sb.Append(CultureInfo.InvariantCulture, $"{o:D10} 00000 n \n");
         sb.Append(CultureInfo.InvariantCulture, $"trailer\n<< /Size {objects.Length + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
         return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+}
+
+/// <summary>
+/// Fiserv settlement batches and Fusion journals, built from every seeded payment. Runs after all other
+/// seeds (setup's, at 900, adds last summer's Family Weekend payments), so no seeded payment reads as
+/// "captured, not yet settled" on FN2.
+/// </summary>
+public sealed class FinanceSettlementSeed : ISeedModule
+{
+    public int Order => 1000;
+
+    public async Task RunAsync(CampDbContext db, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        if (await db.Set<SettlementBatch>().AnyAsync(ct)) return;
+        if (!await db.Programs.AnyAsync(p => p.Slug == FinanceSeed.ProgramSlug, ct)) return;
+        await FinanceSeed.SeedSettlements(db, DateOnly.FromDateTime(DateTime.UtcNow), new Random(6007), ct);
     }
 }

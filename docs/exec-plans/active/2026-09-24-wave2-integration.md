@@ -31,6 +31,8 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
   Evidence: `api/Camp.Api/Features/Setup/SetupSeed.cs` `SeedFamilyCamp` returns early when the slug exists; `api/Camp.Api/Features/Finance/FinanceSeed.cs` `ProgramSlug = "family-camp"`.
 - Observation: the finance worktree (`~/dev/camp-wt/finance`) sits on 5eb385e, one commit past `slice/finance` (6a71b5a): a review-fix commit adding `web/src/features/finance/money.ts`, an FN2 resolve lock with a concurrency test, and phone/paging fixes. `slice/finance` doesn't have it, so `wave2` doesn't either. Merging the unlisted commit was refused in this session; it's left for the owner to decide (see Outcomes).
   Evidence: `git log slice/finance..5eb385e` lists one commit.
+- Observation: finance builds the seeded Fiserv settlement batches from every payment that exists when its seed runs (Order 200). Setup's seed (Order 900) adds last summer's Family Weekend payments afterwards, so on a fresh combined stack FN2 would show those 14 seeded payments as "Captured, not yet settled". Settlement seeding moved to `FinanceSettlementSeed` (Order 1000).
+  Evidence: `FinanceSeed.SeedSettlements` reads `PaymentOperations` with `CreatedAt < today`; `ReconciliationEndpoints.Unsettled` counts operations with no settlement line.
 - Observation: a staff-approved transfer recomputed a percent code from the code's current terms and threw away anything else in `Registration.DiscountCents`. Finance's O7 awards live in that same column, so moving a camper with both a percent code and a scholarship dropped the scholarship. A K5 code scoped to one session also followed the camper to a session checkout would refuse it for.
   Evidence: `TransferService.DiscountAfterMove` before this plan; the new StaffCx test fails against it.
 - Observation: admittance saves a draft only for a published program, but submit (which authorizes the card) and group checkout (which charges) didn't check again, so a program sent back to draft by K2 after a family started still took money.
@@ -65,6 +67,7 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 - (2026-09-24) After merging and generating `Wave2`, before fixes: `npm run test:api` 162 passed, 6 failed (all SetupTests, from the Family Camp slug collision).
 - (2026-09-24) Fresh stack: `__EFMigrationsHistory` lists Initial, Wave1, Wave2; `sys.triggers` has `TR_AuditEvents_Immutable`; `DELETE TOP(1) FROM AuditEvents` fails with "Audit rows can't be changed or deleted."
 - (2026-09-24) After the cross-slice fixes: `npm run test:api` 171 passed, 0 failed; `npm run lint` and `npm run typecheck` pass.
+- (2026-09-24) First full e2e on a fresh stack (before the settlement seed change): `npx playwright test` 49 passed.
 - (2026-09-24) The three new API tests (admittance unpublished, group checkout unpublished, transfer scholarship and scoped code) fail with the service changes reverted (3 of 3) and pass with them.
 
 ## Outcomes & Retrospective
