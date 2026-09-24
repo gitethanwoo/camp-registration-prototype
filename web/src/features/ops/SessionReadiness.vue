@@ -411,9 +411,13 @@ function showOnly(s: StatusFilter) {
               </DropdownMenu>
             </template>
             <template #cell-activity="{ row: x }">
-              <span :class="x.activity.state === 'Assigned' ? '' : 'text-muted-foreground'">{{
-                x.activity.label
-              }}</span>
+              <span
+                :class="[
+                  'block max-w-44 whitespace-normal',
+                  x.activity.state === 'Assigned' ? '' : 'text-muted-foreground',
+                ]"
+                >{{ x.activity.label }}</span
+              >
             </template>
           </DataTable>
 

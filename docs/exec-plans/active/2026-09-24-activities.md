@@ -57,6 +57,9 @@ After this plan:
 - Decision: R4 keeps the wizard's draft separate (`useActivityDraft`, one store per session in session storage) and renders as slice components; Register.vue only decides when the steps show and what goes in the checkout payload.
   Rationale: keeps the shared wizard change small (about 60 lines) and lets the family route reuse the same step pieces (`PeriodPicker`, ranking helpers, detail sheet).
   Date/Author: 2026-09-24 / Claude
+- Decision: R4 stacks the three periods, with each period's activities in two columns, instead of the concept's three period columns side by side.
+  Rationale: the wizard's step card sits beside the order summary (about 700px wide at 1440), so three columns left about 200px per period and the names, slots left and "Just filled" badge wrapped and overlapped (seen in the review screenshots).
+  Date/Author: 2026-09-24 / Claude
 - Decision: Shared-file edits (recorded as they land): see Artifacts and Notes.
   Rationale: the task lists which shared files this slice may touch.
   Date/Author: 2026-09-24 / Claude

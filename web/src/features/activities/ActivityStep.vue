@@ -110,7 +110,7 @@ function selectFromSheet() {
         <AlertTitle>Slots left didn't load</AlertTitle>
         <AlertDescription>{{ acts.loadError.value }}</AlertDescription>
       </Alert>
-      <div v-if="!acts.options.value" class="grid gap-4 md:grid-cols-3">
+      <div v-if="!acts.options.value" class="grid gap-4">
         <Skeleton v-for="i in 3" :key="i" class="h-72 rounded-xl" />
       </div>
       <template v-else-if="camper">
@@ -123,7 +123,7 @@ function selectFromSheet() {
         <p v-if="!camper.block" class="text-sm text-muted-foreground">
           No activity schedule covers {{ camper.firstName }}'s grade. The camp office will plan activities with you.
         </p>
-        <div v-else class="grid gap-4 md:grid-cols-3">
+        <div v-else class="grid gap-4">
           <PeriodPicker
             v-for="p in camper.periods"
             :key="`${camper.personId}-${p.period}`"
@@ -140,7 +140,7 @@ function selectFromSheet() {
       </template>
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-muted/30 p-3 text-sm">
         <Info class="size-4 shrink-0 text-muted-foreground" />
-        <span class="min-w-0 flex-1"
+        <span class="min-w-[14rem] flex-1"
           >Activities fill quickly. If a choice fills before you pay, we place your camper in their next choice.</span
         >
         <span class="text-xs text-muted-foreground" aria-live="polite">{{ updated }}</span>

@@ -56,7 +56,7 @@ watch(
         <ActivityDetailBody v-else-if="detail" :activity="detail" :block="block" />
         <Skeleton v-else class="h-80 rounded-xl" />
       </div>
-      <SheetFooter v-if="period && detail" class="flex-row flex-wrap gap-2">
+      <SheetFooter v-if="period && detail" class="sticky bottom-0 flex-row flex-wrap gap-2 border-t bg-background">
         <Button v-if="selected" variant="outline" @click="emit('close')"><Check />Selected for {{ camperName }}</Button>
         <Button v-else :disabled="!canSelect" @click="emit('select')">Select for {{ camperName }}</Button>
         <p v-if="!selected && !canSelect" class="w-full text-sm text-muted-foreground">

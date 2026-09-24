@@ -34,7 +34,7 @@ const canAdd = (o: ActivityOption) => rank(o) > 0 || (!isFull(o) && props.ranked
       <CardTitle>Period {{ period.period }}</CardTitle>
       <CardDescription>{{ period.time }} · rank up to {{ maxRanks }}</CardDescription>
     </CardHeader>
-    <CardContent class="space-y-2">
+    <CardContent class="grid gap-2 sm:grid-cols-2">
       <template v-for="o in period.options" :key="o.activityId">
         <div
           :class="
@@ -63,7 +63,16 @@ const canAdd = (o: ActivityOption) => rank(o) > 0 || (!isFull(o) && props.ranked
               >{{ rank(o) || '' }}</span
             >
             <span class="min-w-0">
-              <span :class="cn('block font-medium', isFull(o) && 'text-muted-foreground')">{{ o.name }}</span>
+              <span :class="cn('flex flex-wrap items-center gap-x-2 font-medium', isFull(o) && 'text-muted-foreground')"
+                >{{ o.name }}
+                <Badge
+                  v-if="isFull(o) && rank(o)"
+                  variant="secondary"
+                  class="border-amber-200 bg-amber-50 font-normal text-amber-800"
+                  >Just filled</Badge
+                >
+                <Badge v-else-if="isFull(o)" variant="outline" class="font-normal text-muted-foreground">Full</Badge>
+              </span>
               <span
                 :class="
                   cn(
@@ -75,10 +84,6 @@ const canAdd = (o: ActivityOption) => rank(o) > 0 || (!isFull(o) && props.ranked
               >
             </span>
           </Button>
-          <Badge v-if="isFull(o) && rank(o)" variant="secondary" class="border-amber-200 bg-amber-50 text-amber-800"
-            >Just filled</Badge
-          >
-          <Badge v-else-if="isFull(o)" variant="outline" class="text-muted-foreground">Full</Badge>
           <Button
             variant="link"
             size="sm"
@@ -91,7 +96,7 @@ const canAdd = (o: ActivityOption) => rank(o) > 0 || (!isFull(o) && props.ranked
         <div
           v-if="o.activityId === noticeAfter"
           role="status"
-          class="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          class="flex gap-2 rounded-lg border border-amber-200 sm:col-span-2 bg-amber-50 p-3 text-sm text-amber-900"
         >
           <TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
           <div class="min-w-0 space-y-1">

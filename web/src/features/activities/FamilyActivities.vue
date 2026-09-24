@@ -84,7 +84,7 @@ const sheetOption = computed(() =>
       <AlertTitle>Can't choose activities</AlertTitle>
       <AlertDescription>{{ error }}</AlertDescription>
     </Alert>
-    <div v-else-if="!data" class="grid gap-4 md:grid-cols-3">
+    <div v-else-if="!data" class="grid gap-4">
       <Skeleton v-for="i in 3" :key="i" class="h-72 rounded-xl" />
     </div>
     <template v-else>
@@ -102,7 +102,7 @@ const sheetOption = computed(() =>
         <AlertDescription>{{ message }}</AlertDescription>
       </Alert>
 
-      <div class="mt-6 grid gap-4 md:grid-cols-3">
+      <div class="mt-6 grid gap-4">
         <PeriodPicker
           v-for="p in data.periods"
           :key="p.period"
