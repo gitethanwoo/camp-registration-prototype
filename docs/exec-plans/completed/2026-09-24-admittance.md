@@ -1,10 +1,10 @@
 # Admittance programs: apply, hold the card, review, and decide
 
 - Plan Type: ExecPlan
-- Status: In Progress
+- Status: Completed
 - Owner: Claude (slice 2 builder)
 - Started: 2026-09-24
-- Completed:
+- Completed: 2026-09-24
 
 > Maintain this file in accordance with `docs/PLANS.md`.
 
