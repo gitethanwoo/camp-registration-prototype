@@ -44,6 +44,9 @@ public class CheckoutService(CampDbContext db, IPaymentGateway gateway, ILogger<
             .Include(s => s.Pools)
             .FirstOrDefaultAsync(s => s.Id == req.SessionId, ct)
             ?? throw Invalid("sessionId", "Session not found.");
+        // K2: only a program that has passed its approval chain takes registrations.
+        if (!session.Program.IsPublished)
+            throw Invalid("sessionId", "This program isn't open for registration.");
 
         if (session.Program.Type != ProgramType.Standard)
             throw Invalid("sessionId", "Admittance and cohort programs are not part of this prototype.");

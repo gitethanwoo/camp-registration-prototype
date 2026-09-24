@@ -122,7 +122,7 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
             return Results.Ok(new { draft.Id, draft.Version });
         });
 
-        setup.MapPut("/waiver-versions/{vid:int}", async (int vid, WaiverDraftInput req, CampDbContext db, CancellationToken ct) =>
+        setup.MapPut("/waiver-versions/{vid:int}", async (int vid, WaiverDraftInput req, CampDbContext db, IAuditLog audit, CancellationToken ct) =>
         {
             var v = await db.Set<WaiverVersion>().FirstOrDefaultAsync(x => x.Id == vid, ct);
             if (v is null) return Results.NotFound();
@@ -132,8 +132,12 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
                     : "Published versions can't be changed. Start a new version instead.");
             var errors = ValidateDraft(req.Body, req.ChangeNote, requireNote: false);
             if (errors.Count > 0) return SetupResults.Invalid(errors);
+            var before = (Words: Words(v.Body), v.ChangeNote);
             v.Body = req.Body.Trim();
             v.ChangeNote = (req.ChangeNote ?? "").Trim();
+            var title = await db.WaiverTemplates.Where(x => x.Id == v.WaiverTemplateId).Select(x => x.Title).FirstAsync(ct);
+            audit.Record(db, "waiver.draft_saved", "WaiverTemplate", v.WaiverTemplateId, $"Saved draft version {v.Version} of {title}.",
+                ("Text", before.Words, Words(v.Body)), ("Change note", before.ChangeNote, v.ChangeNote));
             await db.SaveChangesAsync(ct);
             return Results.Ok();
         });
@@ -237,4 +241,6 @@ public sealed class WaiverSetupEndpoints : IEndpointModule
         WaiverVersionStatus.Archived => "Retired",
         _ => "Draft",
     };
+
+    static string Words(string text) => $"{text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length} words";
 }

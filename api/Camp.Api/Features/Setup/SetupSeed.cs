@@ -61,14 +61,15 @@ public sealed class SetupSeed : ISeedModule
             {
                 if (!sessionsWithSetup.Contains(s.Id))
                 {
-                    // ON Session 3 opens to returning families first (K3's priority date).
+                    // ON Session 3 opened to returning families first (K3's priority date). Both dates are in
+                    // the past because the guest site sells it today; checkout doesn't read these dates yet.
                     var priority = p.Slug == "overnight-camp" && s.Name == "Session 3";
                     db.Set<SessionSetup>().Add(new SessionSetup
                     {
                         SessionId = s.Id,
                         Location = p.Location,
-                        RegistrationOpensAt = priority ? new DateTime(2028, 3, 1, 14, 0, 0, DateTimeKind.Utc) : null,
-                        PriorityOpensAt = priority ? new DateTime(2028, 2, 15, 14, 0, 0, DateTimeKind.Utc) : null,
+                        RegistrationOpensAt = priority ? new DateTime(2026, 9, 1, 14, 0, 0, DateTimeKind.Utc) : null,
+                        PriorityOpensAt = priority ? new DateTime(2026, 8, 15, 14, 0, 0, DateTimeKind.Utc) : null,
                     });
                 }
                 if (!sessionsWithTiers.Contains(s.Id))
@@ -82,7 +83,7 @@ public sealed class SetupSeed : ISeedModule
                     Body = w.Body,
                     ChangeNote = "Imported from WIN.",
                     Status = WaiverVersionStatus.Published,
-                    EffectiveDate = w.EffectiveDate,
+                    EffectiveDate = LiveSince(w.EffectiveDate),
                     CreatedBy = "Imported from WIN",
                     CreatedAt = migrated,
                     ApprovedBy = "WIN (before migration)",
@@ -90,7 +91,18 @@ public sealed class SetupSeed : ISeedModule
                 });
         }
         await db.SaveChangesAsync(ct);
+
+        // The core seed dates live waivers Nov 2027, but families sign them today on the real clock.
+        // A live version can't be effective in the future, so it reads as live since the WIN import.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await db.WaiverTemplates.Where(w => w.EffectiveDate > today)
+            .ExecuteUpdateAsync(s => s.SetProperty(w => w.EffectiveDate, ImportedOn), ct);
     }
+
+    static readonly DateOnly ImportedOn = new(2026, 8, 1);
+
+    /// <summary>A live version's effective date: a future date becomes the WIN import date.</summary>
+    static DateOnly LiveSince(DateOnly effective) => effective > DateOnly.FromDateTime(DateTime.UtcNow) ? ImportedOn : effective;
 
     static async Task SeedFamilyCamp(CampDbContext db, CancellationToken ct)
     {
@@ -167,7 +179,7 @@ public sealed class SetupSeed : ISeedModule
             {
                 SessionId = s.Id,
                 Location = SessionSetupEndpoints.MountBerry,
-                RegistrationOpensAt = s == next ? new DateTime(2028, 1, 15, 14, 0, 0, DateTimeKind.Utc) : new DateTime(2026, 1, 15, 14, 0, 0, DateTimeKind.Utc),
+                RegistrationOpensAt = s == next ? new DateTime(2026, 9, 1, 14, 0, 0, DateTimeKind.Utc) : new DateTime(2026, 1, 15, 14, 0, 0, DateTimeKind.Utc),
             });
 
         db.Set<WaiverVersion>().AddRange(
@@ -272,7 +284,10 @@ public sealed class SetupSeed : ISeedModule
         if (day is null) return;
         var june = day.Sessions.OrderBy(s => s.StartDate).First();
         var created = new DateTime(2026, 8, 20, 16, 0, 0, DateTimeKind.Utc);
-        DiscountRule Rule(string code, DiscountKind kind, int value, string name, int? programId, int? sessionId, DateOnly from, DateOnly to, int? cap, int uses, bool stack, bool active = true) => new()
+        // Uses tie to real orders: K5's "used N of cap" is a count of orders carrying the code, never a made-up number.
+        var ordersByCode = await db.Orders.Where(o => o.DiscountCode != null && (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Pending))
+            .GroupBy(o => o.DiscountCode!).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        DiscountRule Rule(string code, DiscountKind kind, int value, string name, int? programId, int? sessionId, DateOnly from, DateOnly to, int? cap, bool stack, bool active = true) => new()
         {
             DiscountCode = new DiscountCode { Code = code, Kind = kind, Value = value, Status = DiscountStatus.Approved, CreatedBy = "Alex Morgan" },
             Name = name,
@@ -281,16 +296,16 @@ public sealed class SetupSeed : ISeedModule
             ValidFrom = from,
             ValidTo = to,
             MaxUses = cap,
-            Uses = uses,
+            Uses = ordersByCode.GetValueOrDefault(code),
             Stackable = stack,
             Active = active,
             CreatedBy = "Alex Morgan (ADMIN)",
             CreatedAt = created,
         };
         db.Set<DiscountRule>().AddRange(
-            Rule("SIBLING10", DiscountKind.Percent, 10, "Sibling discount", day.Id, june.Id, new(2026, 9, 1), new(2028, 6, 12), 200, 37, stack: false),
-            Rule("EARLY50", DiscountKind.Flat, 5000, "Early registration", day.Id, null, new(2026, 9, 1), new(2028, 3, 1), 500, 112, stack: true),
-            Rule("SPRING25", DiscountKind.Percent, 25, "Spring promotion", day.Id, null, new(2026, 3, 1), new(2026, 5, 31), 100, 64, stack: false, active: false));
+            Rule("SIBLING10", DiscountKind.Percent, 10, "Sibling discount", day.Id, june.Id, new(2026, 9, 1), new(2028, 6, 12), 200, stack: false),
+            Rule("EARLY50", DiscountKind.Flat, 5000, "Early registration", day.Id, null, new(2026, 9, 1), new(2028, 3, 1), 500, stack: true),
+            Rule("SPRING25", DiscountKind.Percent, 25, "Spring promotion", day.Id, null, new(2026, 3, 1), new(2026, 5, 31), 100, stack: false, active: false));
         await db.SaveChangesAsync(ct);
     }
 

@@ -97,11 +97,16 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
                 return SetupResults.Conflict($"{discount.Code} was requested by a host or partner. Review it in Discount approvals.");
             var errors = await Validate(db, req, codeId, ct);
             var rule = await db.Set<DiscountRule>().FirstOrDefaultAsync(r => r.DiscountCodeId == codeId, ct);
-            var used = rule?.Uses ?? (await UsesByCode(db, ct)).GetValueOrDefault(discount.Code);
+            var ordered = (await UsesByCode(db, ct)).GetValueOrDefault(discount.Code);
+            var used = rule?.Uses ?? ordered;
             if (req.MaxUses is { } cap && cap < used) errors["maxUses"] = [$"{discount.Code} has already been used {used} times, so the cap can't be lower than {used}."];
+            // Transfers reprice a moved camper from the code's current terms, so a used code's type and amount are fixed.
+            var timesUsed = Math.Max(used, ordered);
+            if (timesUsed > 0 && (req.Kind != discount.Kind || req.Value != discount.Value))
+                errors["value"] = [$"{discount.Code} has been used {timesUsed} {(timesUsed == 1 ? "time" : "times")}. Create a new code to change the amount."];
             if (errors.Count > 0) return SetupResults.Invalid(errors);
 
-            var before = (Name: rule?.Name ?? discount.Code, Discount: Describe(discount.Kind, discount.Value), Scope: rule is null ? "All programs" : $"{rule.ProgramId}/{rule.SessionId}",
+            var before = (Name: rule?.Name ?? discount.Code, Discount: Describe(discount.Kind, discount.Value), Scope: await ScopeName(db, rule?.ProgramId, rule?.SessionId, ct),
                 Dates: rule is null ? "No limit" : $"{SetupResults.Date(rule.ValidFrom)} – {SetupResults.Date(rule.ValidTo)}", Cap: rule?.MaxUses?.ToString(CultureInfo.InvariantCulture) ?? "No cap",
                 Stack: rule?.Stackable == true ? "Stacks" : "Does not stack");
             if (rule is null)
@@ -121,7 +126,7 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
             rule.Stackable = req.Stackable;
             audit.Record(db, "discount.rule_changed", "DiscountCode", codeId, $"Changed discount rule {discount.Code}. Orders already placed keep their discount.",
                 ("Name", before.Name, rule.Name), ("Discount", before.Discount, Describe(req.Kind, req.Value)),
-                ("Scope", before.Scope, $"{rule.ProgramId}/{rule.SessionId}"),
+                ("Scope", before.Scope, await ScopeName(db, rule.ProgramId, rule.SessionId, ct)),
                 ("Valid dates", before.Dates, $"{SetupResults.Date(rule.ValidFrom)} – {SetupResults.Date(rule.ValidTo)}"),
                 ("Usage cap", before.Cap, rule.MaxUses?.ToString(CultureInfo.InvariantCulture) ?? "No cap"),
                 ("Stacking", before.Stack, rule.Stackable ? "Stacks" : "Does not stack"));
@@ -205,6 +210,16 @@ public sealed partial class DiscountRuleEndpoints : IEndpointModule
         return new Row(x.Code.Id, x.Code.Code, x.Rule?.Name ?? x.Code.Code, x.Code.Kind.ToString(), x.Code.Value, Describe(x.Code.Kind, x.Code.Value),
             t.ProgramId, t.SessionId, scope, t.From, t.To, t.MaxUses, uses, t.Stackable, status, reason, source,
             Editable: x.Request is null, HasRule: x.Rule is not null, Active: x.Rule?.Active ?? true);
+    }
+
+    /// <summary>A scope in the words K5's list uses: "Day Camp · Atlanta · June week", "Day Camp, all sessions" or "All programs".</summary>
+    static async Task<string> ScopeName(CampDbContext db, int? programId, int? sessionId, CancellationToken ct)
+    {
+        if (sessionId is { } sid)
+            return await db.Sessions.Where(s => s.Id == sid).Select(s => s.Program.Name + " · " + s.Name).FirstOrDefaultAsync(ct) ?? "All programs";
+        if (programId is { } pid)
+            return (await db.Programs.Where(p => p.Id == pid).Select(p => p.Name).FirstOrDefaultAsync(ct) ?? "") + ", all sessions";
+        return "All programs";
     }
 
     static string Describe(DiscountKind kind, int value) => kind == DiscountKind.Percent ? $"{value}% off" : $"{SetupResults.Money(value)} off per camper";

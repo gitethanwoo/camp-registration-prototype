@@ -61,7 +61,7 @@ public sealed class SessionSetupEndpoints : IEndpointModule
                     State = programState.ToString(),
                     StateLabel = ProgramSetupEndpoints.StateLabel(programState),
                 },
-                Status = RegistrationWindow(s, extra, programState),
+                Status = RegistrationWindow(s, programState),
                 Pools = pools.Select(p => new
                 {
                     p.Id,
@@ -238,13 +238,14 @@ public sealed class SessionSetupEndpoints : IEndpointModule
         return (location is { Length: > 0 } ? location : s.Program.Location) == RetreatCenter;
     }
 
-    static string RegistrationWindow(Session s, SessionSetup? extra, PublishState programState)
+    /// <summary>
+    /// What families can do today. Checkout doesn't read the open and priority dates yet, so the badge
+    /// doesn't claim a window checkout wouldn't honour: a published session that hasn't ended is open.
+    /// </summary>
+    static string RegistrationWindow(Session s, PublishState programState)
     {
         if (programState != PublishState.Published) return "Not published";
-        var now = DateTime.UtcNow;
-        if (DateOnly.FromDateTime(now) > s.EndDate) return "Ended";
-        if (extra?.PriorityOpensAt is { } p && now >= p && (extra.RegistrationOpensAt is null || now < extra.RegistrationOpensAt)) return "Priority registration";
-        if (extra?.RegistrationOpensAt is { } o && now < o) return "Opens soon";
+        if (DateOnly.FromDateTime(DateTime.UtcNow) > s.EndDate) return "Ended";
         return "Registration open";
     }
 

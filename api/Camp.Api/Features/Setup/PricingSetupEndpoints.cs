@@ -86,6 +86,17 @@ public sealed class PricingSetupEndpoints : IEndpointModule
         if (req.PlanInstallments is < 0 or > MaxInstallments) errors["planInstallments"] = [$"Plans have between 0 and {MaxInstallments} installments."];
         if (req.BalanceDueDate >= s.StartDate) errors["balanceDueDate"] = [$"The balance has to be due before the session starts on {SetupResults.Date(s.StartDate)}."];
         if (req.PlanInstallments > 0 && req.DepositCents == req.PriceCents) errors["planInstallments"] = ["The deposit already covers the price, so there's nothing left to split into installments."];
+        // A changed plan can't schedule a payment in the past for a session that's still ahead.
+        var today = SetupResults.Today;
+        var planChanged = req.PlanInstallments != s.PlanInstallments || req.BalanceDueDate != s.BalanceDueDate;
+        if (planChanged && s.StartDate > today && !errors.ContainsKey("balanceDueDate") && req.PlanInstallments is >= 0 and <= MaxInstallments)
+        {
+            var firstDue = req.BalanceDueDate.AddMonths(-Math.Max(req.PlanInstallments - 1, 0));
+            if (firstDue < today)
+                errors["balanceDueDate"] = [req.PlanInstallments > 1
+                    ? $"With {req.PlanInstallments} installments the first one would be due {SetupResults.Date(firstDue)}, which has passed. Use fewer installments or a later final date."
+                    : $"The balance can't be due on {SetupResults.Date(firstDue)}, which has passed."];
+        }
 
         var tiers = req.Tiers ?? [];
         if (tiers.Count is 0 or > 6) errors["tiers"] = ["The policy needs between 1 and 6 time windows."];

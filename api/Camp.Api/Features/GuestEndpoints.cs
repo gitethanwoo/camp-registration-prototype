@@ -111,7 +111,7 @@ public static class GuestEndpoints
         {
             var s = await db.Sessions.Include(x => x.Program).ThenInclude(p => p.Questions)
                 .Include(x => x.Program).ThenInclude(p => p.Waivers)
-                .Include(x => x.Pools).AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+                .Include(x => x.Pools).AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Program.IsPublished); // K2: approved programs only
             if (s is null) return Results.NotFound();
             var h = await db.Households.Include(x => x.Members).AsNoTracking().SingleAsync(x => x.Id == me.HouseholdId);
             var active = await db.Registrations.Where(r => r.SessionId == id && r.HouseholdId == h.Id && r.Status != RegistrationStatus.Cancelled).Select(r => r.PersonId).ToListAsync();
@@ -161,7 +161,7 @@ public static class GuestEndpoints
         // R9 · price the cart server-side; the UI never does money math on its own.
         family.MapPost("/sessions/{id:int}/quote", async (int id, QuoteRequest req, CampDbContext db, CurrentUser me) =>
         {
-            var s = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+            var s = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Program.IsPublished); // K2: approved programs only
             if (s is null) return Results.NotFound();
             var people = await db.People.Where(p => req.PersonIds.Contains(p.Id) && p.HouseholdId == me.HouseholdId).AsNoTracking().ToListAsync();
             var code = req.DiscountCode?.Trim().ToUpper();

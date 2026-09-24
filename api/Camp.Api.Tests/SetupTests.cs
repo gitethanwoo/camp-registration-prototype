@@ -103,6 +103,35 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(PublishState.Draft, await factory.WithDb(db => db.Set<ProgramSetup>().Where(s => s.ProgramId == id).Select(s => s.State).SingleAsync()));
     }
 
+    [Fact]
+    public async Task A_program_takes_no_registrations_until_it_is_published()
+    {
+        var alex = await Alex();
+        var created = await alex.PostAsJsonAsync($"{Setup}/programs", NewProgram("Secret Draft Camp " + Guid.NewGuid().ToString("N")[..6]));
+        var programId = (await Json(created)).GetProperty("id").GetInt32();
+        var session = await alex.PostAsJsonAsync($"{Setup}/programs/{programId}/sessions",
+            new NewSessionInput("Fall 2028", new(2028, 10, 6), new(2028, 10, 8), 20000, 5000, "Everyone", null, 0, 12, 30));
+        var sessionId = (await Json(session)).GetProperty("id").GetInt32();
+
+        // A family holding the (sequential) session id gets nothing from a Draft program.
+        var (family, kid, household) = await NewFamily();
+        Assert.Equal(HttpStatusCode.NotFound, (await family.GetAsync($"/api/sessions/{sessionId}/register-context")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await family.PostAsJsonAsync($"/api/sessions/{sessionId}/quote", new QuoteRequest([kid], PaymentOption.Full, null))).StatusCode);
+        var refused = await Assert.ThrowsAsync<CheckoutValidationException>(() => Checkout(household, kid, sessionId, null));
+        Assert.Contains("isn't open for registration", refused.Errors["sessionId"].Single());
+        Assert.False(await factory.WithDb(db => db.Orders.AnyAsync(o => o.SessionId == sessionId)));
+
+        // Pending approval is still not published.
+        Assert.Equal(HttpStatusCode.OK, (await alex.PostAsync($"{Setup}/programs/{programId}/submit", null)).StatusCode);
+        await Assert.ThrowsAsync<CheckoutValidationException>(() => Checkout(household, kid, sessionId, null));
+
+        // Once the approval chain publishes it (dev sign-in makes every admin one person, so set the flag the last approval sets).
+        await factory.WithDb(db => db.Programs.Where(p => p.Id == programId).ExecuteUpdateAsync(s => s.SetProperty(p => p.IsPublished, true)));
+        Assert.Equal(HttpStatusCode.OK, (await family.GetAsync($"/api/sessions/{sessionId}/register-context")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await family.PostAsJsonAsync($"/api/sessions/{sessionId}/quote", new QuoteRequest([kid], PaymentOption.Full, null))).StatusCode);
+        await Checkout(household, kid, sessionId, null);
+    }
+
     // ── K3 · sessions and pools ──────────────────────────────────────────────
 
     [Fact]
@@ -157,6 +186,11 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var rising = await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 10000, backwards));
         Assert.Equal(HttpStatusCode.BadRequest, rising.StatusCode);
         Assert.Contains("can't refund more", await rising.Content.ReadAsStringAsync());
+
+        // A plan can't put an installment in the past.
+        var pastPlan = await alex.PutAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing", Pricing(40000, 10000, tiers) with { PlanInstallments = 3, BalanceDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1) });
+        Assert.Equal(HttpStatusCode.BadRequest, pastPlan.StatusCode);
+        Assert.Contains("which has passed", await pastPlan.Content.ReadAsStringAsync());
 
         var preview = await Json(await alex.PostAsJsonAsync($"{Setup}/sessions/{sessionId}/pricing/preview", Pricing(42000, 12000, tiers)));
         Assert.Equal(42000, preview.GetProperty("scheduleTotalCents").GetInt32());
@@ -218,6 +252,38 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var lower = await alex.PutAsJsonAsync($"{Setup}/discount-rules/{(await Json(created)).GetProperty("id").GetInt32()}",
             new DiscountRuleInput(code, "Test cap", DiscountKind.Flat, 2000, dayProgram, target, new(2026, 1, 1), new(2030, 1, 1), 0, false));
         Assert.Equal(HttpStatusCode.BadRequest, lower.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_used_codes_type_and_amount_are_fixed_but_its_other_terms_stay_editable()
+    {
+        var alex = await Alex();
+        var (dayProgram, target, _) = await TwoDayCampSessions();
+        var code = "FIX" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        DiscountRuleInput Input(DiscountKind kind, int value, string name = "Fixed test", int? cap = 10, bool wholeProgram = false) =>
+            new(code, name, kind, value, dayProgram, wholeProgram ? null : target, new(2026, 1, 1), new(2030, 1, 1), cap, false);
+        var created = await alex.PostAsJsonAsync($"{Setup}/discount-rules", Input(DiscountKind.Percent, 10));
+        var id = (await Json(created)).GetProperty("id").GetInt32();
+
+        // Unused, the amount can still change.
+        Assert.Equal(HttpStatusCode.OK, (await alex.PutAsJsonAsync($"{Setup}/discount-rules/{id}", Input(DiscountKind.Percent, 15))).StatusCode);
+
+        var (_, kid, household) = await NewFamily();
+        await Checkout(household, kid, target, code);
+
+        foreach (var (kind, value) in new[] { (DiscountKind.Percent, 50), (DiscountKind.Flat, 1500) })
+        {
+            var res = await alex.PutAsJsonAsync($"{Setup}/discount-rules/{id}", Input(kind, value));
+            Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+            Assert.Contains($"{code} has been used 1 time. Create a new code to change the amount.", await res.Content.ReadAsStringAsync());
+        }
+        Assert.Equal((DiscountKind.Percent, 15), await factory.WithDb(db => db.DiscountCodes.Where(d => d.Id == id).Select(d => ValueTuple.Create(d.Kind, d.Value)).SingleAsync()));
+
+        // Name, cap, scope and the rest stay editable, and the audit row names the scope in words.
+        Assert.Equal(HttpStatusCode.OK, (await alex.PutAsJsonAsync($"{Setup}/discount-rules/{id}", Input(DiscountKind.Percent, 15, "Renamed", 20, wholeProgram: true))).StatusCode);
+        var scope = await factory.WithDb(db => db.Set<AuditChange>().SingleAsync(c => c.AuditEvent.Action == "discount.rule_changed" && c.AuditEvent.EntityId == $"{id}" && c.Field == "Scope"));
+        Assert.Matches(@"^Day Camp.* · Setup test week", scope.Before);
+        Assert.Matches(@"^Day Camp.*, all sessions$", scope.After);
     }
 
     [Fact]
@@ -393,7 +459,7 @@ public class SetupTests(ApiFactory factory) : IClassFixture<ApiFactory>
         return (client, kid, household);
     }
 
-    async Task Checkout(int householdId, int kidId, int sessionId, string code)
+    async Task Checkout(int householdId, int kidId, int sessionId, string? code)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CampDbContext>();

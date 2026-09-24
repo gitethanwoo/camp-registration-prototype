@@ -103,8 +103,6 @@ const err = (k: string) => errors.value[k]?.[0]
 
 const statusTone: Record<string, string> = {
   'Registration open': 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  'Priority registration': 'border-sky-200 bg-sky-50 text-sky-800',
-  'Opens soon': 'border-amber-200 bg-amber-50 text-amber-800',
 }
 
 const columns: ColumnDef<SetupPool>[] = [
@@ -190,7 +188,11 @@ async function remove() {
       <TriangleAlert />
       <AlertTitle class="line-clamp-none">{{ name }} is full</AlertTitle>
       <AlertDescription class="text-amber-900"
-        >Families are on its waitlist. An admin offers each spot from the waitlist.</AlertDescription
+        >Families are on its waitlist. Raising the capacity doesn't offer anyone a spot; an admin offers each spot from
+        the waitlist.
+        <RouterLink to="/admin/waitlist" class="underline underline-offset-4"
+          >Open the waitlist</RouterLink
+        ></AlertDescription
       >
     </Alert>
     <Alert v-if="s.program.state !== 'Published'">
@@ -317,7 +319,9 @@ async function remove() {
                 :aria-invalid="!!err('priorityOpensAt') || undefined"
               />
               <p v-if="err('priorityOpensAt')" class="text-sm text-destructive">{{ err('priorityOpensAt') }}</p>
-              <p v-else class="text-xs text-muted-foreground">Returning families can register from this time.</p>
+              <p v-else class="text-xs text-muted-foreground">
+                Shown to staff only for now. Checkout doesn't hold families to either date yet.
+              </p>
             </div>
             <div class="space-y-2">
               <Label for="s-waitlist">Waitlist mode</Label>

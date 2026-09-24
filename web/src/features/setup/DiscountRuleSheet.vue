@@ -35,6 +35,8 @@ const errors = ref<Record<string, string[]>>({})
 const message = ref<string | null>(null)
 const busy = ref(false)
 const readOnly = computed(() => !!props.rule && !props.rule.editable)
+// Orders (and transfers) price from a code's type and amount, so they're fixed once it's been used.
+const amountLocked = computed(() => readOnly.value || (!!props.rule && props.rule.uses > 0))
 // Preview on a real registered camper, plus the combination guard, from the server.
 const preview = ref<DiscountPreview | null>(null)
 const camper = ref<string>('')
@@ -195,7 +197,7 @@ function amountText(r: DiscountRuleRow | null) {
           </div>
           <div class="space-y-2">
             <Label for="r-kind">Discount type</Label>
-            <Select v-model="form.kind" :disabled="readOnly">
+            <Select v-model="form.kind" :disabled="amountLocked">
               <SelectTrigger id="r-kind" class="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Percent">Percentage</SelectItem>
@@ -209,10 +211,14 @@ function amountText(r: DiscountRuleRow | null) {
               id="r-amount"
               v-model="form.amount"
               inputmode="decimal"
-              :disabled="readOnly"
+              :disabled="amountLocked"
               :aria-invalid="!!err('value') || undefined"
             />
           </div>
+          <p v-if="amountLocked && !readOnly" class="text-xs text-muted-foreground sm:col-span-2">
+            {{ rule!.code }} has been used {{ rule!.uses }} {{ rule!.uses === 1 ? 'time' : 'times' }}, so its type and
+            amount are fixed. Create a new code to change the amount.
+          </p>
           <div class="space-y-2">
             <Label for="r-program">Applies to</Label>
             <Select v-model="form.programId" :disabled="readOnly">
@@ -273,6 +279,10 @@ function amountText(r: DiscountRuleRow | null) {
                 <SelectItem value="yes">Stacks with other codes</SelectItem>
               </SelectContent>
             </Select>
+            <p class="text-xs text-muted-foreground">
+              Families enter one code per order today. Stacking sets which rules may combine later, and the guard keeps
+              them under 100%.
+            </p>
           </div>
         </form>
 
