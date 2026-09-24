@@ -24,8 +24,8 @@ To see it: run the API and Vite (see Concrete Steps), sign in as `maria.johnson@
 - [x] (2026-09-24 16:10Z) Gateway: authorize, capture, and void on `IPaymentGateway` and the fake.
 - [x] (2026-09-24 16:40Z) API: entity, EF configuration, migration `Admittance`, service, guest and staff endpoints, seed module.
 - [x] (2026-09-24 17:00Z) API integration tests in `api/Camp.Api.Tests/AdmittanceTests.cs` (12 tests; full suite 28/28).
-- [ ] Web: R2 application wizard, F7 status page, C6 review queue, and the Apply entry point on the program page.
-- [ ] Playwright spec `e2e/admittance.spec.ts`.
+- [x] (2026-09-24 18:10Z) Web: R2 application wizard, F7 status page, C6 review queue, and the Apply entry point on the program page. Also a small "My applications" list at `/applications`.
+- [x] (2026-09-24 18:20Z) Playwright spec `e2e/admittance.spec.ts` (demo path plus a finance read-only check); passes with `e2e/smoke.spec.ts` on a fresh database.
 - [ ] Seven-pass self-review with desktop and phone screenshots compared to the concepts.
 - [ ] All gates green; plan completed.
 
@@ -63,6 +63,12 @@ To see it: run the API and Vite (see Concrete Steps), sign in as `maria.johnson@
   Date/Author: 2026-09-24 / Claude
 - Decision: Reads are open to all console staff (`Policies.Staff`); decisions need `Policies.Cet`.
   Rationale: finance may need to see what's authorized, but admitting a couple is a CET decision.
+  Date/Author: 2026-09-24 / Claude
+- Decision: Add a family "My applications" page at `/applications` (slice route) and link F7 to it, instead of adding links to the family page or the guest header.
+  Rationale: `Family.vue` and `GuestLayout.vue` belong to slice 1 and the shell. A family can still return to F7 from the program page (Apply resumes a draft or redirects to the status page) or from the list. Adding a header link is left for the merge.
+  Date/Author: 2026-09-24 / Claude
+- Decision: Seeded submissions are 6 hours to 4 days old, and under-review ones 2 to 4 days old, so the queue shows a realistic mix of "Authorized (not charged)" and a few "Authorization expiring", plus the one lapsed hold.
+  Rationale: the first seed spread holds over 1 to 6 days and most rows read "expiring", which buried the one row staff should notice.
   Date/Author: 2026-09-24 / Claude
 
 ## Verification

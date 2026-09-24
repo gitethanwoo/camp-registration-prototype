@@ -92,14 +92,15 @@ public sealed class AdmittanceSeed : ISeedModule
             db.Orders.Add(order);
         }
 
-        // Submitted, waiting for someone to pick them up. Holds are 1–6 days old, so some expire soon.
+        // Submitted, waiting for someone to pick them up. Holds are 6 hours to 4 days old, so the
+        // oldest shows as expiring (3 days or less left on a 7-day hold).
         for (var i = 0; i < 11; i++)
-            NewCouple(db, session, rng, used, ref n, now.AddDays(-1 - (i % 6)).AddHours(-rng.Next(0, 20)));
+            NewCouple(db, session, rng, used, ref n, now.AddHours(-6 - (i * 9) - rng.Next(0, 3)));
 
         // Under review.
         for (var i = 0; i < 7; i++)
         {
-            var submitted = now.AddDays(-2 - (i % 4)).AddHours(-rng.Next(0, 20));
+            var submitted = now.AddDays(-2 - (i % 3)).AddHours(-rng.Next(0, 12));
             var app = NewCouple(db, session, rng, used, ref n, submitted);
             app.Stage = ApplicationStage.UnderReview;
             app.ReviewStartedAt = submitted.AddHours(20);
