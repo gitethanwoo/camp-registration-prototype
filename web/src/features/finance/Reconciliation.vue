@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AlertTriangle, CircleCheck, Search } from '@lucide/vue'
 import type { ColumnDef } from '@tanstack/vue-table'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -68,15 +68,24 @@ const lines = computed(() => {
 const feeCount = computed(() => batch.value?.lines.filter((l) => l.kind === 'Fee').length ?? 0)
 
 const columns: ColumnDef<SettlementLine>[] = [
-  { id: 'date', header: 'Date', meta: { cellClass: 'whitespace-nowrap' } },
+  { id: 'date', header: 'Date', meta: { class: 'hidden sm:table-cell', cellClass: 'whitespace-nowrap' } },
   {
     accessorKey: 'processorRef',
     header: 'Processor reference',
     meta: { class: 'hidden md:table-cell', cellClass: 'font-mono text-xs' },
   },
-  { id: 'registration', header: 'Registration' },
+  { id: 'registration', header: 'Registration', meta: { cellClass: 'whitespace-normal' } },
   { id: 'payer', header: 'Cardholder', meta: { class: 'hidden lg:table-cell' } },
-  { id: 'amount', header: 'Gross amount', meta: { class: 'text-right', cellClass: 'text-right tabular-nums' } },
+  {
+    id: 'amount',
+    // "Amount" on phone so amount and status both fit at 390px.
+    header: () =>
+      h('span', [
+        h('span', { class: 'hidden sm:inline' }, 'Gross amount'),
+        h('span', { class: 'sm:hidden' }, 'Amount'),
+      ]),
+    meta: { class: 'text-right', cellClass: 'text-right tabular-nums' },
+  },
   { id: 'status', header: 'Status' },
 ]
 
@@ -309,6 +318,9 @@ async function resolve() {
         <span v-else-if="r.resolution === 'Adjustment'" class="text-muted-foreground">Unapplied receipts</span>
         <span v-else class="text-muted-foreground">—</span>
         <div v-if="r.program" class="text-xs text-muted-foreground">{{ r.program }} · {{ r.session }}</div>
+        <div class="text-xs text-muted-foreground sm:hidden">
+          {{ dateTime(r.transactedAt) }}<template v-if="r.cardLast4"> · card {{ r.cardLast4 }}</template>
+        </div>
       </template>
       <template #cell-payer="{ row: r }">
         <div>{{ r.cardholderName ?? '—' }}</div>
@@ -440,7 +452,7 @@ async function resolve() {
             <p v-if="error" class="text-destructive" role="alert">{{ error }}</p>
           </template>
         </div>
-        <SheetFooter v-if="selected.status === 'Unmatched'" class="gap-2">
+        <SheetFooter v-if="selected.status === 'Unmatched'" class="sticky bottom-0 border-t bg-background gap-2">
           <Button :disabled="busy" @click="resolve">{{
             busy ? 'Resolving…' : matching ? 'Resolve and match' : 'Resolve as adjustment'
           }}</Button>

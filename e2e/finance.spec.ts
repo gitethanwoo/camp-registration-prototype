@@ -151,6 +151,9 @@ test('Settled revenue is certified, ties to Fiserv batches, and exports as CSV (
   await expect(page.getByTestId('certified')).toHaveText('Certified metric')
   await expect(page.getByTestId('tie-out')).toContainText(/Ties to \d+ Fiserv settlement batches/)
   await expect(page.getByRole('row', { name: /Family Camp/ }).first()).toBeVisible()
+  // Odd-cent amounts always show two decimals ($25,927.50, never $25,927.5).
+  await expect(page.getByRole('main')).toContainText(/\$[\d,]+\.\d\d/)
+  await expect(page.getByRole('main')).not.toContainText(/\$[\d,]+\.\d(?!\d)/)
 
   const download = page.waitForEvent('download')
   await page.getByRole('link', { name: 'Export report' }).click()

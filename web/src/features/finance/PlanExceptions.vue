@@ -326,7 +326,7 @@ function installmentLabel(i: { sequence: number; status: string }) {
           </template>
           <p v-if="actionError" class="text-destructive" role="alert">{{ actionError }}</p>
         </div>
-        <SheetFooter class="flex-row gap-2">
+        <SheetFooter class="sticky bottom-0 border-t bg-background flex-row gap-2">
           <Button variant="outline" class="flex-1" :disabled="!!busy" @click="contact">{{
             busy === 'contact' ? 'Sending…' : 'Contact family'
           }}</Button>

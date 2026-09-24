@@ -181,6 +181,9 @@ public sealed class ReconciliationEndpoints : IEndpointModule
         {
             if (line.Kind != SettlementLineKind.Payment) return Fin.Invalid("resolution", "Only a payment can be matched to a registration.");
             var code = req.Code?.Trim() ?? "";
+            // Lock the order row for this transaction before reading what it owes, so two different
+            // unmatched lines matched to the same order at once can't both pass the overpayment check.
+            await db.Database.ExecuteSqlAsync($"SELECT Id FROM PaymentOrders WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE ConfirmationCode = {code}", ct);
             order = await db.Orders.Include(o => o.Registrations).Include(o => o.Installments).Include(o => o.Household)
                 .FirstOrDefaultAsync(o => o.ConfirmationCode == code && o.Status == OrderStatus.Paid, ct);
             if (order is null) return Fin.Invalid("code", "Choose a registration to match this payment to.");

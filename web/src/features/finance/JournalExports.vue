@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { CircleCheck, Clock, FileText, RotateCw, TriangleAlert } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, CircleCheck, Clock, FileText, RotateCw, TriangleAlert } from '@lucide/vue'
 import type { ColumnDef } from '@tanstack/vue-table'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -37,6 +37,19 @@ async function load() {
 onMounted(load)
 
 const rows = computed(() => (data.value?.rows ?? []).filter((r) => filter.value === 'all' || r.status === filter.value))
+
+// 20 batches a page: a year of daily batches is otherwise one very long table.
+const PAGE_SIZE = 20
+const page = ref(0)
+watch(filter, () => (page.value = 0))
+const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / PAGE_SIZE)))
+const pageRows = computed(() => rows.value.slice(page.value * PAGE_SIZE, (page.value + 1) * PAGE_SIZE))
+const pageLabel = computed(() => {
+  const n = rows.value.length
+  if (!n) return ''
+  const from = page.value * PAGE_SIZE + 1
+  return `${from}–${Math.min(n, from + PAGE_SIZE - 1)} of ${n} batches`
+})
 const pct = (n: number) => (data.value?.counts.total ? `${Math.round((n * 100) / data.value.counts.total)}%` : '')
 const waiting = computed(() => data.value?.waiting.filter((w) => w.unmatched > 0) ?? [])
 
@@ -160,7 +173,7 @@ const dot: Record<JournalStatus, string> = {
 
     <DataTable
       :columns="columns"
-      :data="data ? rows : null"
+      :data="data ? pageRows : null"
       :loading="loading"
       :get-row-id="(r) => String(r.id)"
       :on-row-click="open"
@@ -171,6 +184,16 @@ const dot: Record<JournalStatus, string> = {
       <template #cell-credit="{ row: r }">{{ money(r.creditCents) }}</template>
       <template #cell-status="{ row: r }"><StatusBadge :status="r.status" /></template>
     </DataTable>
+
+    <nav v-if="rows.length > PAGE_SIZE" aria-label="Journal batch pages" class="flex items-center justify-end gap-2">
+      <span class="mr-2 text-sm text-muted-foreground tabular-nums" aria-live="polite">{{ pageLabel }}</span>
+      <Button variant="outline" size="sm" :disabled="page === 0" @click="page--">
+        <ChevronLeft aria-hidden="true" />Previous
+      </Button>
+      <Button variant="outline" size="sm" :disabled="page >= pageCount - 1" @click="page++">
+        Next<ChevronRight aria-hidden="true" />
+      </Button>
+    </nav>
 
     <Sheet
       :open="!!selected"
@@ -274,7 +297,7 @@ const dot: Record<JournalStatus, string> = {
           </template>
           <p v-if="actionError" class="text-destructive" role="alert">{{ actionError }}</p>
         </div>
-        <SheetFooter v-if="detail?.status === 'Failed'">
+        <SheetFooter v-if="detail?.status === 'Failed'" class="sticky bottom-0 border-t bg-background">
           <Button :disabled="busy" @click="retry"><RotateCw />{{ busy ? 'Resending…' : 'Retry export' }}</Button>
         </SheetFooter>
       </SheetContent>

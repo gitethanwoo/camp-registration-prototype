@@ -284,7 +284,10 @@ const kb = (n: number) =>
           </template>
           <p v-if="actionError" class="text-destructive" role="alert">{{ actionError }}</p>
         </div>
-        <SheetFooter v-if="detail?.status === 'Submitted'" class="flex-row justify-end gap-2">
+        <SheetFooter
+          v-if="detail?.status === 'Submitted'"
+          class="sticky bottom-0 border-t bg-background flex-row justify-end gap-2"
+        >
           <Button variant="outline" :disabled="busy || !note.trim()" @click="decide('deny')">Deny</Button>
           <Button :disabled="busy || !awardCents || !!capProblem" @click="decide('approve')"
             >Approve {{ awardCents ? money(awardCents) : '' }}</Button

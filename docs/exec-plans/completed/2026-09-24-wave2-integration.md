@@ -16,6 +16,7 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 
 ## Progress
 
+- [x] (2026-09-24) Orchestrator: brought in finance review-fix commit 5eb385e (FN2 Resolve lock and its concurrency test, phone and paging fixes). Finance now uses the shared `money()`; its local `money.ts` is gone. test:api 172/172; e2e 49/49 on the rebuilt stack.
 - [x] (2026-09-24 07:15Z) Read AGENTS.md, the master plan's Wave 2 section, the wave 1 integration plan and the four completed slice plans.
 - [x] (2026-09-24 07:22Z) Branch `wave2` from `main` (0d8c80c); merged `slice/setup`, `slice/finance`, `slice/ops`, `slice/host` with `--no-ff`. The only conflict was `CampDbContextModelSnapshot.cs` (took main's).
 - [x] (2026-09-24 07:26Z) Deleted the four slice migrations, restored main's snapshot, generated `Wave2`, and carried setup's `TR_AuditEvents_Immutable` trigger SQL into its Up and Down. No other slice migration had `migrationBuilder.Sql`. A fresh stack migrates (Initial, Wave1, Wave2), seeds, and the trigger refuses `DELETE FROM AuditEvents`.
