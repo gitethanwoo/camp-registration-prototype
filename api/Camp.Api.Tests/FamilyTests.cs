@@ -104,6 +104,21 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal("Vegetarian", person.Dietary);
     }
 
+    [Fact]
+    public async Task An_adult_cant_take_the_primary_owners_email_and_the_primary_email_is_not_edited_here()
+    {
+        var (family, email) = await NewFamily("Emails");
+        using var clash = await family.PostAsJsonAsync("/api/family/members", new MemberRequest("Other", "Emails", null, null, true, email.ToUpperInvariant(), null, null, null));
+        Assert.Equal(HttpStatusCode.BadRequest, clash.StatusCode);
+
+        var ownerId = await factory.WithDb(db => db.People.Where(p => p.Email == email).Select(p => p.Id).SingleAsync());
+        using var change = await family.PutAsJsonAsync($"/api/family/members/{ownerId}", new MemberRequest("Parent", "Emails", null, null, true, "new@example.com", null, null, null));
+        Assert.Equal(HttpStatusCode.BadRequest, change.StatusCode);
+        using var keep = await family.PutAsJsonAsync($"/api/family/members/{ownerId}", new MemberRequest("Parent", "Emails", null, null, true, email, "Vegetarian", null, null));
+        keep.EnsureSuccessStatusCode();
+        Assert.True((await family.GetFromJsonAsync<JsonElement>("/api/family/access")).GetProperty("canManage").GetBoolean());
+    }
+
     // ── F3 household access ────────────────────────────────────────────────
 
     [Fact]

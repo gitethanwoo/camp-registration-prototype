@@ -86,90 +86,39 @@ function role(m: Overview['members'][number]) {
     </div>
 
     <div v-else class="mt-8 grid items-start gap-6 lg:grid-cols-3">
-      <div class="space-y-6 lg:col-span-2">
-        <section aria-label="Family members">
-          <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            <li v-for="(m, i) in data.members" :key="m.id">
-              <RouterLink
-                :to="`/family/members/${m.id}`"
-                class="flex h-full flex-col items-center rounded-xl border bg-card p-4 text-center transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <Avatar class="size-14">
-                  <AvatarFallback :class="['text-lg font-semibold', tones[i % tones.length]]">{{
-                    initials(`${m.firstName} ${m.lastName}`)
-                  }}</AvatarFallback>
-                </Avatar>
-                <span class="mt-3 font-medium">{{ m.firstName }} {{ m.lastName }}</span>
-                <span class="text-sm text-muted-foreground">{{ role(m) }}</span>
-                <span v-if="m.gradeLabel" class="text-sm text-muted-foreground">{{ m.gradeLabel }}</span>
-              </RouterLink>
-            </li>
-            <li>
-              <RouterLink
-                to="/family/members/new"
-                class="flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <span class="flex size-10 items-center justify-center rounded-full bg-muted"
-                  ><Plus class="size-5"
-                /></span>
-                Add a child
-              </RouterLink>
-            </li>
-          </ul>
-        </section>
+      <section aria-label="Family members" class="lg:col-span-2">
+        <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          <li v-for="(m, i) in data.members" :key="m.id">
+            <RouterLink
+              :to="`/family/members/${m.id}`"
+              class="flex h-full flex-col items-center rounded-xl border bg-card p-4 text-center transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <Avatar class="size-14">
+                <AvatarFallback :class="['text-lg font-semibold', tones[i % tones.length]]">{{
+                  initials(`${m.firstName} ${m.lastName}`)
+                }}</AvatarFallback>
+              </Avatar>
+              <span class="mt-3 font-medium">{{ m.firstName }} {{ m.lastName }}</span>
+              <span class="text-sm text-muted-foreground">{{ role(m) }}</span>
+              <span v-if="m.gradeLabel" class="text-sm text-muted-foreground">{{ m.gradeLabel }}</span>
+            </RouterLink>
+          </li>
+          <li>
+            <RouterLink
+              to="/family/members/new"
+              class="flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <span class="flex size-10 items-center justify-center rounded-full bg-muted"
+                ><Plus class="size-5"
+              /></span>
+              Add a child
+            </RouterLink>
+          </li>
+        </ul>
+      </section>
 
-        <Card id="checklist" class="scroll-mt-24">
-          <CardHeader>
-            <CardTitle>Checklist</CardTitle>
-            <CardDescription>
-              <template v-if="!data.checklist.length">Register for a program and your to-dos show up here.</template>
-              <template v-else-if="todo.length"
-                >{{ todo.length }} {{ todo.length === 1 ? 'thing' : 'things' }} to do before camp, across all your
-                kids.</template
-              >
-              <template v-else>Everything is done for every registration.</template>
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div v-if="!data.checklist.length" class="flex flex-wrap items-center gap-3">
-              <Button v-if="!children.length" as-child
-                ><RouterLink to="/family/members/new"><Plus />Add your first child</RouterLink></Button
-              >
-              <Button :variant="children.length ? 'default' : 'outline'" as-child
-                ><RouterLink to="/programs">Find a program</RouterLink></Button
-              >
-            </div>
-            <ul v-else class="divide-y">
-              <li v-for="c in checklist" :key="c.key" class="flex flex-wrap items-center gap-3 py-3">
-                <CircleCheck v-if="c.done" class="size-5 shrink-0 text-emerald-600" />
-                <TriangleAlert v-else class="size-5 shrink-0 text-amber-600" />
-                <div class="min-w-0 flex-1">
-                  <p :class="['text-sm', c.done ? 'text-muted-foreground' : 'font-medium']">
-                    {{ c.participant }} · {{ c.title }}
-                  </p>
-                  <p class="text-xs text-muted-foreground">{{ c.detail }} · {{ c.context }}</p>
-                </div>
-                <Button
-                  v-if="c.done && c.kind !== 'balance'"
-                  size="sm"
-                  variant="ghost"
-                  disabled
-                  class="text-emerald-700"
-                  >Complete</Button
-                >
-                <Button v-else-if="isExternal(c.href)" size="sm" :variant="c.done ? 'ghost' : 'default'" as-child>
-                  <a :href="c.href" target="_blank" rel="noopener">{{ c.action }}<ExternalLink class="size-3.5" /></a>
-                </Button>
-                <Button v-else size="sm" :variant="c.done ? 'ghost' : 'default'" as-child>
-                  <RouterLink :to="c.href">{{ c.action }}</RouterLink>
-                </Button>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
-
-      <aside class="space-y-6">
+      <!-- Phones: members, then camps and payments, then the checklist (F1 mobile concept). -->
+      <aside class="space-y-6 lg:col-start-3 lg:row-span-2 lg:row-start-1">
         <Card v-for="r in data.registrations" :key="r.confirmationCode">
           <CardHeader>
             <CardTitle class="flex items-center gap-2"><CalendarDays class="size-5" />{{ r.program }}</CardTitle>
@@ -249,6 +198,60 @@ function role(m: Overview['members'][number]) {
           </CardContent>
         </Card>
       </aside>
+
+      <Card id="checklist" class="scroll-mt-24 lg:col-span-2 lg:col-start-1 lg:row-start-2">
+        <CardHeader>
+          <CardTitle>Checklist</CardTitle>
+          <CardDescription>
+            <template v-if="!data.checklist.length">Register for a program and your to-dos show up here.</template>
+            <template v-else-if="todo.length"
+              >{{ todo.length }} {{ todo.length === 1 ? 'thing' : 'things' }} to do before camp, across all your
+              kids.</template
+            >
+            <template v-else>Everything is done for every registration.</template>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div v-if="!data.checklist.length" class="flex flex-wrap items-center gap-3">
+            <Button v-if="!children.length" as-child
+              ><RouterLink to="/family/members/new"><Plus />Add your first child</RouterLink></Button
+            >
+            <Button :variant="children.length ? 'default' : 'outline'" as-child
+              ><RouterLink to="/programs">Find a program</RouterLink></Button
+            >
+          </div>
+          <ul v-else class="divide-y">
+            <li v-for="c in checklist" :key="c.key" class="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
+              <CircleCheck v-if="c.done" class="size-5 shrink-0 text-emerald-600" />
+              <TriangleAlert v-else class="size-5 shrink-0 text-amber-600" />
+              <div class="min-w-0 flex-1 basis-[calc(100%-2rem)] sm:basis-0">
+                <p :class="['text-sm', c.done ? 'text-muted-foreground' : 'font-medium']">
+                  {{ c.participant }} · {{ c.title }}
+                </p>
+                <p class="text-xs text-muted-foreground">{{ c.detail }} · {{ c.context }}</p>
+              </div>
+              <Button
+                v-if="!c.done && isExternal(c.href)"
+                size="sm"
+                :variant="c.done ? 'ghost' : 'default'"
+                class="ml-8 sm:ml-0"
+                as-child
+              >
+                <a :href="c.href" target="_blank" rel="noopener">{{ c.action }}<ExternalLink class="size-3.5" /></a>
+              </Button>
+              <Button
+                v-else-if="!c.done || c.kind === 'balance'"
+                size="sm"
+                :variant="c.done ? 'ghost' : 'default'"
+                class="ml-8 sm:ml-0"
+                as-child
+              >
+                <RouterLink :to="c.href">{{ c.action }}</RouterLink>
+              </Button>
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
     </div>
   </div>
 </template>

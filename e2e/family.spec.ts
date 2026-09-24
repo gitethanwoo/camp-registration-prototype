@@ -116,7 +116,7 @@ test('Maria registers Avery and Mia on the plan, a declined card changes nothing
   await page.getByRole('link', { name: /View details for Day Camp/ }).click()
   await expect(page.getByRole('heading', { name: 'Day Camp · Atlanta registration' })).toBeVisible()
   await expect(page.getByText('Avery and Mia Johnson')).toBeVisible()
-  await expect(page.locator('#checklist')).toContainText('Avery · Photo and Media Release')
+  await expect(page.locator('#checklist')).toContainText('Avery · Waivers (3 signed)')
 
   // F6: pay the balance. The declined card leaves it at $450.
   await page.getByRole('link', { name: 'Payments and balance' }).click()

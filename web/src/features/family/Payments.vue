@@ -85,7 +85,7 @@ async function pay() {
   } catch (e) {
     if (e instanceof ApiError && e.status === 402) {
       key = crypto.randomUUID()
-      decline.value = `${e.message || 'Card declined.'} Your balance hasn’t changed. Try another card.`
+      decline.value = `${e.message || 'Card declined.'} Your balance hasn’t changed.`
     } else if (e instanceof ApiError && e.status === 409) {
       payOpen.value = false
       toast.info(e.message)
@@ -192,26 +192,23 @@ function showReceipt(h: HistoryEntry) {
             <CardContent>
               <p v-if="!data.history.length" class="text-sm text-muted-foreground">No payments yet.</p>
               <ul class="divide-y">
-                <li
-                  v-for="h in data.history"
-                  :key="h.id"
-                  class="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 py-3 sm:grid-cols-[7rem_1fr_auto_auto]"
-                >
-                  <span class="text-sm text-muted-foreground">{{ date(h.createdAt) }}</span>
-                  <div class="col-start-1 sm:col-start-2">
+                <li v-for="h in data.history" :key="h.id" class="flex items-center gap-x-4 gap-y-2 py-3">
+                  <span class="hidden w-28 shrink-0 text-sm text-muted-foreground sm:block">{{
+                    date(h.createdAt)
+                  }}</span>
+                  <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium">
                       {{ h.label }} · {{ h.kind === 'Refund' ? '−' : '' }}{{ money(h.amountCents) }}
                     </p>
-                    <p v-if="h.cardLast4" class="text-xs text-muted-foreground">Card ending {{ h.cardLast4 }}</p>
+                    <p class="text-xs text-muted-foreground">
+                      <span class="sm:hidden">{{ date(h.createdAt) }} · </span
+                      ><template v-if="h.cardLast4">Card ending {{ h.cardLast4 }}</template>
+                    </p>
                   </div>
-                  <PaymentBadge
-                    :status="h.kind === 'Refund' ? 'Refunded' : 'Paid'"
-                    class="row-start-1 sm:row-start-auto"
-                  />
+                  <PaymentBadge :status="h.kind === 'Refund' ? 'Refunded' : 'Paid'" />
                   <Button
                     size="sm"
                     variant="outline"
-                    class="row-start-2 sm:row-start-auto"
                     :aria-label="`Receipt for ${h.label} on ${date(h.createdAt)}`"
                     @click="showReceipt(h)"
                     ><Receipt />Receipt</Button

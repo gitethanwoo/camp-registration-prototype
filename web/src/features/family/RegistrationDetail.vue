@@ -72,16 +72,24 @@ const rows = computed<Row[]>(() => {
   if (!d) return []
   const out: Row[] = []
   for (const p of d.participants.filter((x) => x.status === 'Confirmed')) {
-    for (const w of p.waivers)
+    // Signed waivers collapse into one row per participant; each missing one gets its own row to sign.
+    const missing = p.waivers.filter((w) => !w.signed)
+    if (p.waivers.length && !missing.length)
+      out.push({
+        key: `w-${p.registrationId}`,
+        who: p.firstName,
+        what: p.waivers.length === 1 ? (p.waivers[0]?.title ?? 'Waiver') : `Waivers (${p.waivers.length} signed)`,
+        done: true,
+        state: 'Complete',
+      })
+    for (const w of missing)
       out.push({
         key: `w-${p.registrationId}-${w.id}`,
         who: p.firstName,
         what: w.title,
-        done: w.signed,
-        state: w.signed ? 'Complete' : 'Missing',
-        action: w.signed
-          ? undefined
-          : { label: 'Review and sign', waiverId: w.id, personName: p.firstName, registrationId: p.registrationId },
+        done: false,
+        state: 'Missing',
+        action: { label: 'Review and sign', waiverId: w.id, personName: p.firstName, registrationId: p.registrationId },
       })
     if (p.healthStatus !== 'NotRequired') {
       const campdoc = d.program.healthMechanism === 'CampDoc'
@@ -194,7 +202,7 @@ async function sign() {
                 <div class="min-w-0 flex-1">
                   <p class="font-medium">{{ p.firstName }} {{ p.lastName }}</p>
                   <p class="text-sm text-muted-foreground">
-                    <template v-if="p.gradeLabel">{{ p.gradeLabel }} · </template>{{ p.pool }}
+                    {{ [p.gradeLabel, p.pool].filter((x, i, all) => x && all.indexOf(x) === i).join(' · ') }}
                   </p>
                 </div>
                 <StatusBadge :status="p.status" />
@@ -281,7 +289,6 @@ async function sign() {
                 <Button v-else-if="r.action" size="sm" variant="outline" @click="openSign(r.action)">{{
                   r.action.label
                 }}</Button>
-                <Button v-else size="sm" variant="ghost" disabled>Complete</Button>
               </div>
             </li>
           </ul>

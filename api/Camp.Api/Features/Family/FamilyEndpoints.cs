@@ -101,6 +101,8 @@ public sealed class FamilyEndpoints : IEndpointModule
             if (duplicate)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["firstName"] = [$"{first} is already in your family. Open their profile to change details."] });
 
+            if (await EmailTaken(db, me.HouseholdId, null, req) is { } taken) return taken;
+
             var person = new Person { HouseholdId = me.HouseholdId };
             Apply(person, req);
             db.People.Add(person);
@@ -118,6 +120,10 @@ public sealed class FamilyEndpoints : IEndpointModule
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["isAdult"] = ["A child can't be changed to an adult here. Contact us to set up their own account."] });
             var errors = Validate(req);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
+            // The primary owner's email is how sign-in finds who may manage access; it isn't edited here.
+            if (person.Role == HouseholdAccessEndpoints.Primary && !string.Equals(Blank(req.Email), person.Email, StringComparison.OrdinalIgnoreCase))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = ["This is the email you sign in with. Contact us to change it."] });
+            if (await EmailTaken(db, me.HouseholdId, person.Id, req) is { } taken) return taken;
 
             // Placement (pool and grade) was chosen from these; changing them would leave a camper in the wrong group.
             var registeredFor = await ActiveRegistrationNames(db, person.Id);
@@ -133,6 +139,15 @@ public sealed class FamilyEndpoints : IEndpointModule
             await db.SaveChangesAsync();
             return Results.Ok(ToProfile(person, await FamilyReadModel.SeasonYearAsync(db), registeredFor));
         });
+    }
+
+    /// <summary>Two adults with one email would make "who is signed in" ambiguous for household access.</summary>
+    static async Task<IResult?> EmailTaken(CampDbContext db, int householdId, int? personId, MemberRequest req)
+    {
+        var email = req.IsAdult ? Blank(req.Email) : null;
+        if (email is null) return null;
+        var taken = await db.People.AnyAsync(p => p.HouseholdId == householdId && p.Id != personId && p.Email == email);
+        return taken ? Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"{email} already belongs to someone in your household."] }) : null;
     }
 
     static async Task<List<string>> ActiveRegistrationNames(CampDbContext db, int personId)
