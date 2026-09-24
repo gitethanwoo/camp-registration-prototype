@@ -147,7 +147,6 @@ const primary = computed(() => h.value?.adults.find((a) => a.role === 'Primary')
         <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">{{ h.name }} household</h1>
         <div class="flex flex-wrap items-center gap-2">
           <Badge v-if="h.mergedIntoHouseholdId" variant="outline" class="bg-muted text-muted-foreground">Merged</Badge>
-          <Badge v-else variant="outline" class="border-emerald-200 bg-emerald-50 text-emerald-800">Active</Badge>
           <Button
             v-if="h.duplicates.length"
             variant="outline"

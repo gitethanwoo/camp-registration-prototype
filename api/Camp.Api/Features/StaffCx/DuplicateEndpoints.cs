@@ -60,14 +60,18 @@ public sealed class DuplicateEndpoints : IEndpointModule
 
         admin.MapPost("/{a:int}/{b:int}/merge", async (int a, int b, MergeRequest req, CampDbContext db, StaffUser staff, IAuditLog audit, CancellationToken ct) =>
         {
-            var pair = await FindPair(db, a, b, ct);
-            if (pair is null) return StaffCx.Conflict("These two accounts aren't flagged as duplicates, or one was already merged.");
             if (req.Survivor is not ("a" or "b")) return StaffCx.Invalid("survivor", "Choose which account survives.");
             foreach (var k in FieldKeys)
                 if (!req.Fields.TryGetValue(k, out var pick) || pick is not ("a" or "b"))
                     return StaffCx.Invalid($"fields.{k}", $"Choose which {FieldLabel(k).ToLowerInvariant()} to keep.");
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
+            // Lock both accounts (lower id first), then check the pair inside the transaction. A merge racing
+            // this one, in either direction, waits on the lock and then finds an account already merged away.
+            var (lo, hi) = a < b ? (a, b) : (b, a);
+            await db.Database.ExecuteSqlAsync($"SELECT Id FROM Households WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE Id IN ({lo}, {hi}) ORDER BY Id", ct);
+            var pair = await FindPair(db, a, b, ct);
+            if (pair is null) return StaffCx.Conflict("These two accounts aren't flagged as duplicates, or one was already merged.");
             var snap = await Snapshot(db, pair.HouseholdA, pair.HouseholdB, ct, tracking: true);
             var resolutions = req.Resolutions ?? [];
             foreach (var c in snap.Conflicts)

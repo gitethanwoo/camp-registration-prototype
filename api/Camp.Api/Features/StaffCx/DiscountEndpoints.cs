@@ -64,15 +64,14 @@ public sealed class DiscountEndpoints : IEndpointModule
                 return StaffCx.Invalid("note", "This code is over the threshold. Add a note saying why you're approving it.");
             if (note?.Length > 1000) return StaffCx.Invalid("note", "Notes are limited to 1,000 characters.");
 
-            r.Decision = ReviewDecision.Approved;
-            r.ReviewedBy = staff.Actor;
-            r.ReviewedAt = DateTime.UtcNow;
-            r.ReviewNote = note;
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            if (!await Decide(db, id, ReviewDecision.Approved, staff.Actor, note, ct)) return await AlreadyDecided(db, id, ct);
             r.DiscountCode.Status = DiscountStatus.Approved; // live at checkout from now on
             audit.Record("discount.approved", "DiscountCode", r.DiscountCodeId,
                 $"Approved {r.DiscountCode.Code} ({Describe(r.DiscountCode)}) for {r.Organization}.{(note is null ? "" : $" Note: {note}")}");
             db.OutboxEvents.Add(new OutboxEvent { Type = "DiscountApproved", Target = "HubSpot", AggregateId = "discount-" + r.DiscountCodeId, PayloadJson = JsonSerializer.Serialize(new { r.DiscountCode.Code, r.RequestedBy, r.Organization }), CreatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return Results.Ok();
         });
 
@@ -86,15 +85,36 @@ public sealed class DiscountEndpoints : IEndpointModule
             if (note.Length > 1000) return StaffCx.Invalid("note", "Notes are limited to 1,000 characters.");
 
             // The code keeps its PendingApproval status: inert, and indistinguishable from an invalid code to guests.
-            r.Decision = ReviewDecision.Rejected;
-            r.ReviewedBy = staff.Actor;
-            r.ReviewedAt = DateTime.UtcNow;
-            r.ReviewNote = note;
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            if (!await Decide(db, id, ReviewDecision.Rejected, staff.Actor, note, ct)) return await AlreadyDecided(db, id, ct);
             audit.Record("discount.rejected", "DiscountCode", r.DiscountCodeId, $"Rejected {r.DiscountCode.Code} for {r.Organization}. Note: {note}");
             db.OutboxEvents.Add(new OutboxEvent { Type = "DiscountRejected", Target = "HubSpot", AggregateId = "discount-" + r.DiscountCodeId, PayloadJson = JsonSerializer.Serialize(new { r.DiscountCode.Code, r.RequestedBy, note }), CreatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return Results.Ok();
         });
+    }
+
+    /// <summary>
+    /// Records the decision as a conditional update, the first write in the caller's transaction. Of two
+    /// decisions racing, the second blocks on the row lock and then changes nothing, so it writes no audit
+    /// row or outbox event. Returns false when the request was no longer pending.
+    /// </summary>
+    static async Task<bool> Decide(CampDbContext db, int id, ReviewDecision decision, string actor, string? note, CancellationToken ct)
+    {
+        var now = (DateTime?)DateTime.UtcNow;
+        return await db.Set<DiscountRequest>().Where(x => x.Id == id && x.Decision == ReviewDecision.Pending)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Decision, decision)
+                .SetProperty(x => x.ReviewedBy, actor)
+                .SetProperty(x => x.ReviewedAt, now)
+                .SetProperty(x => x.ReviewNote, note), ct) == 1;
+    }
+
+    static async Task<IResult> AlreadyDecided(CampDbContext db, int id, CancellationToken ct)
+    {
+        var r = await db.Set<DiscountRequest>().AsNoTracking().Include(x => x.DiscountCode).SingleAsync(x => x.Id == id, ct);
+        return StaffCx.Conflict($"{r.DiscountCode.Code} was already {r.Decision.ToString().ToLowerInvariant()} by {r.ReviewedBy}.");
     }
 
     static bool IsFinance(StaffUser staff) => staff.Role is "finance" or "admin";

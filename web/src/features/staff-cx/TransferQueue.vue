@@ -65,7 +65,8 @@ const columns: ColumnDef<StaffTransferRow>[] = [
     cell: ({ row }) => signed(row.original.priceDifferenceCents),
     meta: { class: 'hidden sm:table-cell', cellClass: 'align-top tabular-nums' },
   },
-  { accessorKey: 'status', header: 'Status', meta: { cellClass: 'align-top' } },
+  // On phones the status sits under the camper's name instead, so nothing is cut off.
+  { accessorKey: 'status', header: 'Status', meta: { class: 'hidden sm:table-cell', cellClass: 'align-top' } },
   {
     accessorKey: 'requestedBy',
     header: 'Requested by',
@@ -79,13 +80,27 @@ const openId = ref<number | null>(null)
 const note = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
+const sheetError = ref<string | null>(null)
 
+async function fetchDetail(id: number) {
+  try {
+    detail.value = await api.get<StaffTransferDetail>(`/admin/transfers/${id}`)
+    sheetError.value = null
+  } catch (e) {
+    detail.value = null
+    sheetError.value =
+      e instanceof ApiError && e.status === 404
+        ? 'This request no longer exists.'
+        : "Couldn't load this request. Close it and try again."
+  }
+}
 async function open(row: StaffTransferRow) {
   openId.value = row.id
   detail.value = null
+  sheetError.value = null
   note.value = ''
   error.value = null
-  detail.value = await api.get<StaffTransferDetail>(`/admin/transfers/${row.id}`)
+  await fetchDetail(row.id)
 }
 function close() {
   openId.value = null
@@ -113,7 +128,7 @@ async function decide(kind: 'approve' | 'deny') {
     await load()
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : "That didn't go through. Nothing was changed."
-    detail.value = await api.get<StaffTransferDetail>(`/admin/transfers/${d.request.id}`)
+    await fetchDetail(d.request.id)
   } finally {
     busy.value = false
   }
@@ -151,6 +166,7 @@ async function decide(kind: 'approve' | 'deny') {
       <template #cell-participant="{ row: r }">
         <div class="font-medium">{{ r.participant }}</div>
         <div class="text-sm text-muted-foreground">{{ r.program }}</div>
+        <Badge variant="outline" class="mt-1 sm:hidden" :class="tone[r.status]">{{ r.status }}</Badge>
       </template>
       <template #cell-from="{ row: r }">
         <div>{{ r.fromSession }}</div>
@@ -196,7 +212,12 @@ async function decide(kind: 'approve' | 'deny') {
           </SheetDescription>
         </SheetHeader>
 
-        <div v-if="!detail" class="px-4"><Skeleton class="h-72 rounded-lg" /></div>
+        <div v-if="sheetError" class="px-4">
+          <Alert variant="destructive"
+            ><AlertDescription>{{ sheetError }}</AlertDescription></Alert
+          >
+        </div>
+        <div v-else-if="!detail" class="px-4"><Skeleton class="h-72 rounded-lg" /></div>
         <div v-else class="space-y-5 px-4">
           <div class="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
             <div class="rounded-lg border p-3 text-sm">

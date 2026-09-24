@@ -183,7 +183,7 @@ public sealed class StaffCxSeed : ISeedModule
         if (johnson is null) return;
         db.Set<HouseholdNote>().AddRange(
             new HouseholdNote { HouseholdId = johnson.Id, Author = "Brian Hughes (Operations)", Body = "David asked whether Day Camp has an early drop-off. Told him 8:30 AM at the gym entrance.", CreatedAt = now.AddDays(-9) },
-            new HouseholdNote { HouseholdId = johnson.Id, Author = "Diane Carter (CET)", Body = "Maria called about Avery's peanut allergy. The allergy is on his profile; she'll add details on the health form.", CreatedAt = now.AddDays(-2) });
+            new HouseholdNote { HouseholdId = johnson.Id, Author = "Diane Carter (CET)", Body = "Maria called to ask whether Avery can ride home with the Hendersons on Fridays. Told her to add them as an authorized pickup on the registration.", CreatedAt = now.AddDays(-2) });
         db.Set<HouseholdVerification>().Add(new HouseholdVerification { HouseholdId = johnson.Id, ItemKey = "guardians", CheckedBy = "Diane Carter (CET)", CheckedAt = now.AddDays(-2) });
         await db.SaveChangesAsync(ct);
     }

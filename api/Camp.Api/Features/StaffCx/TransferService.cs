@@ -21,7 +21,8 @@ public sealed record TransferCheck(
     List<string> Blockers,
     List<Requirement> Requirements,
     int NewBalanceCents,
-    int RefundCents)
+    int RefundCents,
+    int NewDiscountCents = 0)
 {
     public bool CanMove => Blockers.Count == 0;
 }
@@ -58,9 +59,13 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
         }
         else
         {
-            requirements.Add(new("Grade and pool", "Ok", $"{Eligibility.GradeLabel(grade)} fits the {pool.Name} pool."));
             if (pool.Reserved >= pool.Capacity)
+            {
                 blockers.Add($"The {pool.Name} pool is full ({pool.Reserved} of {pool.Capacity}). Approving would overbook it.");
+                requirements.Add(new("Grade and pool", "Blocked", $"{Eligibility.GradeLabel(grade)} fits the {pool.Name} pool, but it's full ({pool.Reserved} of {pool.Capacity})."));
+            }
+            else
+                requirements.Add(new("Grade and pool", "Ok", $"{Eligibility.GradeLabel(grade)} fits the {pool.Name} pool."));
         }
 
         var alreadyThere = await db.Registrations.AnyAsync(r => r.PersonId == reg.PersonId && r.SessionId == to.Id && r.Status != RegistrationStatus.Cancelled && r.Id != reg.Id, ct);
@@ -77,7 +82,7 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
 
         var priceDiff = to.PriceCents - reg.Session.PriceCents;
         var newPrice = reg.PriceCents + priceDiff;
-        var discount = Math.Min(reg.DiscountCents, Math.Max(newPrice, 0));
+        var discount = await DiscountAfterMove(db, reg, Math.Max(newPrice, 0), ct);
         var newBalance = newPrice - discount - reg.PaidCents;
         var refund = Math.Max(0, -newBalance);
         requirements.Add(priceDiff == 0
@@ -88,15 +93,34 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
 
         return new TransferCheck(to.Id, $"{to.Name} · {StaffCx.Dates(to.StartDate, to.EndDate)}", to.PriceCents, priceDiff,
             pool?.Id, pool?.Name, pool?.Capacity, pool?.Reserved, pool is null ? null : Math.Max(0, pool.Capacity - pool.Reserved),
-            blockers, requirements, Math.Max(0, newBalance), refund);
+            blockers, requirements, Math.Max(0, newBalance), refund, discount);
+    }
+
+    /// <summary>
+    /// The camper's discount at the new price. A percent code is worked out again on the new price, the
+    /// same way checkout priced it; a flat code keeps its amount, capped at the new price.
+    /// </summary>
+    static async Task<int> DiscountAfterMove(CampDbContext db, Registration reg, int newPrice, CancellationToken ct)
+    {
+        if (reg.DiscountCents == 0) return 0;
+        var code = reg.OrderId is null ? null : await db.Orders.Where(o => o.Id == reg.OrderId)
+            .Join(db.DiscountCodes, o => o.DiscountCode, d => d.Code, (o, d) => d).AsNoTracking().FirstOrDefaultAsync(ct);
+        return code is { Kind: DiscountKind.Percent }
+            ? Math.Min((int)Math.Round(newPrice * Math.Min(code.Value, 100) / 100m), newPrice)
+            : Math.Min(reg.DiscountCents, newPrice);
     }
 
     public async Task<TransferOutcome> ApproveAsync(int requestId, string actor, string? note, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Claim the decision first, as a conditional update. A second approval arriving at the same time
+        // blocks on this row lock, then finds the request no longer pending and changes nothing. Every
+        // failure below returns without committing, so the request goes back to pending.
+        var won = await db.Set<TransferRequest>().Where(t => t.Id == requestId && t.Status == TransferStatus.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, TransferStatus.Approved), ct);
         var req = await db.Set<TransferRequest>().FirstOrDefaultAsync(t => t.Id == requestId, ct);
         if (req is null) return new(false, 404, "Transfer request not found.");
-        if (req.Status != TransferStatus.Pending) return new(false, 409, $"This request was already {req.Status.ToString().ToLowerInvariant()} by {req.DecidedBy}.");
+        if (won == 0) return new(false, 409, AlreadyDecided(req));
 
         var reg = await db.Registrations
             .Include(r => r.Person).Include(r => r.Pool).Include(r => r.Session)
@@ -122,7 +146,8 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
         reg.Pool = to.Pools.Single(p => p.Id == check.PoolId);
         reg.Grade = Eligibility.GradeFor(reg.Person.DateOfBirth, to.StartDate);
         reg.PriceCents += check.PriceDifferenceCents;
-        reg.DiscountCents = Math.Min(reg.DiscountCents, reg.PriceCents);
+        var discountChange = check.NewDiscountCents - reg.DiscountCents;
+        reg.DiscountCents = check.NewDiscountCents;
 
         var refunded = 0;
         if (check.RefundCents > 0 && reg.Order is not null)
@@ -140,7 +165,8 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
         if (reg.Order is { } order)
         {
             order.SubtotalCents += check.PriceDifferenceCents;
-            order.TotalCents = Math.Max(0, order.TotalCents + check.PriceDifferenceCents);
+            order.DiscountCents = Math.Max(0, order.DiscountCents + discountChange);
+            order.TotalCents = Math.Max(0, order.TotalCents + check.PriceDifferenceCents - discountChange);
             var siblings = await db.Registrations.Where(r => r.OrderId == order.Id && r.Id != reg.Id && r.Status != RegistrationStatus.Cancelled).ToListAsync(ct);
             if (siblings.All(r => r.SessionId == to.Id)) order.SessionId = to.Id;
             Rebalance(order, siblings.Sum(r => r.BalanceCents) + reg.BalanceCents);
@@ -204,16 +230,23 @@ public sealed class TransferService(CampDbContext db, IPaymentGateway gateway, I
         return cents - remaining;
     }
 
-    /// <summary>Spreads the order's outstanding balance over the installments still scheduled, keeping their dates.</summary>
+    /// <summary>
+    /// Spreads the order's outstanding balance over the installments still scheduled, keeping their dates.
+    /// Failed installments keep their amounts (a retry charges them), so that part of the balance is left out.
+    /// </summary>
     static void Rebalance(PaymentOrder order, int outstanding)
     {
         var scheduled = order.Installments.Where(i => i.Status == InstallmentStatus.Scheduled).OrderBy(i => i.Sequence).ToList();
         if (scheduled.Count == 0) return;
-        var target = Math.Max(0, outstanding);
+        var failed = order.Installments.Where(i => i.Status == InstallmentStatus.Failed).Sum(i => i.AmountCents);
+        var target = Math.Max(0, outstanding - failed);
         var each = target / scheduled.Count;
         for (var i = 0; i < scheduled.Count; i++)
             scheduled[i].AmountCents = i == scheduled.Count - 1 ? target - each * (scheduled.Count - 1) : each;
     }
+
+    public static string AlreadyDecided(TransferRequest req) =>
+        $"This request was already {req.Status.ToString().ToLowerInvariant()} by {req.DecidedBy ?? "another staff member"}.";
 
     public static string Label(RegistrationStatus s) => s switch
     {

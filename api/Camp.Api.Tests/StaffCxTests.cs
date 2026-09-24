@@ -298,6 +298,76 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Concurrent_approvals_move_the_seat_and_refund_exactly_once()
+    {
+        var cheaper = await CheaperSession(25000);
+        var (client, _, regId) = await NewFamilyRegisteredInWeekOne("Race", PaymentOption.Full);
+        var request = await Json(await client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = cheaper, reason = "Cheaper week" }));
+        var id = request.GetProperty("id").GetInt32();
+        var (fromPool, fromBefore) = await PoolOf(regId);
+        var toBefore = await ToPoolReserved(id);
+        var orderId = await factory.WithDb(db => db.Registrations.Where(r => r.Id == regId).Select(r => r.OrderId!.Value).SingleAsync());
+
+        var staff = await Task.WhenAll(Enumerable.Range(0, 4).Select(i => factory.SignInAsStaff("cet", $"Racer {i}")));
+        var results = await Task.WhenAll(staff.Select(s => s.PostAsJsonAsync($"/api/admin/transfers/{id}/approve", new { note = (string?)null })));
+
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Equal(3, results.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        var (toPool, _) = await PoolOf(regId);
+        await factory.WithDb(async db =>
+        {
+            Assert.Equal(fromBefore - 1, await db.CapacityPools.Where(p => p.Id == fromPool).Select(p => p.Reserved).SingleAsync());
+            Assert.Equal(toBefore + 1, await db.CapacityPools.Where(p => p.Id == toPool).Select(p => p.Reserved).SingleAsync());
+            Assert.Equal(1, await db.PaymentOperations.CountAsync(o => o.OrderId == orderId && o.Kind == PaymentKind.Refund));
+            var regKey = regId.ToString(CultureInfo.InvariantCulture);
+            Assert.Equal(1, await db.AuditEvents.CountAsync(a => a.Action == "registration.transferred" && a.EntityId == regKey));
+            Assert.Equal(1, await db.OutboxEvents.CountAsync(e => e.Type == "RegistrationTransferred" && e.AggregateId == "reg-" + regKey));
+            return 0;
+        });
+    }
+
+    [Fact]
+    public async Task Racing_approve_and_deny_settle_on_one_decision()
+    {
+        var (client, _, regId) = await NewFamilyRegisteredInWeekOne("Split", PaymentOption.Deposit);
+        var request = await Json(await client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = await WeekTwoId(), reason = "Either way" }));
+        var id = request.GetProperty("id").GetInt32();
+        var staff = await Task.WhenAll(Enumerable.Range(0, 4).Select(i => factory.SignInAsStaff("cet", $"Racer {i}")));
+
+        var results = await Task.WhenAll(staff.Select((s, i) => i % 2 == 0
+            ? s.PostAsJsonAsync($"/api/admin/transfers/{id}/approve", new { note = (string?)null })
+            : s.PostAsJsonAsync($"/api/admin/transfers/{id}/deny", new { note = "Week 2 is closed." })));
+
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Equal(3, results.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        Assert.Equal(1, await factory.WithDb(db => db.AuditEvents.CountAsync(a => (a.Action == "transfer.approved" || a.Action == "transfer.denied") && a.Detail.Contains("Kid Split"))));
+        var status = await factory.WithDb(db => db.Set<TransferRequest>().Where(t => t.Id == id).Select(t => t.Status).SingleAsync());
+        var moved = await factory.WithDb(db => db.Registrations.AnyAsync(r => r.Id == regId && r.Session.Name == StaffCxSeed.WeekTwoName));
+        Assert.Equal(status == TransferStatus.Approved, moved);
+    }
+
+    [Fact]
+    public async Task Racing_discount_decisions_write_one_audit_row_and_one_event()
+    {
+        var cet = await Task.WhenAll(factory.SignInAsStaff(), factory.SignInAsStaff("cet", "Brian Hughes"));
+        var finance = await Task.WhenAll(factory.SignInAsStaff("finance", "Marcus Lee"), factory.SignInAsStaff("finance", "Ana Ruiz"));
+        var id = await RequestId("CHURCH20");
+        var codeId = await factory.WithDb(db => db.Set<DiscountRequest>().Where(r => r.Id == id).Select(r => r.DiscountCodeId).SingleAsync());
+
+        var results = await Task.WhenAll(
+            finance[0].PostAsJsonAsync($"/api/admin/discounts/{id}/approve", new { note = "Staff kids, approved." }),
+            cet[0].PostAsJsonAsync($"/api/admin/discounts/{id}/reject", new { note = "Doesn't stack." }),
+            finance[1].PostAsJsonAsync($"/api/admin/discounts/{id}/approve", new { note = "Approved by budget." }),
+            cet[1].PostAsJsonAsync($"/api/admin/discounts/{id}/reject", new { note = "Too generous." }));
+
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Equal(3, results.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        var key = codeId.ToString(CultureInfo.InvariantCulture);
+        Assert.Equal(1, await factory.WithDb(db => db.AuditEvents.CountAsync(a => a.EntityType == "DiscountCode" && a.EntityId == key)));
+        Assert.Equal(1, await factory.WithDb(db => db.OutboxEvents.CountAsync(e => e.AggregateId == "discount-" + key)));
+    }
+
+    [Fact]
     public async Task A_cheaper_session_on_a_plan_rebalances_the_installments()
     {
         var staff = await factory.SignInAsStaff();
@@ -315,6 +385,83 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
             Assert.Equal(reg.BalanceCents, reg.Order!.Installments.Where(i => i.Status == InstallmentStatus.Scheduled).Sum(i => i.AmountCents));
             return 0;
         });
+    }
+
+    [Fact]
+    public async Task A_percent_discount_is_worked_out_again_on_the_new_price()
+    {
+        var code = $"PCT{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        await factory.WithDb(async db =>
+        {
+            db.DiscountCodes.Add(new DiscountCode { Code = code, Kind = DiscountKind.Percent, Value = 10, Status = DiscountStatus.Approved, CreatedBy = "test" });
+            return await db.SaveChangesAsync();
+        });
+        var pricier = await CheaperSession(40000);
+        var (client, _, regId) = await NewFamilyRegisteredInWeekOne("Percent", PaymentOption.Full, code);
+        Assert.Equal(3250, await factory.WithDb(db => db.Registrations.Where(r => r.Id == regId).Select(r => r.DiscountCents).SingleAsync()));
+
+        var request = await Json(await client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = pricier, reason = "Later week" }));
+        var staff = await factory.SignInAsStaff();
+        Assert.Equal(HttpStatusCode.OK, (await staff.PostAsJsonAsync($"/api/admin/transfers/{request.GetProperty("id").GetInt32()}/approve", new { note = (string?)null })).StatusCode);
+
+        await factory.WithDb(async db =>
+        {
+            var reg = await db.Registrations.AsNoTracking().Include(r => r.Order).SingleAsync(r => r.Id == regId);
+            Assert.Equal(40000, reg.PriceCents);
+            Assert.Equal(4000, reg.DiscountCents); // 10% of $400, not the $32.50 from the old price
+            Assert.Equal(40000 - 4000 - 29250, reg.BalanceCents);
+            Assert.Equal(4000, reg.Order!.DiscountCents);
+            Assert.Equal(36000, reg.Order.TotalCents);
+            return 0;
+        });
+    }
+
+    [Fact]
+    public async Task Rebalancing_leaves_failed_installments_out_of_the_scheduled_ones()
+    {
+        var staff = await factory.SignInAsStaff();
+        var cheaper = await CheaperSession(25000);
+        var (client, _, regId) = await NewFamilyRegisteredInWeekOne("Failed", PaymentOption.Plan);
+        var failed = await factory.WithDb(async db =>
+        {
+            var orderId = await db.Registrations.Where(r => r.Id == regId).Select(r => r.OrderId).SingleAsync();
+            var first = await db.Installments.Where(i => i.OrderId == orderId && i.Status == InstallmentStatus.Scheduled).OrderBy(i => i.Sequence).FirstAsync();
+            first.Status = InstallmentStatus.Failed;
+            await db.SaveChangesAsync();
+            return first.AmountCents;
+        });
+
+        var request = await Json(await client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = cheaper, reason = "Cheaper week" }));
+        Assert.Equal(HttpStatusCode.OK, (await staff.PostAsJsonAsync($"/api/admin/transfers/{request.GetProperty("id").GetInt32()}/approve", new { note = (string?)null })).StatusCode);
+
+        await factory.WithDb(async db =>
+        {
+            var reg = await db.Registrations.AsNoTracking().Include(r => r.Order!).ThenInclude(o => o.Installments).SingleAsync(r => r.Id == regId);
+            Assert.Equal(failed, reg.Order!.Installments.Where(i => i.Status == InstallmentStatus.Failed).Sum(i => i.AmountCents));
+            Assert.Equal(reg.BalanceCents - failed, reg.Order.Installments.Where(i => i.Status == InstallmentStatus.Scheduled).Sum(i => i.AmountCents));
+            return 0;
+        });
+    }
+
+    [Fact]
+    public async Task Two_identical_transfer_requests_at_once_give_one_request_and_a_409()
+    {
+        var (client, _, regId) = await NewFamilyRegisteredInWeekOne("Twice", PaymentOption.Deposit);
+        var weekTwo = await WeekTwoId();
+        var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => client.PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = weekTwo, reason = "Double click" })));
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.All(results.Where(r => r.StatusCode != HttpStatusCode.OK), r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
+        Assert.Equal(1, await factory.WithDb(db => db.Set<TransferRequest>().CountAsync(t => t.RegistrationId == regId)));
+    }
+
+    [Fact]
+    public async Task A_full_destination_marks_the_pool_requirement_blocked()
+    {
+        var staff = await factory.SignInAsStaff();
+        var request = await SeededPending(blocked: true);
+        var detail = await Json(await staff.GetAsync($"/api/admin/transfers/{request.GetProperty("id").GetInt32()}"));
+        var pool = detail.GetProperty("check").GetProperty("requirements").EnumerateArray().Single(r => r.GetProperty("label").GetString() == "Grade and pool");
+        Assert.Equal("Blocked", pool.GetProperty("state").GetString());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -374,7 +521,7 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
     });
 
     /// <summary>A brand-new signed-in family whose Grade 6 camper is confirmed in Day Camp week 1.</summary>
-    async Task<(HttpClient Client, int HouseholdId, int RegistrationId)> NewFamilyRegisteredInWeekOne(string name, PaymentOption option)
+    async Task<(HttpClient Client, int HouseholdId, int RegistrationId)> NewFamilyRegisteredInWeekOne(string name, PaymentOption option, string? discountCode = null)
     {
         var email = $"{name.ToLowerInvariant()}-{Guid.NewGuid():N}@example.com";
         var client = await factory.SignInAsFamily(email, "Pat", name);
@@ -393,7 +540,7 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
             [new CheckoutParticipant(kid.Id, new() { ["tshirt"] = "Youth M", ["swim"] = "Beginner" }, new HealthForm(null, null, null, null, "Dr. Test", "555-0100", null))],
             new() { ["church"] = "No" },
             waivers.Select(w => new WaiverSignature(w.Id, w.PerParticipant ? kid.Id : null, "Pat")).ToList(),
-            option, null, _gateway.Tokenize("4242424242424242"));
+            option, discountCode, _gateway.Tokenize("4242424242424242"));
         var result = await scope.ServiceProvider.GetRequiredService<CheckoutService>().CheckoutAsync(household.Id, "test", req, default);
         Assert.Equal(OrderStatus.Paid, result.Status);
         var regId = await db.Registrations.Where(r => r.PersonId == kid.Id && r.SessionId == sessionId).Select(r => r.Id).SingleAsync();

@@ -115,7 +115,15 @@ public sealed class TransferEndpoints : IEndpointModule
             db.Set<TransferRequest>().Add(t);
             audit.Record("transfer.requested", "Household", me.HouseholdId,
                 $"{me.Name} asked to move {reg.Person.FullName} from {reg.Session.Name} to {check.Session}. Reason: {reason}");
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // Two submits at once: the filtered unique index lets only one pending request per registration in.
+                return StaffCx.Conflict($"There's already a transfer request waiting for review for {reg.Person.FirstName}.");
+            }
             return Results.Ok(new { t.Id });
         });
     }
@@ -194,16 +202,22 @@ public sealed class TransferEndpoints : IEndpointModule
             var note = req.Note?.Trim();
             if (string.IsNullOrEmpty(note)) return StaffCx.Invalid("note", "Give the family a reason. They'll see it on their request.");
             if (note.Length > 500) return StaffCx.Invalid("note", "Notes are limited to 500 characters.");
-            var t = await db.Set<TransferRequest>().Include(x => x.Registration).ThenInclude(r => r.Person).Include(x => x.ToSession).FirstOrDefaultAsync(x => x.Id == id, ct);
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            // The decision is a conditional update: of two decisions racing, only one changes the row.
+            var now = (DateTime?)DateTime.UtcNow;
+            var won = await db.Set<TransferRequest>().Where(x => x.Id == id && x.Status == TransferStatus.Pending)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, TransferStatus.Denied)
+                    .SetProperty(x => x.DecidedBy, staff.Actor)
+                    .SetProperty(x => x.DecidedAt, now)
+                    .SetProperty(x => x.DecisionNote, note), ct);
+            var t = await db.Set<TransferRequest>().AsNoTracking().Include(x => x.Registration).ThenInclude(r => r.Person).Include(x => x.ToSession).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
-            if (t.Status != TransferStatus.Pending) return StaffCx.Conflict($"This request was already {t.Status.ToString().ToLowerInvariant()} by {t.DecidedBy}.");
-            t.Status = TransferStatus.Denied;
-            t.DecidedBy = staff.Actor;
-            t.DecidedAt = DateTime.UtcNow;
-            t.DecisionNote = note;
+            if (won == 0) return StaffCx.Conflict(TransferService.AlreadyDecided(t));
             audit.Record("transfer.denied", "Household", t.HouseholdId,
                 $"Denied moving {t.Registration.Person.FullName} to {t.ToSession.Name}. The registration stays as it was. Reason: {note}");
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return Results.Ok();
         });
     }
