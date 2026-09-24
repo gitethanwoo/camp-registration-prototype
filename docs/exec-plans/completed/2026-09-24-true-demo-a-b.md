@@ -1,10 +1,10 @@
 # True demo of the A+B MVP, built in parallel slices
 
 - Plan Type: ExecPlan
-- Status: In Progress
+- Status: Completed
 - Owner: Claude (orchestrator)
 - Started: 2026-09-24
-- Completed:
+- Completed: 2026-09-24
 
 > Maintain this file in accordance with `docs/PLANS.md`.
 
@@ -60,7 +60,13 @@ When this plan is done, a presenter can sign in as each seeded persona (see `REA
 
 ## Outcomes & Retrospective
 
-Not started.
+(2026-09-24) Done. Three waves of parallel slices, each built by one agent, reviewed by another and fixed before an integration pass, are on `main` as 8c3d12b: 212 API tests and 64 e2e tests pass on a fresh stack. Every persona in `README.md` can walk their flows on real seeded data, dated in the 2028 registration season by the demo clock.
+
+What worked: slice seams kept parallel agents out of each other's files; independent reviewers caught real money, capacity and authorization bugs every wave (draft programs taking payment, double-counted payments, revoked staff keeping access); one combined migration per wave avoided snapshot merges.
+
+What to do differently: slices tested on their own databases and missed seed interactions until integration, so specs should assert on their own rows from the start; fix agents occasionally left commits on a detached HEAD, so integrators check worktree HEADs before merging.
+
+Left for later: session-level health settings, console-wide ministry scoping, the family-facing third-party health form link, and the long-tail screens (K1, K8, K10, K13, K14, O4, O8).
 
 ## Context and Orientation
 
@@ -199,7 +205,7 @@ Parallel worktrees can't all bind to :5080 and :5173. Each slice runs its own AP
 - [x] Wave 1: `npm run test:api` on main (97/97, 2026-09-24)
 - [x] Wave 1: `npm run test:e2e` on a fresh stack (23/23 twice, 2026-09-24)
 - [x] Wave 1: walkthrough of each persona's demo path at desktop and phone width (2026-09-24)
-- [ ] Wave 2: all of the above on main after wave 2 merges (on branch `wave2`, 2026-09-24: lint, typecheck, check:api pass; test:api 171/171; e2e 49/49 twice on a fresh stack; persona walkthrough at desktop and phone)
+- [x] Wave 2: all of the above, merged to main as 768fbc9 (on branch `wave2`, 2026-09-24: lint, typecheck, check:api pass; test:api 171/171; e2e 49/49 twice on a fresh stack; persona walkthrough at desktop and phone)
 - [x] Wave 3: on branch `wave3` (2026-09-24, not yet on main): `npm run verify:precommit` passes; `npm run test:api` 212/212; `npx playwright test` 64/64 twice on a fresh stack; persona click-through at 1440×1000 and 390×844
 
 ## Idempotence and Recovery
