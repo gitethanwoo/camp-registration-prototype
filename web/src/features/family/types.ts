@@ -17,7 +17,7 @@ export interface ChecklistEntry {
   detail: string
   done: boolean
   action: string
-  kind: 'waiver' | 'health' | 'campdoc' | 'balance'
+  kind: 'waiver' | 'health' | 'campdoc' | 'balance' | 'activities'
   href: string
 }
 

@@ -99,7 +99,7 @@ public sealed class FamilyEndpoints : IEndpointModule
                     Status = w.Status.ToString(),
                     w.OfferExpiresAt,
                 }),
-                Checklist = upcoming.SelectMany(FamilyReadModel.Checklist).ToList(),
+                Checklist = upcoming.SelectMany(FamilyReadModel.Checklist).Concat(await Activities.ActivityChecklist.ForAsync(db, upcoming, today)).ToList(),
             };
         });
 

@@ -163,6 +163,8 @@ public static class GuestEndpoints
                     q.ShowWhenValue,
                 }),
                 Waivers = s.Program.Waivers.Select(w => new { w.Id, w.Title, w.Version, w.EffectiveDate, w.Body, w.PerParticipant }),
+                // R4/R5: sessions with an activity schedule add the activity and cabinmate steps.
+                Activities = await Activities.ActivityRules.OffersAsync(db, s.Id),
             });
         });
 
@@ -197,6 +199,7 @@ public static class GuestEndpoints
                     : Results.Ok(result);
             }
             catch (CheckoutValidationException e) { return Results.ValidationProblem(e.Errors); }
+            catch (Activities.ActivityFullException e) { return e.ToResult(); }
         });
 
         // R11 / R12 · confirmation, including anyone who landed on the waitlist.

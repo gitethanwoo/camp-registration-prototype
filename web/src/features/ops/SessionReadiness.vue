@@ -75,8 +75,10 @@ const filtered = computed(() => {
   return (r.value?.roster ?? []).filter((x) => {
     if (q && !x.name.toLowerCase().includes(q)) return false
     if (cabin.value !== 'all' && x.cabin !== cabin.value) return false
-    if (activity.value === 'none' && x.activity) return false
-    if (activity.value !== 'all' && activity.value !== 'none' && x.activity !== activity.value) return false
+    if (activity.value === 'none' && x.activity.state !== 'NotChosen') return false
+    if (activity.value === 'unplaced' && !['Chosen', 'Partial'].includes(x.activity.state)) return false
+    if (!['all', 'none', 'unplaced'].includes(activity.value) && !x.activity.names.includes(activity.value))
+      return false
     if (status.value === 'ready') return x.reasons.length === 0
     if (status.value === 'attention') return x.reasons.length > 0
     if (status.value !== 'all') return x.reasons.includes(status.value)
@@ -157,7 +159,7 @@ const columns: ColumnDef<ReadinessRow>[] = [
     enableSorting: true,
     meta: { class: 'hidden lg:table-cell' },
   },
-  { id: 'activity', header: 'Activity', meta: { class: 'hidden xl:table-cell' } },
+  { id: 'activity', header: 'Activities', meta: { class: 'hidden xl:table-cell' } },
   { id: 'actions', header: () => h('span', { class: 'sr-only' }, 'Actions'), meta: { class: 'w-10' } },
 ]
 
@@ -218,7 +220,7 @@ function exportRoster() {
       healthLabel.value,
       'Cabin',
       'Group',
-      'Activity',
+      'Activities',
     ],
     filtered.value.map((c) => [
       c.name,
@@ -231,7 +233,7 @@ function exportRoster() {
       c.health,
       c.cabin,
       c.group,
-      c.activity ?? 'Not chosen',
+      c.activity.label,
     ]),
   )
 }
@@ -305,6 +307,7 @@ function showOnly(s: StatusFilter) {
               <SelectContent>
                 <SelectItem value="all">All activities</SelectItem>
                 <SelectItem value="none">Not chosen</SelectItem>
+                <SelectItem value="unplaced">Chosen, not placed</SelectItem>
                 <SelectItem v-for="a in r.activities" :key="a" :value="a">{{ a }}</SelectItem>
               </SelectContent>
             </Select>
@@ -344,7 +347,8 @@ function showOnly(s: StatusFilter) {
               <div class="text-sm text-muted-foreground">Grade {{ x.grade }} · {{ genderLabel(x.gender) }}</div>
               <!-- The Cabin and Activity columns are hidden below xl; keep that data on the row. -->
               <div class="text-sm text-muted-foreground xl:hidden">
-                <span class="lg:hidden">{{ x.cabin }} · </span>{{ x.activity ?? 'Activity not chosen' }}
+                <span class="lg:hidden">{{ x.cabin }} · </span
+                >{{ x.activity.state === 'NotChosen' ? 'Activities not chosen' : x.activity.label }}
               </div>
               <div class="mt-1 flex flex-wrap gap-1 md:hidden">
                 <StatusBadge v-if="x.reasons.length === 0" status="Complete" label="Ready" />
@@ -407,7 +411,13 @@ function showOnly(s: StatusFilter) {
               </DropdownMenu>
             </template>
             <template #cell-activity="{ row: x }">
-              <span :class="x.activity ? '' : 'text-muted-foreground'">{{ x.activity ?? 'Not chosen' }}</span>
+              <span
+                :class="[
+                  'block max-w-44 whitespace-normal',
+                  x.activity.state === 'Assigned' ? '' : 'text-muted-foreground',
+                ]"
+                >{{ x.activity.label }}</span
+              >
             </template>
           </DataTable>
 

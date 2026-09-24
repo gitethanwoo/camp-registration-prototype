@@ -21,6 +21,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { useRegistrationDraft } from '@/composables/useRegistrationDraft'
 import { api, ApiError } from '@/lib/api'
 import { date, dateRange, money } from '@/lib/format'
+import ActivityStep from '@/features/activities/ActivityStep.vue'
+import CabinmateStep from '@/features/activities/CabinmateStep.vue'
+import { useActivityDraft } from '@/features/activities/useActivityDraft'
 import QuestionField from '@/features/forms/QuestionField.vue'
 import { unanswered, visibleAnswers, visibleKeys } from '@/features/forms/rules'
 import type { FormQuestion } from '@/features/forms/types'
@@ -31,11 +34,14 @@ import { now } from '@/lib/clock'
 const props = defineProps<{ sessionId: number }>()
 const router = useRouter()
 const { draft, rotateKey, clear } = useRegistrationDraft(props.sessionId)
+// R4/R5 (activities slice): ranked activity choices and cabinmate requests, for sessions with a schedule.
+const acts = useActivityDraft(props.sessionId)
 
 // K6: register-context also carries the live form version and its question types (forms slice).
 type WizardContext = Omit<RegisterContext, 'questions'> & {
   questions: FormQuestion[]
   form: { id: number; version: number } | null
+  activities: boolean
 }
 const ctx = ref<WizardContext | null>(null)
 const loadError = ref<string | null>(null)
@@ -58,15 +64,21 @@ const scheduleColumns: ColumnDef<Quote['schedule'][number]>[] = [
   },
 ]
 
-const steps = [
+const steps = computed(() => [
   { key: 'participants', label: 'Participants' },
   { key: 'questions', label: 'Questions' },
+  ...(hasActivities.value
+    ? [
+        { key: 'activities', label: 'Activities' },
+        { key: 'cabinmates', label: 'Cabinmates' },
+      ]
+    : []),
   { key: 'health', label: 'Health' },
   { key: 'waivers', label: 'Waivers' },
   { key: 'review', label: 'Review' },
   { key: 'payment', label: 'Payment' },
-] as const
-const step = computed(() => steps[draft.step]?.key ?? 'participants')
+])
+const step = computed(() => steps.value[draft.step]?.key ?? 'participants')
 
 onMounted(async () => {
   try {
@@ -105,6 +117,9 @@ const selected = computed(() => draft.selected.map(byId).filter((p): p is Partic
 const willWaitlist = (p: Participant) => p.pool?.state === 'full'
 const seatable = computed(() => selected.value.filter((p) => !willWaitlist(p)))
 const allWaitlisted = computed(() => selected.value.length > 0 && seatable.value.length === 0)
+// Waitlisted campers aren't placed in activities, so only campers getting a seat choose.
+const hasActivities = computed(() => !!ctx.value?.activities && seatable.value.length > 0)
+const seatableIds = computed(() => seatable.value.map((p) => p.id))
 
 function toggle(p: Participant, on: boolean | 'indeterminate') {
   if (on === true && !draft.selected.includes(p.id)) draft.selected.push(p.id)
@@ -144,6 +159,10 @@ const stepErrors = computed<string[]>(() => {
       if (h) errs.push(`Family: ${h} required ${h === 1 ? 'question' : 'questions'} unanswered.`)
       return errs
     }
+    case 'activities':
+      return acts.activityErrors(seatable.value)
+    case 'cabinmates':
+      return acts.cabinmateErrors(seatable.value)
     case 'health':
       if (c.program.healthMechanism !== 'Embedded') return []
       return selected.value
@@ -165,11 +184,17 @@ const stepErrors = computed<string[]>(() => {
   }
 })
 
-function next() {
+async function next() {
+  if (step.value === 'activities') {
+    // Re-check slots left; if a choice filled since the last check, stay so the family sees it.
+    const before = acts.filledCount(seatableIds.value)
+    await acts.refresh(seatableIds.value)
+    if (acts.filledCount(seatableIds.value) > before) return
+  }
   attempted.value = true
   if (stepErrors.value.length) return
   attempted.value = false
-  draft.step = Math.min(draft.step + 1, steps.length - 1)
+  draft.step = Math.min(draft.step + 1, steps.value.length - 1)
   window.scrollTo({ top: 0 })
 }
 function back() {
@@ -245,6 +270,7 @@ async function pay() {
         personId: p.id,
         answers: visibleAnswers(participantQuestions.value, draft.answers[p.id] ?? {}, householdKnown.value),
         health: c.program.healthMechanism === 'Embedded' ? draft.health[p.id] : null,
+        ...(hasActivities.value && !willWaitlist(p) ? acts.payload(p.id) : {}),
       })),
       householdAnswers: householdKnown.value,
       waivers: c.waivers.flatMap((w): { waiverId: number; personId: number | null; signerName: string }[] =>
@@ -258,11 +284,16 @@ async function pay() {
       formVersionId: c.form?.id ?? null,
     })
     clear()
+    acts.clear()
     router.replace(`/confirmation/${res.confirmationCode}`)
   } catch (e) {
     if (e instanceof ApiError && e.status === 402) {
       decline.value = (e.body as { message?: string })?.message ?? 'Your card was declined.'
       rotateKey() // next attempt is a new payment intent; the declined one is closed
+    } else if (e instanceof ApiError && e.status === 409 && (await acts.applyConflicts(e.body, seatableIds.value))) {
+      // An activity filled while paying; nothing was charged. Back to R4 with the just-filled choices marked.
+      draft.step = steps.value.findIndex((s) => s.key === 'activities')
+      toast.warning(`${e.message} You haven't been charged.`)
     } else if (e instanceof ApiError && e.status === 400) {
       serverErrors.value = Object.values(e.errors).flat()
       if (!serverErrors.value.length) serverErrors.value = [e.message]
@@ -470,6 +501,20 @@ const paymentOptions = computed(() => {
             </Card>
           </template>
 
+          <ActivityStep
+            v-if="step === 'activities'"
+            :session-id="sessionId"
+            :session-name="ctx.session.name"
+            :campers="seatable"
+            :attempted="attempted"
+          />
+          <CabinmateStep
+            v-if="step === 'cabinmates'"
+            :session-id="sessionId"
+            :campers="seatable"
+            :attempted="attempted"
+          />
+
           <!-- R6 · Health -->
           <template v-if="step === 'health'">
             <template v-if="ctx.program.healthMechanism === 'Embedded'">
@@ -606,6 +651,9 @@ const paymentOptions = computed(() => {
                   <div>
                     <div class="font-medium">{{ p.firstName }} {{ p.lastName }}</div>
                     <div class="text-muted-foreground">{{ p.pool?.name }} · answers, health, and waivers complete</div>
+                    <div v-if="hasActivities && !willWaitlist(p)" class="text-muted-foreground">
+                      Activities: {{ acts.summary(p.id) }}
+                    </div>
                   </div>
                   <StatusBadge v-if="willWaitlist(p)" status="Waitlisted" label="Joins waitlist" />
                   <span v-else class="tabular-nums">{{ money(ctx.session.priceCents) }}</span>

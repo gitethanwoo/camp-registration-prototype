@@ -2,6 +2,7 @@ using System.Text.Json;
 using Camp.Api.Auth;
 using Camp.Api.Data;
 using Camp.Api.Domain;
+using Camp.Api.Features.Activities;
 using Camp.Api.Features.Polish;
 using Camp.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -34,6 +35,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
                 .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
             var names = await OpsNames.For(db, id, ct);
             var attention = campers.Where(c => c.Reasons.Count > 0).ToList();
+            var activities = await ActivityReadModel.SummariesAsync(db, id, ct);
 
             return Results.Ok(new
             {
@@ -60,7 +62,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
                 },
                 Pools = s.Pools.OrderBy(p => p.SortOrder).Select(p => GuestEndpoints.ToAvailability(p, waitlist)),
                 Cabins = names.Cabins.Values.Order(),
-                Activities = OpsSeed.Activities,
+                Activities = await ActivityReadModel.ScheduledAsync(db, id, ct),
                 Roster = campers.Select(c => new
                 {
                     c.RegistrationId,
@@ -77,7 +79,7 @@ public sealed class ReadinessEndpoints : IEndpointModule
                     Health = c.HealthOpen ? "Incomplete" : "Complete",
                     Cabin = names.Cabin(c.Placement?.CabinId),
                     Group = names.Group(c.Placement?.GroupId),
-                    c.Placement?.Activity,
+                    Activity = activities.GetValueOrDefault(c.RegistrationId, ActivitySummary.NotChosen),
                     Reasons = c.Reasons.Select(r => r.ToString()),
                     c.Placement?.RemindedAt,
                     CheckedIn = c.Placement?.CheckedInAt is not null,

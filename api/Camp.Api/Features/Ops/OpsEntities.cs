@@ -27,7 +27,7 @@ public class OpsGroup
 }
 
 /// <summary>
-/// Operations state for one registration: cabin, group, first activity choice, reminders and
+/// Operations state for one registration: cabin, group, reminders and
 /// arrival. The row is optional; a registration without one is simply unassigned and not checked in.
 /// </summary>
 public class OpsPlacement
@@ -40,7 +40,6 @@ public class OpsPlacement
     /// <summary>An Auto-suggest proposal waiting for a person to approve it. Never applied on its own.</summary>
     public int? SuggestedGroupId { get; set; }
     public string? SuggestionReason { get; set; }
-    public string? Activity { get; set; }
     public DateTime? RemindedAt { get; set; }
     public DateTime? CheckedInAt { get; set; }
     public string? CheckedInBy { get; set; }
