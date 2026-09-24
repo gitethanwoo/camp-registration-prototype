@@ -231,7 +231,14 @@ function showReceipt(h: HistoryEntry) {
                 <li v-for="i in data.installments" :key="i.sequence" class="flex items-center gap-4 py-3">
                   <span class="w-28 text-sm">{{ date(i.dueDate) }}</span>
                   <span class="w-16 text-sm tabular-nums">{{ money(i.amountCents) }}</span>
-                  <StatusBadge :status="i.status" :label="i.status === 'Failed' ? 'Installment failed' : undefined" />
+                  <span v-if="i.coveredOn" class="text-sm text-muted-foreground"
+                    >Covered by payment on {{ date(i.coveredOn) }}</span
+                  >
+                  <StatusBadge
+                    v-else
+                    :status="i.status"
+                    :label="i.status === 'Failed' ? 'Installment failed' : undefined"
+                  />
                   <Button v-if="i.status === 'Failed'" size="sm" class="ml-auto" @click="openPay(i.sequence)"
                     >Retry</Button
                   >

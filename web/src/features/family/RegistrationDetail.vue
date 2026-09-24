@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ArrowLeft, ArrowRightLeft, CircleAlert, CircleCheck, ExternalLink, FileText, TriangleAlert } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -27,7 +27,6 @@ import PaymentBadge from './PaymentBadge.vue'
 import type { RegistrationDetail } from './types'
 
 const props = defineProps<{ code: string }>()
-const router = useRouter()
 const data = ref<RegistrationDetail | null>(null)
 const notFound = ref(false)
 
@@ -41,15 +40,14 @@ async function load() {
 }
 onMounted(load)
 
-// F8 (transfer request) belongs to another slice; offer it only once that page exists.
-const transferPath = computed(() => `/family/registrations/${props.code}/transfer`)
-const canTransfer = computed(
-  () =>
-    !!data.value &&
-    !data.value.isPast &&
-    data.value.payment.activeCount > 0 &&
-    router.resolve(transferPath.value).matched.some((m) => m.path.endsWith('/transfer')),
-)
+// F8 (staff-cx slice) moves one camper at a time. With one confirmed camper, go straight to their
+// request; with several, the transfers page lists each camper with its own "Request transfer".
+const transferable = computed(() => data.value?.participants.filter((p) => p.status === 'Confirmed') ?? [])
+const transferPath = computed(() => {
+  const only = transferable.value.length === 1 ? transferable.value[0] : undefined
+  return only ? `/family/registrations/${only.registrationId}/transfer` : '/family/transfers'
+})
+const canTransfer = computed(() => !!data.value && !data.value.isPast && transferable.value.length > 0)
 
 const active = computed(() => data.value?.participants.filter((p) => p.status !== 'Cancelled') ?? [])
 const names = computed(() => {

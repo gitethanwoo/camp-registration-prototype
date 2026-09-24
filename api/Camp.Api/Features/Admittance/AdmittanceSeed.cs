@@ -61,6 +61,7 @@ public sealed class AdmittanceSeed : ISeedModule
             app.UpdatedAt = app.DecidedAt.Value;
             app.Hold = HoldStatus.Captured;
             app.SeatHeld = true;
+            app.PoolId = pool.Id;
             var order = new PaymentOrder
             {
                 Household = app.Household,

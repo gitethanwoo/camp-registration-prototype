@@ -891,6 +891,9 @@ namespace Camp.Api.Data.Migrations
                     b.Property<int?>("OrderId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PoolId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("RegistrationId")
                         .HasColumnType("int");
 
@@ -946,6 +949,8 @@ namespace Camp.Api.Data.Migrations
                     b.HasIndex("ApplicantPersonId");
 
                     b.HasIndex("OrderId");
+
+                    b.HasIndex("PoolId");
 
                     b.HasIndex("RegistrationId");
 
@@ -1658,6 +1663,11 @@ namespace Camp.Api.Data.Migrations
                     b.HasOne("Camp.Api.Domain.PaymentOrder", null)
                         .WithMany()
                         .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Camp.Api.Domain.CapacityPool", null)
+                        .WithMany()
+                        .HasForeignKey("PoolId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Camp.Api.Domain.Registration", null)

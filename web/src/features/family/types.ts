@@ -49,6 +49,18 @@ export interface Overview {
     count: number
     plan: { installments: number; eachCents: number; nextDueDate: string | null; nextAmountCents: number | null } | null
   })[]
+  waitlist: {
+    id: number
+    participant: string
+    program: string
+    session: string
+    startDate: string
+    endDate: string
+    pool: string
+    position: number
+    status: 'Waiting' | 'Offered'
+    offerExpiresAt: string | null
+  }[]
   checklist: ChecklistEntry[]
 }
 
@@ -190,6 +202,8 @@ export interface Installment {
   amountCents: number
   status: 'Scheduled' | 'Paid' | 'Failed'
   graceUntil?: string | null
+  /** Set when a balance payment settled this installment early; it was never charged on its own. */
+  coveredOn?: string | null
 }
 
 export interface HistoryEntry {

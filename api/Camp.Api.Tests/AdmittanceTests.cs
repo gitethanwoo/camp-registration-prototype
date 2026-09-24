@@ -206,6 +206,59 @@ public class AdmittanceTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Declining_after_approval_releases_the_seat_in_the_pool_approval_claimed()
+    {
+        var sessionId = await IsolatedRetreat(capacity: 5);
+        var other = await factory.WithDb(async db =>
+        {
+            // A second pool in the same session with seats taken; a decline must not touch it.
+            var pool = new CapacityPool { SessionId = sessionId, Name = "Staff couples", GradeMin = 99, GradeMax = 99, Capacity = 10, Reserved = 4, SortOrder = 1 };
+            db.CapacityPools.Add(pool);
+            await db.SaveChangesAsync();
+            return pool.Id;
+        });
+        var (family, _) = await NewCouple("Release");
+        var id = await Apply(family, sessionId);
+        await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(x => x.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, DateTime.UtcNow.AddDays(-1))));
+        var staff = await factory.SignInAsStaff();
+        (await staff.PostAsync($"/api/admin/admittance/applications/{id}/approve", null)).EnsureSuccessStatusCode();
+        var claimed = await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(a => a.Id == id).Select(a => a.PoolId).SingleAsync());
+        Assert.NotNull(claimed);
+        Assert.NotEqual(other, claimed);
+        Assert.Equal(5, await Reserved(sessionId));
+
+        var declined = await staff.PostAsJsonAsync($"/api/admin/admittance/applications/{id}/decline", new { message = "The couple never updated their card." });
+
+        declined.EnsureSuccessStatusCode();
+        Assert.Equal(4, await Reserved(sessionId));
+        Assert.Equal(4, await factory.WithDb(db => db.CapacityPools.Where(p => p.Id == other).Select(p => p.Reserved).SingleAsync()));
+    }
+
+    [Fact]
+    public async Task Reauthorizing_twice_at_once_leaves_exactly_one_open_hold()
+    {
+        var sessionId = await IsolatedRetreat(capacity: 5);
+        var (family, _) = await NewCouple("Reauth");
+        var id = await Apply(family, sessionId);
+        await factory.WithDb(db => db.Set<AdmittanceApplication>().Where(x => x.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.AuthorizationExpiresAt, DateTime.UtcNow.AddDays(-1))));
+        var authorized = _gateway.AuthorizeCount;
+        var voided = _gateway.VoidCount;
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(i =>
+            family.PostAsJsonAsync($"/api/admittance/applications/{id}/reauthorize", new { cardToken = Card("4242424242424242"), idempotencyKey = $"race-{i}" })));
+
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.All(results.Where(r => r.StatusCode != HttpStatusCode.OK), r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
+        // Every new hold but the saved one was voided, and so was the lapsed one it replaced.
+        Assert.Equal(_gateway.AuthorizeCount - authorized, _gateway.VoidCount - voided);
+        var app = await factory.WithDb(db => db.Set<AdmittanceApplication>().AsNoTracking().SingleAsync(a => a.Id == id));
+        Assert.Equal(HoldStatus.Authorized, app.Hold);
+        Assert.True(app.AuthorizationExpiresAt > DateTime.UtcNow);
+    }
+
+    [Fact]
     public async Task A_declined_card_leaves_the_application_as_a_draft()
     {
         var sessionId = await IsolatedRetreat(capacity: 5);

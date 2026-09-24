@@ -172,6 +172,13 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
             var firstCharge = charges.FirstOrDefault(x => x.Kind == PaymentKind.Charge);
             var failed = o.Installments.Where(i => i.Status == InstallmentStatus.Failed).OrderBy(i => i.DueDate).FirstOrDefault();
             var next = o.Installments.Where(i => i.Status == InstallmentStatus.Scheduled).OrderBy(i => i.DueDate).FirstOrDefault();
+            // Paying the whole balance settles the rest of the plan early. Those installments were never
+            // charged on their own, so they show the balance payment that covered them, not "Paid".
+            var settled = await db.Set<BalancePayment>().AsNoTracking()
+                .Where(p => p.OrderId == o.Id && p.Status == BalancePaymentStatus.Succeeded)
+                .Select(p => new { p.Kind, p.InstallmentSequence, p.CreatedAt }).ToListAsync();
+            var retried = settled.Where(p => p.Kind == BalancePaymentKind.Installment).Select(p => p.InstallmentSequence).ToHashSet();
+            var payoff = settled.Where(p => p.Kind == BalancePaymentKind.Balance).OrderBy(p => p.CreatedAt).LastOrDefault();
 
             return Results.Ok(new
             {
@@ -215,6 +222,7 @@ public sealed class FamilyRegistrationEndpoints : IEndpointModule
                     i.AmountCents,
                     Status = i.Status.ToString(),
                     GraceUntil = i.Status == InstallmentStatus.Failed ? i.DueDate.AddDays(FamilyReadModel.GraceDays) : (DateOnly?)null,
+                    CoveredOn = i.Status == InstallmentStatus.Paid && payoff is not null && !retried.Contains(i.Sequence) ? payoff.CreatedAt : (DateTime?)null,
                 }),
                 FailedInstallment = failed is null ? null : new { failed.Sequence, failed.DueDate, failed.AmountCents, GraceUntil = failed.DueDate.AddDays(FamilyReadModel.GraceDays) },
                 NextCharge = next is null ? null : new { next.DueDate, next.AmountCents },

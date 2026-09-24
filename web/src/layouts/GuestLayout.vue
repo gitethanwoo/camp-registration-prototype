@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronDown, ClipboardCheck, House, LayoutGrid, LifeBuoy } from '@lucide/vue'
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import Logo from '@/components/Logo.vue'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -13,10 +13,28 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
+import { api } from '@/lib/api'
 import { loadSession, useSession } from '@/lib/session'
 
 const { session, initials, signIn, signOut } = useSession()
-onMounted(() => loadSession())
+
+// Retreat applications and church groups belong to other slices; the menu shows them only to a
+// family that has one, so most families see the same short menu.
+const hasApplications = ref(false)
+const hasGroups = ref(false)
+const any = (url: string) =>
+  api
+    .get<unknown[]>(url)
+    .then((rows) => rows.length > 0)
+    .catch(() => false)
+
+onMounted(async () => {
+  const s = await loadSession()
+  if (s.kind !== 'family') return
+  const [apps, groups] = await Promise.all([any('/admittance/applications'), any('/groups')])
+  hasApplications.value = apps
+  hasGroups.value = groups
+})
 
 const nav = [
   { to: '/programs', label: 'Programs' },
@@ -63,6 +81,12 @@ const nav = [
               >
               <DropdownMenuItem v-if="session.kind === 'family'" as-child
                 ><RouterLink to="/family/registrations">My registrations</RouterLink></DropdownMenuItem
+              >
+              <DropdownMenuItem v-if="session.kind === 'family' && hasApplications" as-child
+                ><RouterLink to="/applications">Applications</RouterLink></DropdownMenuItem
+              >
+              <DropdownMenuItem v-if="session.kind === 'family' && hasGroups" as-child
+                ><RouterLink to="/groups">My groups</RouterLink></DropdownMenuItem
               >
               <DropdownMenuItem v-if="session.kind === 'family'" as-child
                 ><RouterLink to="/family/access">Household access</RouterLink></DropdownMenuItem

@@ -143,7 +143,17 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         SetHold(app, hold, now);
         app.UpdatedAt = now;
         audit.Record("application.reauthorized", Entity, app.Id, $"New card ending {hold.CardLast4} authorized for {Money(app.AmountCents)}, not charged.");
-        await SaveOrConflict(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Someone else changed the application first (another re-entry, or a staff decision).
+            // This hold was never recorded, so release it unless it's the one that won.
+            db.ChangeTracker.Clear();
+            var winner = await db.Set<AdmittanceApplication>().AsNoTracking().SingleAsync(a => a.Id == id, ct);
+            if (winner.AuthorizationRef == hold.ProcessorRef) return; // a repeated request with the same key already saved it
+            await gateway.VoidAsync(hold.ProcessorRef, ct);
+            throw new AdmittanceException(409, "Your application changed while we were updating your card. This card wasn't charged; reload to see where it stands.");
+        }
         if (previous is not null) await gateway.VoidAsync(previous, ct);
         if (approvedAwaitingCard) await CaptureAndConfirmAsync(app.Id, actor, ct);
     }
@@ -220,6 +230,7 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
 
             app.Stage = ApplicationStage.Approved;
             app.SeatHeld = true;
+            app.PoolId = pool.Id;
             app.ReviewStartedAt ??= now;
             app.DecidedAt = now;
             app.ReviewedBy = actor;
@@ -246,9 +257,12 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         if (app.SeatHeld)
         {
-            await db.CapacityPools.Where(p => p.SessionId == app.SessionId && p.Reserved > 0)
+            // Release the one seat approval claimed, in the pool it claimed it from.
+            var poolId = app.PoolId ?? await FirstPoolId(app.SessionId, ct);
+            await db.CapacityPools.Where(p => p.Id == poolId && p.Reserved > 0)
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.Reserved, p => p.Reserved - 1), ct);
             app.SeatHeld = false;
+            app.PoolId = null;
         }
         var voided = await VoidHold(app, ct);
         app.Stage = ApplicationStage.Declined;
@@ -325,7 +339,8 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
         };
         order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Authorize, AmountCents = app.AmountCents, Succeeded = true, ProcessorRef = app.AuthorizationRef ?? "", CardLast4 = app.CardLast4 ?? "", Reason = "Admittance application hold", CreatedAt = app.AuthorizedAt ?? now });
         order.Operations.Add(new PaymentOperation { Kind = PaymentKind.Charge, AmountCents = app.AmountCents, Succeeded = true, ProcessorRef = result.ProcessorRef, CardLast4 = app.CardLast4 ?? "", Reason = "Captured on approval", CreatedAt = now });
-        var pool = await db.CapacityPools.AsNoTracking().Where(p => p.SessionId == app.SessionId).OrderBy(p => p.SortOrder).FirstAsync(ct);
+        var poolId = app.PoolId ?? await FirstPoolId(app.SessionId, ct);
+        var pool = await db.CapacityPools.AsNoTracking().SingleAsync(p => p.Id == poolId, ct);
         var registration = new Registration
         {
             Order = order,
@@ -364,6 +379,10 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    /// <summary>The pool approval claims from: the session's first pool (a retreat has one, "Couples").</summary>
+    Task<int> FirstPoolId(int sessionId, CancellationToken ct) =>
+        db.CapacityPools.Where(p => p.SessionId == sessionId).OrderBy(p => p.SortOrder).Select(p => p.Id).FirstAsync(ct);
 
     async Task<bool> OrderExists(string key, CancellationToken ct)
     {

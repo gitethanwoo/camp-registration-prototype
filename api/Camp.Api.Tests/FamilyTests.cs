@@ -356,6 +356,113 @@ public class FamilyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         await AssertPaidMatchesCharges(code);
     }
 
+    [Fact]
+    public async Task A_stale_pending_payment_is_recorded_once_when_requests_race_to_reconcile_it()
+    {
+        var (family, _) = await NewFamily("Stale");
+        var kid = await AddChild(family, "Sol", new DateOnly(2018, 4, 4), Gender.Male);
+        var code = await RegisterOnPlan(await HouseholdIdOf(family), [kid]);
+        var owed = await Balance(code);
+
+        // The process died after the processor charged the card but before the charge was recorded.
+        var key = Guid.NewGuid().ToString();
+        var charged = await _gateway.ChargeAsync(_gateway.Tokenize("4242424242424242"), owed, $"balance-{key}");
+        Assert.True(charged.Succeeded);
+        await factory.WithDb(async db =>
+        {
+            var orderId = await db.Orders.Where(o => o.ConfirmationCode == code).Select(o => o.Id).SingleAsync();
+            db.Set<BalancePayment>().Add(new BalancePayment
+            {
+                OrderId = orderId,
+                IdempotencyKey = key,
+                AmountCents = owed,
+                Kind = BalancePaymentKind.Balance,
+                Status = BalancePaymentStatus.Pending,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+            });
+            return await db.SaveChangesAsync();
+        });
+
+        // Every new attempt reconciles the stale payment first; they must not all record it.
+        var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => family.PostAsJsonAsync($"/api/family/registrations/{code}/pay", Pay("4242424242424242"))));
+
+        Assert.All(results, r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode)); // nothing left to pay
+        var recorded = await factory.WithDb(db => db.PaymentOperations.CountAsync(o => o.ProcessorRef == charged.ProcessorRef));
+        Assert.Equal(1, recorded);
+        Assert.Equal(0, await Balance(code));
+        await AssertPaidMatchesCharges(code);
+    }
+
+    [Fact]
+    public async Task A_payment_key_only_replays_for_the_order_it_paid()
+    {
+        var (family, _) = await NewFamily("Keys");
+        var a = await AddChild(family, "Kai", new DateOnly(2018, 4, 4), Gender.Male);
+        var b = await AddChild(family, "Kit", new DateOnly(2019, 8, 19), Gender.Female);
+        var householdId = await HouseholdIdOf(family);
+        var first = await RegisterOnPlan(householdId, [a]);
+        var second = await RegisterOnPlan(householdId, [b]);
+        var owedOnSecond = await Balance(second);
+        var request = Pay("4242424242424242");
+
+        using var paid = await family.PostAsJsonAsync($"/api/family/registrations/{first}/pay", request);
+        paid.EnsureSuccessStatusCode();
+        using var replayed = await family.PostAsJsonAsync($"/api/family/registrations/{first}/pay", request);
+        Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+
+        // The same key against another order must not report that order as paid.
+        using var misused = await family.PostAsJsonAsync($"/api/family/registrations/{second}/pay", request);
+        Assert.Equal(HttpStatusCode.BadRequest, misused.StatusCode);
+        Assert.Equal(owedOnSecond, await Balance(second));
+    }
+
+    [Fact]
+    public async Task Installments_settled_by_a_balance_payment_say_what_covered_them()
+    {
+        var (family, _) = await NewFamily("Covered");
+        var kid = await AddChild(family, "Cy", new DateOnly(2018, 4, 4), Gender.Male);
+        var code = await RegisterOnPlan(await HouseholdIdOf(family), [kid]);
+        await factory.WithDb(db => db.Installments.Where(i => i.OrderId == db.Orders.Single(o => o.ConfirmationCode == code).Id && i.Sequence == 1)
+            .ExecuteUpdateAsync(s => s.SetProperty(i => i.Status, InstallmentStatus.Failed)));
+        (await family.PostAsJsonAsync($"/api/family/registrations/{code}/pay", Pay("4242424242424242") with { InstallmentSequence = 1 })).EnsureSuccessStatusCode();
+        (await family.PostAsJsonAsync($"/api/family/registrations/{code}/pay", Pay("4242424242424242"))).EnsureSuccessStatusCode();
+
+        var payments = await family.GetFromJsonAsync<JsonElement>($"/api/family/registrations/{code}/payments");
+        var installments = payments.GetProperty("installments").EnumerateArray().ToList();
+        Assert.All(installments, i => Assert.Equal("Paid", i.GetProperty("status").GetString()));
+        // Installment 1 was charged on its own; 2 and 3 were covered by the balance payment.
+        Assert.Equal(JsonValueKind.Null, installments[0].GetProperty("coveredOn").ValueKind);
+        Assert.All(installments.Skip(1), i => Assert.Equal(DateTime.UtcNow.Date, i.GetProperty("coveredOn").GetDateTime().Date));
+    }
+
+    [Fact]
+    public async Task The_home_page_shows_a_held_waitlist_offer_and_no_dead_health_action()
+    {
+        var (family, _) = await NewFamily("Offer");
+        var kid = await AddChild(family, "Ola", new DateOnly(2018, 4, 4), Gender.Female);
+        var householdId = await HouseholdIdOf(family);
+        var code = await RegisterOnPlan(householdId, [kid]);
+        var expires = DateTime.UtcNow.AddHours(20);
+        await factory.WithDb(async db =>
+        {
+            var pool = await db.CapacityPools.FirstAsync(p => p.Session.Program.Slug == "overnight-camp");
+            db.WaitlistEntries.Add(new WaitlistEntry { PoolId = pool.Id, PersonId = kid, HouseholdId = householdId, Position = 1, Status = WaitlistStatus.Offered, OfferExpiresAt = expires, CreatedAt = DateTime.UtcNow });
+            // An embedded health form can't be finished after registration, so it must not offer a button.
+            await db.Registrations.Where(r => r.Order!.ConfirmationCode == code).ExecuteUpdateAsync(s => s.SetProperty(r => r.HealthStatus, FormStatus.Incomplete));
+            return await db.SaveChangesAsync();
+        });
+
+        var overview = await family.GetFromJsonAsync<JsonElement>("/api/family/overview");
+        var offer = Assert.Single(overview.GetProperty("waitlist").EnumerateArray());
+        Assert.Equal("Offered", offer.GetProperty("status").GetString());
+        Assert.Equal(expires, offer.GetProperty("offerExpiresAt").GetDateTime(), TimeSpan.FromSeconds(1));
+
+        var health = Assert.Single(overview.GetProperty("checklist").EnumerateArray(), i => i.GetProperty("kind").GetString() == "health");
+        Assert.False(health.GetProperty("done").GetBoolean());
+        Assert.Equal("", health.GetProperty("action").GetString());
+        Assert.Equal("", health.GetProperty("href").GetString());
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     static MemberRequest Child(string first, DateOnly dob, Gender gender) => new(first, "Test", dob, gender, false, null, null, null, null);

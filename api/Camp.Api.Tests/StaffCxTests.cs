@@ -455,6 +455,29 @@ public class StaffCxTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Transfer_requests_from_two_devices_at_the_same_moment_give_one_request_and_409s()
+    {
+        var (client, householdId, regId) = await NewFamilyRegisteredInWeekOne("Devices", PaymentOption.Deposit);
+        var email = await factory.WithDb(db => db.Households.Where(h => h.Id == householdId).Select(h => h.Email).SingleAsync());
+        using var phone = await factory.SignInAsFamily(email, "Pat", "Devices");
+        var weekTwo = await WeekTwoId();
+
+        for (var round = 0; round < 3; round++)
+        {
+            await factory.WithDb(db => db.Set<TransferRequest>().Where(t => t.RegistrationId == regId).ExecuteDeleteAsync());
+            var results = await Task.WhenAll(Enumerable.Range(0, 10).Select(i => (i % 2 == 0 ? client : phone)
+                .PostAsJsonAsync("/api/transfers", new { registrationId = regId, toSessionId = weekTwo, reason = $"Tab {i}" })));
+
+            Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+            foreach (var r in results.Where(r => r.StatusCode != HttpStatusCode.OK))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
+                Assert.Contains("already a transfer request waiting for review", await r.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
     public async Task A_full_destination_marks_the_pool_requirement_blocked()
     {
         var staff = await factory.SignInAsStaff();

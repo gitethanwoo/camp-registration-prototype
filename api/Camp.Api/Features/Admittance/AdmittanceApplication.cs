@@ -60,6 +60,8 @@ public class AdmittanceApplication
 
     /// <summary>True once approval has claimed a seat in the session's pool.</summary>
     public bool SeatHeld { get; set; }
+    /// <summary>The pool approval claimed a seat in; a decline or capture uses exactly this pool.</summary>
+    public int? PoolId { get; set; }
     public int? RegistrationId { get; set; }
     public int? OrderId { get; set; }
 
@@ -90,6 +92,7 @@ internal sealed class AdmittanceApplicationConfiguration : IEntityTypeConfigurat
         b.HasOne(a => a.Spouse).WithMany().HasForeignKey(a => a.SpousePersonId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<Registration>().WithMany().HasForeignKey(a => a.RegistrationId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<PaymentOrder>().WithMany().HasForeignKey(a => a.OrderId).OnDelete(DeleteBehavior.NoAction);
+        b.HasOne<CapacityPool>().WithMany().HasForeignKey(a => a.PoolId).OnDelete(DeleteBehavior.NoAction);
         b.Property(a => a.AnswersJson).HasMaxLength(8000);
         b.Property(a => a.InfoRequest).HasMaxLength(2000);
         b.Property(a => a.InfoResponse).HasMaxLength(2000);

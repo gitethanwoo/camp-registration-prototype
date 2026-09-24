@@ -45,6 +45,7 @@ namespace Camp.Api.Data.Migrations
                     AuthorizedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     AuthorizationExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     SeatHeld = table.Column<bool>(type: "bit", nullable: false),
+                    PoolId = table.Column<int>(type: "int", nullable: true),
                     RegistrationId = table.Column<int>(type: "int", nullable: true),
                     OrderId = table.Column<int>(type: "int", nullable: true),
                     RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
@@ -52,6 +53,11 @@ namespace Camp.Api.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AdmittanceApplications", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AdmittanceApplications_CapacityPools_PoolId",
+                        column: x => x.PoolId,
+                        principalTable: "CapacityPools",
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_AdmittanceApplications_Households_HouseholdId",
                         column: x => x.HouseholdId,
@@ -389,6 +395,11 @@ namespace Camp.Api.Data.Migrations
                 name: "IX_AdmittanceApplications_OrderId",
                 table: "AdmittanceApplications",
                 column: "OrderId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AdmittanceApplications_PoolId",
+                table: "AdmittanceApplications",
+                column: "PoolId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AdmittanceApplications_RegistrationId",

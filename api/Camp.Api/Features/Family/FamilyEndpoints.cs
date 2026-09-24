@@ -35,6 +35,10 @@ public sealed class FamilyEndpoints : IEndpointModule
             var upcoming = (await FamilyReadModel.Orders(db, me.HouseholdId).AsNoTracking().ToListAsync())
                 .Where(o => o.Session.EndDate >= today && FamilyReadModel.Active(o).Count > 0)
                 .OrderBy(o => o.Session.StartDate).ToList();
+            var waitlist = await db.WaitlistEntries
+                .Where(w => w.HouseholdId == me.HouseholdId && (w.Status == WaitlistStatus.Waiting || w.Status == WaitlistStatus.Offered))
+                .Include(w => w.Person).Include(w => w.Pool).ThenInclude(p => p.Session).ThenInclude(s => s.Program)
+                .OrderBy(w => w.Pool.Session.StartDate).AsNoTracking().ToListAsync();
 
             return new
             {
@@ -76,6 +80,20 @@ public sealed class FamilyEndpoints : IEndpointModule
                             NextAmountCents = next?.AmountCents,
                         },
                     };
+                }),
+                // A held offer has a deadline the family must see (FR-39); a plain wait shows the place in line.
+                Waitlist = waitlist.Select(w => new
+                {
+                    w.Id,
+                    Participant = w.Person.FullName,
+                    Program = w.Pool.Session.Program.Name,
+                    Session = w.Pool.Session.Name,
+                    w.Pool.Session.StartDate,
+                    w.Pool.Session.EndDate,
+                    Pool = w.Pool.Name,
+                    w.Position,
+                    Status = w.Status.ToString(),
+                    w.OfferExpiresAt,
                 }),
                 Checklist = upcoming.SelectMany(FamilyReadModel.Checklist).ToList(),
             };
@@ -141,13 +159,18 @@ public sealed class FamilyEndpoints : IEndpointModule
         });
     }
 
-    /// <summary>Two adults with one email would make "who is signed in" ambiguous for household access.</summary>
+    /// <summary>Two adults with one email would make "who is signed in" ambiguous, in this household or across households.</summary>
     static async Task<IResult?> EmailTaken(CampDbContext db, int householdId, int? personId, MemberRequest req)
     {
         var email = req.IsAdult ? Blank(req.Email) : null;
         if (email is null) return null;
         var taken = await db.People.AnyAsync(p => p.HouseholdId == householdId && p.Id != personId && p.Email == email);
-        return taken ? Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"{email} already belongs to someone in your household."] }) : null;
+        if (taken) return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"{email} already belongs to someone in your household."] });
+        // Only a new or changed email is checked, so an adult saved before this rule can still be edited.
+        var unchanged = personId is { } id && await db.People.AnyAsync(p => p.Id == id && p.Email == email);
+        return !unchanged && await HouseholdAccessEndpoints.SignsInElsewhere(db, householdId, email)
+            ? Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [HouseholdAccessEndpoints.ElsewhereMessage(email)] })
+            : null;
     }
 
     static async Task<List<string>> ActiveRegistrationNames(CampDbContext db, int personId)

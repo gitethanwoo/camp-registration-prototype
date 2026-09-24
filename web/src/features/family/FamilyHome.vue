@@ -3,7 +3,9 @@ import {
   CalendarDays,
   ChevronRight,
   CircleCheck,
+  Clock,
   ExternalLink,
+  HeartHandshake,
   KeyRound,
   ListChecks,
   Plus,
@@ -17,13 +19,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { api } from '@/lib/api'
-import { dateRange, date, initials, money } from '@/lib/format'
+import { dateRange, date, dateTime, initials, money } from '@/lib/format'
 import PaymentBadge from './PaymentBadge.vue'
 import type { Overview } from './types'
 
 const data = ref<Overview | null>(null)
 const failed = ref(false)
+
+// Retreat applications live in the admittance slice; link to them only when the family has one.
+const hasApplications = ref(false)
 
 async function load() {
   failed.value = false
@@ -32,6 +38,10 @@ async function load() {
   } catch {
     failed.value = true
   }
+  hasApplications.value = await api
+    .get<unknown[]>('/admittance/applications')
+    .then((a) => a.length > 0)
+    .catch(() => false)
 }
 onMounted(load)
 
@@ -66,6 +76,9 @@ function role(m: Overview['members'][number]) {
       <div class="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" as-child
           ><RouterLink to="/family/registrations"><ListChecks />My registrations</RouterLink></Button
+        >
+        <Button v-if="hasApplications" variant="outline" size="sm" as-child
+          ><RouterLink to="/applications"><HeartHandshake />Applications</RouterLink></Button
         >
         <Button variant="outline" size="sm" as-child
           ><RouterLink to="/family/access"><KeyRound />Household access</RouterLink></Button
@@ -170,6 +183,29 @@ function role(m: Overview['members'][number]) {
           </CardContent>
         </Card>
 
+        <Card v-if="data.waitlist.length">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2"><Clock class="size-5" />Waitlists</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul class="divide-y">
+              <li v-for="w in data.waitlist" :key="w.id" class="space-y-1 py-3 first:pt-0 last:pb-0">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="font-medium">{{ w.participant }}</p>
+                  <StatusBadge
+                    :status="w.status"
+                    :label="w.status === 'Waiting' ? `#${w.position} in line` : undefined"
+                  />
+                </div>
+                <p class="text-sm text-muted-foreground">{{ w.program }} · {{ w.session }} · {{ w.pool }}</p>
+                <p v-if="w.status === 'Offered' && w.offerExpiresAt" class="text-sm font-medium text-sky-800">
+                  A spot is being held until {{ dateTime(w.offerExpiresAt) }}.
+                </p>
+              </li>
+            </ul>
+          </CardContent>
+        </Card>
+
         <Card v-if="data.checklist.length && !todo.length" class="border-emerald-200 bg-emerald-50/50">
           <CardContent class="flex items-start gap-4">
             <CircleCheck class="size-10 shrink-0 text-emerald-600" />
@@ -231,7 +267,7 @@ function role(m: Overview['members'][number]) {
                 <p class="text-xs text-muted-foreground">{{ c.detail }} · {{ c.context }}</p>
               </div>
               <Button
-                v-if="!c.done && isExternal(c.href)"
+                v-if="!c.done && c.action && isExternal(c.href)"
                 size="sm"
                 :variant="c.done ? 'ghost' : 'default'"
                 class="ml-8 sm:ml-0"
@@ -240,7 +276,7 @@ function role(m: Overview['members'][number]) {
                 <a :href="c.href" target="_blank" rel="noopener">{{ c.action }}<ExternalLink class="size-3.5" /></a>
               </Button>
               <Button
-                v-else-if="!c.done || c.kind === 'balance'"
+                v-else-if="c.action && (!c.done || c.kind === 'balance')"
                 size="sm"
                 :variant="c.done ? 'ghost' : 'default'"
                 class="ml-8 sm:ml-0"

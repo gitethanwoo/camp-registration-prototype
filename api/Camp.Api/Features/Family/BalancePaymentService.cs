@@ -30,7 +30,7 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
         if (string.IsNullOrWhiteSpace(req.IdempotencyKey) || req.IdempotencyKey.Length > 100)
             return new(PayOutcome.Invalid, 0, "Missing payment key. Reload the page and try again.");
 
-        var repeat = await Existing(householdId, req.IdempotencyKey, ct);
+        var repeat = await Existing(householdId, code, req.IdempotencyKey, ct);
         if (repeat is not null) return repeat;
 
         var order = await db.Orders.Include(o => o.Installments)
@@ -65,7 +65,7 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
             {
                 await tx.RollbackAsync(ct);
                 db.ChangeTracker.Clear();
-                return await Existing(householdId, req.IdempotencyKey, ct)
+                return await Existing(householdId, code, req.IdempotencyKey, ct)
                     ?? new(PayOutcome.AlreadyProcessing, 0, "A payment for this registration is already processing. Refresh in a moment to see it.");
             }
 
@@ -91,8 +91,13 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         db.ChangeTracker.Clear();
+        // Claim the pending row first. The original request and a reconcile pass can both get here;
+        // the conditional update lets exactly one of them record the charge and allocate it.
+        var claimed = await db.Set<BalancePayment>()
+            .Where(p => p.Id == paymentId && p.Status == BalancePaymentStatus.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, result.Succeeded ? BalancePaymentStatus.Succeeded : BalancePaymentStatus.Declined), ct);
+        if (claimed == 0) return;
         var payment = await db.Set<BalancePayment>().SingleAsync(p => p.Id == paymentId, ct);
-        if (payment.Status != BalancePaymentStatus.Pending) return;
         var order = await db.Orders.Include(o => o.Registrations).ThenInclude(r => r.Person)
             .Include(o => o.Installments).Include(o => o.Session).ThenInclude(s => s.Program)
             .SingleAsync(o => o.Id == payment.OrderId, ct);
@@ -116,7 +121,6 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
         var money = CheckoutService.Money(payment.AmountCents);
         if (result.Succeeded)
         {
-            payment.Status = BalancePaymentStatus.Succeeded;
             Allocate(order.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled).ToList(), payment.AmountCents);
             var paidOff = order.Registrations.Where(r => r.Status != RegistrationStatus.Cancelled).Sum(r => r.BalanceCents) <= 0;
             foreach (var i in order.Installments.Where(i => i.Status != InstallmentStatus.Paid))
@@ -133,7 +137,6 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
         }
         else
         {
-            payment.Status = BalancePaymentStatus.Declined;
             payment.DeclineReason = result.DeclineReason;
             audit.Record("payment.balance_declined", "PaymentOrder", order.Id, $"{label}: {money} declined. Balance unchanged.");
         }
@@ -188,12 +191,13 @@ public sealed class BalancePaymentService(CampDbContext db, IPaymentGateway gate
         return regs.Sum(r => r.PriceCents - r.DiscountCents - r.PaidCents);
     }
 
-    async Task<PayResult?> Existing(int householdId, string key, CancellationToken ct)
+    /// <summary>A repeated key replays its result, but only for the same order it paid.</summary>
+    async Task<PayResult?> Existing(int householdId, string code, string key, CancellationToken ct)
     {
         var p = await db.Set<BalancePayment>().AsNoTracking().Include(x => x.Order)
             .FirstOrDefaultAsync(x => x.IdempotencyKey == key, ct);
         if (p is null) return null;
-        if (p.Order.HouseholdId != householdId) return new(PayOutcome.Invalid, 0, "That payment key was already used. Reload the page and try again.");
+        if (p.Order.HouseholdId != householdId || p.Order.ConfirmationCode != code) return new(PayOutcome.Invalid, 0, "That payment key was already used. Reload the page and try again.");
         return p.Status switch
         {
             BalancePaymentStatus.Succeeded => new(PayOutcome.Succeeded, p.AmountCents, null, p.CardLast4),

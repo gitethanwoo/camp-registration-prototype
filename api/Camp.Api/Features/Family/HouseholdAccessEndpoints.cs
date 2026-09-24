@@ -96,6 +96,8 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
             var email = req.Email!.Trim().ToLowerInvariant();
             if (household.Members.Any(m => m.IsAdult && m.Role is not null && string.Equals(m.Email, email, StringComparison.OrdinalIgnoreCase)))
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"{email} already has access to this household."] });
+            if (await SignsInElsewhere(db, me.HouseholdId, email))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [ElsewhereMessage(email)] });
             var pending = await db.Set<HouseholdInvitation>().AnyAsync(i => i.HouseholdId == me.HouseholdId && i.Status == InvitationStatus.Pending && i.Email == email && i.ExpiresAt > DateTime.UtcNow);
             if (pending)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = [$"You already invited {email}. Cancel that invitation to send a new one."] });
@@ -160,6 +162,18 @@ public sealed class HouseholdAccessEndpoints : IEndpointModule
             return Results.Ok(new { target.Id, Access = "No account access" });
         });
     }
+
+    /// <summary>
+    /// Sign-in finds a household through an adult with access, or the household's own email
+    /// (<c>AuthEndpoints.HouseholdFor</c>). One email may open only one household, so an email
+    /// that already signs in somewhere else can't be given to an adult here.
+    /// </summary>
+    public static async Task<bool> SignsInElsewhere(CampDbContext db, int householdId, string email) =>
+        await db.People.AnyAsync(p => p.HouseholdId != householdId && p.IsAdult && p.Role != null && p.Email == email && !p.Household.Email.StartsWith("merged-into-"))
+        || await db.Households.AnyAsync(h => h.Id != householdId && h.Email == email);
+
+    public static string ElsewhereMessage(string email) =>
+        $"{email} already signs in to another family account. Use a different email, or contact us to combine the accounts.";
 
     /// <summary>The adult in the household who is signed in, matched by sign-in email.</summary>
     static Person? Self(Household household, CurrentUser me) =>

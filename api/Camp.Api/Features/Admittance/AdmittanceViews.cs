@@ -141,7 +141,9 @@ public static class AdmittanceViews
             .Include(s => s.Program).ThenInclude(p => p.Ministry).Include(s => s.Pools).AsNoTracking().ToListAsync();
         var pending = await db.Set<AdmittanceApplication>().Where(a => AdmittanceApplication.Pending.Contains(a.Stage))
             .GroupBy(a => a.SessionId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
-        return sessions.OrderBy(s => s.StartDate).Select(s => new
+        // Upcoming sessions first: the queue opens on the first one, and a past retreat has nothing to review.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return sessions.OrderBy(s => s.EndDate < today).ThenBy(s => s.StartDate).Select(s => new
         {
             Session = SessionInfo(s),
             Capacity = s.Pools.Sum(p => p.Capacity),

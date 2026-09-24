@@ -108,7 +108,9 @@ public static class FamilyReadModel
             var healthDone = r.HealthStatus == FormStatus.Complete;
             yield return program.HealthMechanism == HealthMechanism.CampDoc
                 ? new($"health-{r.Id}", who, ctx, "Health forms in CampDoc", healthDone ? "Complete" : "Incomplete", healthDone, "Open CampDoc", "campdoc", "https://app.campdoc.com/")
-                : new($"health-{r.Id}", who, ctx, "Health form", healthDone ? "Complete" : "Incomplete", healthDone, "Review health form", "health", $"{detail}#checklist");
+                // The embedded health form is filled in during registration; there's no page to finish it
+                // afterwards, so an incomplete one is shown without a button rather than a dead link.
+                : new($"health-{r.Id}", who, ctx, "Health form", healthDone ? "Complete" : "Incomplete", healthDone, "", "health", "");
         }
 
         if (confirmed.Count == 0) yield break;
