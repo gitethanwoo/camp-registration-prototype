@@ -170,7 +170,7 @@ async function resolve() {
 
     <div class="flex flex-wrap items-center gap-3">
       <Select v-if="list" v-model="batchId">
-        <SelectTrigger class="w-full sm:w-72" aria-label="Settlement batch"><SelectValue /></SelectTrigger>
+        <SelectTrigger class="w-full sm:w-96" aria-label="Settlement batch"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem v-for="b in list.batches" :key="b.id" :value="b.id">
             Fiserv batch {{ b.reference }}<template v-if="b.unmatched"> · {{ b.unmatched }} unmatched</template>
@@ -311,7 +311,8 @@ async function resolve() {
         <div v-if="r.program" class="text-xs text-muted-foreground">{{ r.program }} · {{ r.session }}</div>
       </template>
       <template #cell-payer="{ row: r }">
-        {{ r.cardholderName ?? '—' }}<span v-if="r.cardLast4" class="text-muted-foreground"> ·· {{ r.cardLast4 }}</span>
+        <div>{{ r.cardholderName ?? '—' }}</div>
+        <div v-if="r.cardLast4" class="text-xs text-muted-foreground">Card ending {{ r.cardLast4 }}</div>
       </template>
       <template #cell-amount="{ row: r }">{{ money(r.amountCents) }}</template>
       <template #cell-status="{ row: r }"><StatusBadge :status="r.kind === 'Fee' ? 'Fee' : r.status" /></template>
@@ -340,7 +341,7 @@ async function resolve() {
             <dd class="tabular-nums">{{ money(selected.amountCents) }}</dd>
             <template v-if="selected.cardholderName">
               <dt class="text-muted-foreground">Cardholder</dt>
-              <dd>{{ selected.cardholderName }} ·· {{ selected.cardLast4 }}</dd>
+              <dd>{{ selected.cardholderName }} · card ending {{ selected.cardLast4 }}</dd>
             </template>
             <dt class="text-muted-foreground">Status</dt>
             <dd><StatusBadge :status="selected.kind === 'Fee' ? 'Fee' : selected.status" /></dd>

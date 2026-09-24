@@ -86,7 +86,7 @@ const attendancePct = computed(() => {
   return a && a.registered ? Math.round((a.attended * 100) / a.registered) : 0
 })
 const topShare = (items: { label: string; count: number }[], total: number) =>
-  items.map((g) => `${Math.round((g.count * 100) / (total || 1))}% ${g.label.toLowerCase()}`).join(' · ')
+  items.map((g) => `${Math.round((g.count * 100) / (total || 1))}% ${g.label}`).join(' · ')
 const maxPeriod = computed(() =>
   Math.max(1, ...(report.value?.registrationsByPeriod.periods.map((p) => p.count) ?? [])),
 )
@@ -212,11 +212,15 @@ const columns: ColumnDef<ReportRow>[] = [
         </StatTile>
         <StatTile
           label="Attendance"
-          :value="`${attendancePct}%`"
-          :sub="`${report.attendance.attended} of ${report.attendance.registered} registered`"
+          :value="report.attendance.registered ? `${attendancePct}%` : '—'"
+          :sub="
+            report.attendance.registered
+              ? `${report.attendance.attended} of ${report.attendance.registered} registered`
+              : 'No sessions ended in this range'
+          "
         >
           <template #icon><CalendarCheck /></template>
-          <Progress :model-value="attendancePct" class="mt-2 h-1.5" />
+          <Progress v-if="report.attendance.registered" :model-value="attendancePct" class="mt-2 h-1.5" />
         </StatTile>
         <StatTile
           label="Demographics"
@@ -224,6 +228,9 @@ const columns: ColumnDef<ReportRow>[] = [
           :sub="topShare(report.demographics.gender, report.demographics.total)"
         >
           <template #icon><UsersRound /></template>
+          <p class="mt-1 text-xs text-muted-foreground">
+            {{ topShare(report.demographics.grades, report.demographics.total) }}
+          </p>
         </StatTile>
       </div>
 
@@ -242,10 +249,13 @@ const columns: ColumnDef<ReportRow>[] = [
               <div
                 v-for="p in report.registrationsByPeriod.periods"
                 :key="p.start"
-                class="flex h-full flex-1 flex-col justify-end"
+                class="flex h-full min-w-0 flex-1 flex-col justify-end"
                 :title="`${p.label}: ${p.count}`"
               >
-                <div class="rounded-t bg-primary/80" :style="{ height: `${(p.count * 100) / maxPeriod}%` }" />
+                <span v-if="p.count" class="text-center text-[10px] text-muted-foreground tabular-nums">{{
+                  p.count
+                }}</span>
+                <div class="min-h-px rounded-t bg-primary/80" :style="{ height: `${(p.count * 85) / maxPeriod}%` }" />
               </div>
             </div>
             <div class="mt-1 flex justify-between text-xs text-muted-foreground">

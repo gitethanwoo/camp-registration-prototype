@@ -177,7 +177,7 @@ async function submit() {
                   :disabled="c.balanceCents <= 0"
                   @update:model-value="(v) => toggle(c.registrationId, v === true)"
                 />
-                <Label :for="`camper-${c.registrationId}`" class="flex flex-1 flex-col items-start gap-0 font-normal">
+                <Label :for="`camper-${c.registrationId}`" class="flex flex-1 flex-col items-start gap-0.5 font-normal">
                   <span class="font-medium">{{ c.name }}</span>
                   <span class="text-muted-foreground"
                     >Grade {{ c.grade }}{{ c.balanceCents <= 0 ? ' · paid in full' : '' }}</span
@@ -199,6 +199,7 @@ async function submit() {
                     id="reason"
                     v-model="reason"
                     rows="5"
+                    class="min-h-32"
                     :maxlength="REASON_MAX"
                     :aria-invalid="!!errors.reason"
                     placeholder="Tell us about your situation and why you're requesting financial assistance."

@@ -143,7 +143,7 @@ const dot: Record<JournalStatus, string> = {
           >{{ w.unmatched }} unmatched {{ w.unmatched === 1 ? 'line' : 'lines' }}. The journal is created when every
           line is resolved.</span
         >
-        <RouterLink to="/admin/finance/reconciliation" class="underline underline-offset-4"
+        <RouterLink to="/admin/finance/reconciliation" class="ml-1 underline underline-offset-4"
           >Open reconciliation</RouterLink
         >
       </AlertDescription>
