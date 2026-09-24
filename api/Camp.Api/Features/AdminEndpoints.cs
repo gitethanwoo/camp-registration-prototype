@@ -283,7 +283,7 @@ public static class AdminEndpoints
             audit.Record("capacity.changed", "CapacityPool", id, $"{pool.Name}: {pool.Capacity} → {req.Capacity}");
             await db.SaveChangesAsync();
             return Results.Ok();
-        });
+        }).RequireAuthorization(Policies.Admin); // K3: capacity is an admin change, like session setup's pool editor
 
         // C7 · Waitlist management
         admin.MapGet("/sessions/{id:int}/waitlist", async (int id, CampDbContext db) =>

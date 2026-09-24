@@ -395,6 +395,46 @@ public class GroupsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     Task<int> Reserved(int sessionId) => factory.WithDb(db => db.CapacityPools.Where(p => p.SessionId == sessionId).Select(p => p.Reserved).SingleAsync());
 
+    [Fact]
+    public async Task Checkout_refuses_a_group_whose_program_went_back_to_draft()
+    {
+        var sessionId = await IsolatedCohortSession(capacity: 10);
+        var programId = await factory.WithDb(async db =>
+        {
+            var session = await db.Sessions.Include(s => s.Program).SingleAsync(s => s.Id == sessionId);
+            var copy = new CampProgram
+            {
+                MinistryId = session.Program.MinistryId,
+                Slug = $"test-{Guid.NewGuid():N}"[..20],
+                Name = "Test cohort",
+                Type = session.Program.Type,
+                HealthMechanism = session.Program.HealthMechanism,
+                Location = session.Program.Location,
+                IsPublished = true,
+            };
+            db.Programs.Add(copy);
+            session.Program = copy;
+            await db.SaveChangesAsync();
+            return copy.Id;
+        });
+        using var dave = await Dave();
+        var id = await CreateGroup(dave, sessionId, ("Ana Ruiz", "ana@example.com"));
+        await factory.WithDb(db => db.Programs.Where(p => p.Id == programId).ExecuteUpdateAsync(s => s.SetProperty(p => p.IsPublished, false)));
+        var before = _gateway.ChargeCount;
+
+        var res = await dave.PostAsJsonAsync($"/api/groups/{id}/checkout", new { IdempotencyKey = $"g-{Guid.NewGuid()}", CardToken = Card("4242424242424242") });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Contains("isn't open for registration", await res.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(before, _gateway.ChargeCount);
+        Assert.Equal(0, await Reserved(sessionId));
+
+        // Creating a new group for it is refused too.
+        using var create = await dave.PostAsJsonAsync("/api/groups", new { SessionId = sessionId, Name = "Late group", Attendees = new[] { new { Name = "Ben Ode", Email = "ben@example.com" } } });
+        Assert.NotEqual(HttpStatusCode.OK, create.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Created, create.StatusCode);
+    }
+
     static async Task<int> CreateGroup(HttpClient client, int sessionId, params (string Name, string? Email)[] rows)
     {
         using var res = await client.PostAsJsonAsync("/api/groups", new { SessionId = sessionId, Name = "Test group", Attendees = rows.Select(r => new { r.Name, r.Email }) });

@@ -1,4 +1,5 @@
 import { BookOpenCheck, CalendarX2, ChartColumn, HandHeart, Scale } from '@lucide/vue'
+import { financeRoles } from '@/lib/nav'
 import type { RouteRecordRaw } from 'vue-router'
 
 // O6 · A family's scholarship applications and the application form.
@@ -21,12 +22,17 @@ export const adminRoutes: RouteRecordRaw[] = [
   {
     path: 'finance/reports',
     component: () => import('./Reports.vue'),
-    meta: { title: 'Reports', nav: { group: 'Finance', label: 'Reports', icon: ChartColumn, order: 10 } },
+    meta: {
+      roles: financeRoles,
+      title: 'Reports',
+      nav: { group: 'Finance', label: 'Reports', icon: ChartColumn, order: 10 },
+    },
   },
   {
     path: 'finance/reconciliation',
     component: () => import('./Reconciliation.vue'),
     meta: {
+      roles: financeRoles,
       title: 'Payment reconciliation',
       nav: { group: 'Finance', label: 'Reconciliation', icon: Scale, order: 20 },
     },
@@ -35,6 +41,7 @@ export const adminRoutes: RouteRecordRaw[] = [
     path: 'finance/plan-exceptions',
     component: () => import('./PlanExceptions.vue'),
     meta: {
+      roles: financeRoles,
       title: 'Payment plan exceptions',
       nav: { group: 'Finance', label: 'Plan exceptions', icon: CalendarX2, order: 30 },
     },
@@ -43,6 +50,7 @@ export const adminRoutes: RouteRecordRaw[] = [
     path: 'finance/journals',
     component: () => import('./JournalExports.vue'),
     meta: {
+      roles: financeRoles,
       title: 'Oracle Fusion journal exports',
       nav: { group: 'Finance', label: 'Oracle exports', icon: BookOpenCheck, order: 40 },
     },

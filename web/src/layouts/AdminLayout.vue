@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/sidebar'
 import { date } from '@/lib/format'
 import { useSession } from '@/lib/session'
-import { navGroups } from '@/lib/nav'
+import { navGroups, type StaffRole } from '@/lib/nav'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +52,7 @@ const { session, initials, roleLabel, signOut } = useSession()
 const groups = computed(() => {
   const items = router
     .getRoutes()
+    .filter((r) => !r.meta.roles || r.meta.roles.includes(session.value?.role as StaffRole))
     .flatMap((r) => (r.meta.nav && r.path.startsWith('/admin') ? [{ ...r.meta.nav, to: r.path }] : []))
   return navGroups
     .map((label) => ({

@@ -1,4 +1,5 @@
 import { ArrowLeftRight, BadgePercent, Search, UsersRound } from '@lucide/vue'
+import { cetRoles } from '@/lib/nav'
 import type { RouteRecordRaw } from 'vue-router'
 
 // F8 · Guest side of session transfers.
@@ -33,6 +34,7 @@ export const adminRoutes: RouteRecordRaw[] = [
     path: 'transfers',
     component: () => import('./TransferQueue.vue'),
     meta: {
+      roles: cetRoles,
       title: 'Transfer requests',
       nav: { group: 'Front desk', label: 'Transfer requests', icon: ArrowLeftRight, order: 40 },
     },
@@ -41,6 +43,7 @@ export const adminRoutes: RouteRecordRaw[] = [
     path: 'duplicates',
     component: () => import('./DuplicateQueue.vue'),
     meta: {
+      roles: cetRoles,
       title: 'Duplicate accounts',
       nav: { group: 'Front desk', label: 'Duplicates', icon: UsersRound, order: 50 },
     },
@@ -49,7 +52,7 @@ export const adminRoutes: RouteRecordRaw[] = [
     path: 'duplicates/:a/:b',
     component: () => import('./DuplicateMerge.vue'),
     props: (r) => ({ a: Number(r.params.a), b: Number(r.params.b) }),
-    meta: { title: 'Merge duplicate accounts' },
+    meta: { roles: cetRoles, title: 'Merge duplicate accounts' },
   },
   {
     path: 'discounts',

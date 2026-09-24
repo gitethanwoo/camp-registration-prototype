@@ -64,6 +64,7 @@ After this plan, a presenter can bring up one fresh stack (`docker compose down 
 
 - (2026-09-24) After merging and generating `Wave2`, before fixes: `npm run test:api` 162 passed, 6 failed (all SetupTests, from the Family Camp slug collision).
 - (2026-09-24) Fresh stack: `__EFMigrationsHistory` lists Initial, Wave1, Wave2; `sys.triggers` has `TR_AuditEvents_Immutable`; `DELETE TOP(1) FROM AuditEvents` fails with "Audit rows can't be changed or deleted."
+- (2026-09-24) After the cross-slice fixes: `npm run test:api` 171 passed, 0 failed; `npm run lint` and `npm run typecheck` pass.
 - (2026-09-24) The three new API tests (admittance unpublished, group checkout unpublished, transfer scholarship and scoped code) fail with the service changes reverted (3 of 3) and pass with them.
 
 ## Outcomes & Retrospective

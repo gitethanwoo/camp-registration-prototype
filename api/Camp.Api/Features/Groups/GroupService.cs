@@ -103,6 +103,9 @@ public sealed class GroupService(CampDbContext db, IPaymentGateway gateway, IAud
             ?? throw new KeyNotFoundException();
         if (group.Status == GroupStatus.Confirmed)
             throw GroupValidationException.One("group", "This group is already paid for.");
+        // K2: the same rule as Checkout.cs. A program sent back to draft takes no new registrations.
+        if (!group.Session.Program.IsPublished)
+            throw GroupValidationException.One("sessionId", "This program isn't open for registration.");
         var count = group.Attendees.Count;
         if (count == 0) throw GroupValidationException.One("attendees", "Add at least one attendee.");
         var pool = group.Session.Pools.OrderBy(p => p.SortOrder).First();

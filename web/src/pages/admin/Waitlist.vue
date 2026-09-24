@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { ColumnDef } from '@tanstack/vue-table'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAdminScope } from '@/composables/useAdminScope'
+import { useSession } from '@/lib/session'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
@@ -41,6 +42,7 @@ interface PoolWaitlist {
   entries: Entry[]
 }
 
+const isAdmin = computed(() => useSession().session.value?.role === 'admin')
 const columns: ColumnDef<Entry>[] = [
   { accessorKey: 'position', header: '#', meta: { class: 'w-12', cellClass: 'tabular-nums' } },
   { accessorKey: 'participant', header: 'Camper', meta: { cellClass: 'font-medium' } },
@@ -139,13 +141,14 @@ async function submit() {
           <span :class="p.remaining > 0 ? 'font-medium text-emerald-700' : ''">{{
             p.remaining > 0 ? `${p.remaining} open to offer` : 'Full'
           }}</span>
-          <template v-if="p.remaining === 0">
+          <template v-if="p.remaining === 0 && isAdmin">
             ·
             <Button variant="link" as-child class="h-auto p-0 text-sm"
               ><RouterLink to="/admin/session">raise capacity</RouterLink></Button
             >
             or wait for a cancellation</template
           >
+          <template v-else-if="p.remaining === 0"> · an administrator can raise capacity</template>
         </CardDescription>
       </CardHeader>
       <CardContent>

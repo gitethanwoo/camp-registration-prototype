@@ -1,13 +1,10 @@
-const usd = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 0,
-})
+const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+const withCents = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })
 
+/** Cents from the server as dollars: "$475" when whole, otherwise always two decimals ("$427.50"). */
 export function money(cents: number | null | undefined) {
   if (cents == null) return '—'
-  return usd.format(cents / 100)
+  return (cents % 100 === 0 ? wholeDollars : withCents).format(cents / 100)
 }
 
 /** Parses a DateOnly ("2028-06-12") without timezone drift. */

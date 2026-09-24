@@ -97,6 +97,9 @@ public sealed class AdmittanceService(CampDbContext db, IPaymentGateway gateway,
             if (app.Stage == ApplicationStage.Submitted) return; // a repeated submit is the same submit
             throw new AdmittanceException(409, "This application was already submitted.");
         }
+        // K2: a program sent back to draft after this draft was saved takes no new applications.
+        if (!app.Session.Program.IsPublished)
+            throw new AdmittanceException(409, "This program isn't taking applications right now. Nothing was authorized.");
         var answers = Answers(app);
         var errors = ApplicationForm.Validate(answers, app.SpouseFirstName, app.SpouseLastName);
         if (errors.Count > 0) throw new AdmittanceException(400, "Some answers are missing.", errors);

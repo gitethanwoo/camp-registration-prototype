@@ -55,14 +55,19 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Staff_changes_are_audited_under_the_signed_in_name()
     {
         using var cet = await factory.SignInAsStaff();
+        using var admin = await factory.SignInAsStaff("admin", "Alex Morgan");
         var poolId = await factory.WithDb(db => db.CapacityPools.Select(p => p.Id).FirstAsync());
         var capacity = await factory.WithDb(db => db.CapacityPools.Where(p => p.Id == poolId).Select(p => p.Capacity).SingleAsync());
 
-        using var res = await cet.PutAsJsonAsync($"/api/admin/pools/{poolId}", new { Capacity = capacity + 1 });
+        // Capacity is an admin change (wave 2); CET and Finance are refused.
+        using var refused = await cet.PutAsJsonAsync($"/api/admin/pools/{poolId}", new { Capacity = capacity + 1 });
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        using var res = await admin.PutAsJsonAsync($"/api/admin/pools/{poolId}", new { Capacity = capacity + 1 });
         res.EnsureSuccessStatusCode();
 
         var actor = await factory.WithDb(db => db.AuditEvents.OrderByDescending(a => a.Id).Select(a => a.Actor).FirstAsync());
-        Assert.Equal("Diane Carter (CET)", actor);
+        Assert.Equal("Alex Morgan (ADMIN)", actor);
     }
 
     [Fact]

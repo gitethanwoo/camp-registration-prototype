@@ -139,7 +139,7 @@ function audience(p: Pool) {
             <RouterLink :to="`/admin/setup/sessions/${s.id}`" class="underline">session setup</RouterLink>.
           </p>
           <p v-else class="mt-4 text-xs text-muted-foreground">
-            Only an administrator can change session details. Capacity is editable below.
+            Only an administrator can change session details or capacity.
           </p>
         </CardContent>
       </Card>
@@ -155,7 +155,8 @@ function audience(p: Pool) {
         <CardContent>
           <DataTable :columns="columns" :data="s.pools" :get-row-id="(p) => String(p.id)">
             <template #cell-capacity="{ row: p }">
-              <form class="flex items-center gap-2" @submit.prevent="save(p)">
+              <span v-if="!isAdmin" class="tabular-nums">{{ p.capacity }}</span>
+              <form v-else class="flex items-center gap-2" @submit.prevent="save(p)">
                 <Input
                   v-model="edits[p.id]"
                   type="number"
@@ -172,7 +173,9 @@ function audience(p: Pool) {
                   >Save</Button
                 >
               </form>
-              <p v-if="errors[p.id]" class="mt-1 text-xs text-destructive" role="alert">{{ errors[p.id] }}</p>
+              <p v-if="isAdmin && errors[p.id]" class="mt-1 text-xs text-destructive" role="alert">
+                {{ errors[p.id] }}
+              </p>
             </template>
           </DataTable>
         </CardContent>
